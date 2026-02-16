@@ -1,6 +1,7 @@
 mod config;
 mod db;
 mod error;
+mod opds;
 mod scanner;
 mod state;
 
@@ -48,6 +49,7 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
         .route("/health", get(health_check))
+        .nest("/opds", opds::router(state.clone()))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
