@@ -1,6 +1,7 @@
 mod config;
 mod db;
 mod error;
+mod scanner;
 mod state;
 
 use std::net::SocketAddr;
@@ -10,11 +11,24 @@ use axum::extract::State;
 use axum::response::Json;
 use axum::routing::get;
 use axum::Router;
+use clap::Parser;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::state::AppState;
+
+#[derive(Parser)]
+#[command(name = "ropds", version, about = "Rust OPDS Server")]
+struct Cli {
+    /// Path to config file
+    #[arg(short, long, default_value = "config.toml")]
+    config: PathBuf,
+
+    /// Run a one-shot library scan and exit
+    #[arg(long)]
+    scan: bool,
+}
 
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
     let db_ok = sqlx::query("SELECT 1").execute(&state.db).await.is_ok();
@@ -40,14 +54,10 @@ fn build_router(state: AppState) -> Router {
 
 #[tokio::main]
 async fn main() {
-    // Determine config path from CLI arg or default
-    let config_path = std::env::args()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("config.toml"));
+    let cli = Cli::parse();
 
     // Load configuration
-    let config = Config::load(&config_path).unwrap_or_else(|e| {
+    let config = Config::load(&cli.config).unwrap_or_else(|e| {
         eprintln!("Error loading config: {e}");
         std::process::exit(1);
     });
@@ -64,6 +74,28 @@ async fn main() {
     });
     tracing::info!("Database initialized: {}", config.database.url);
 
+    // One-shot scan mode
+    if cli.scan {
+        tracing::info!("Running one-shot scan...");
+        match scanner::run_scan(&pool, &config).await {
+            Ok(stats) => {
+                tracing::info!(
+                    "Scan finished: added={}, skipped={}, deleted={}, errors={}",
+                    stats.books_added,
+                    stats.books_skipped,
+                    stats.books_deleted,
+                    stats.errors,
+                );
+            }
+            Err(e) => {
+                tracing::error!("Scan failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // Server mode
     let addr = SocketAddr::new(
         config
             .server

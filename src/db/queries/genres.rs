@@ -59,6 +59,19 @@ pub async fn link_book(
     Ok(())
 }
 
+/// Link a book to a genre by genre code. If the code doesn't match
+/// any seeded genre, the link is silently skipped.
+pub async fn link_book_by_code(
+    pool: &DbPool,
+    book_id: i64,
+    code: &str,
+) -> Result<(), sqlx::Error> {
+    if let Some(genre) = get_by_code(pool, code).await? {
+        link_book(pool, book_id, genre.id).await?;
+    }
+    Ok(())
+}
+
 pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Genre>, sqlx::Error> {
     sqlx::query_as::<_, Genre>(
         "SELECT g.* FROM genres g \
