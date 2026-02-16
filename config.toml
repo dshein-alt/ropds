@@ -1,0 +1,41 @@
+[server]
+host = "0.0.0.0"
+port = 8081
+log_level = "info"
+
+[library]
+root_path = "/path/to/books"
+book_extensions = ["fb2", "epub", "mobi", "pdf", "djvu", "doc", "docx", "zip"]
+scan_zip = true
+zip_codepage = "cp866"
+inpx_enable = false
+
+[database]
+url = "sqlite://sopds.db"
+
+[opds]
+title = "SimpleOPDS"
+subtitle = "Personal Library"
+max_items = 30
+split_items = 300
+auth_required = true
+show_covers = true
+alphabet_menu = true
+hide_doubles = false
+cache_time = 600
+
+[scanner]
+schedule_minutes = "0"
+schedule_hours = "0,12"
+schedule_day = "*"
+schedule_day_of_week = "*"
+delete_logical = true
+
+[converter]
+fb2_to_epub = ""
+fb2_to_mobi = ""
+temp_dir = "/tmp"
+
+[web]
+language = "en"
+theme = "light"
