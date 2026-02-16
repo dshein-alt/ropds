@@ -23,8 +23,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Error handling
 thiserror = "2"
 
-# Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono", "migrate"] }
+# Database (any = runtime backend selection via URI scheme)
+sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite", "postgres", "mysql", "chrono", "migrate"] }
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }

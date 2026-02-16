@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::db::models::Book;
 
-pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Book>, sqlx::Error> {
+pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>("SELECT * FROM books WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -10,10 +10,10 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Book>, sqlx:
 }
 
 pub async fn get_by_catalog(
-    pool: &SqlitePool,
+    pool: &DbPool,
     catalog_id: i64,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>(
         "SELECT * FROM books WHERE catalog_id = ? AND avail > 0 ORDER BY search_title LIMIT ? OFFSET ?",
@@ -26,10 +26,10 @@ pub async fn get_by_catalog(
 }
 
 pub async fn get_by_author(
-    pool: &SqlitePool,
+    pool: &DbPool,
     author_id: i64,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>(
         "SELECT b.* FROM books b \
@@ -45,10 +45,10 @@ pub async fn get_by_author(
 }
 
 pub async fn get_by_genre(
-    pool: &SqlitePool,
+    pool: &DbPool,
     genre_id: i64,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>(
         "SELECT b.* FROM books b \
@@ -64,10 +64,10 @@ pub async fn get_by_genre(
 }
 
 pub async fn get_by_series(
-    pool: &SqlitePool,
+    pool: &DbPool,
     series_id: i64,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>(
         "SELECT b.* FROM books b \
@@ -83,10 +83,10 @@ pub async fn get_by_series(
 }
 
 pub async fn search_by_title(
-    pool: &SqlitePool,
+    pool: &DbPool,
     term: &str,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Book>, sqlx::Error> {
     let pattern = format!("%{term}%");
     sqlx::query_as::<_, Book>(
@@ -101,7 +101,7 @@ pub async fn search_by_title(
 }
 
 pub async fn find_by_path_and_filename(
-    pool: &SqlitePool,
+    pool: &DbPool,
     path: &str,
     filename: &str,
 ) -> Result<Option<Book>, sqlx::Error> {
@@ -113,7 +113,7 @@ pub async fn find_by_path_and_filename(
 }
 
 pub async fn insert(
-    pool: &SqlitePool,
+    pool: &DbPool,
     catalog_id: i64,
     filename: &str,
     path: &str,
@@ -126,7 +126,7 @@ pub async fn insert(
     lang_code: i32,
     size: i64,
     cat_type: i32,
-    cover: bool,
+    cover: i32,
     cover_type: &str,
 ) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
@@ -150,10 +150,10 @@ pub async fn insert(
     .bind(cover_type)
     .execute(pool)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(result.last_insert_id().unwrap_or(0))
 }
 
-pub async fn set_avail_all(pool: &SqlitePool, avail: i32) -> Result<u64, sqlx::Error> {
+pub async fn set_avail_all(pool: &DbPool, avail: i32) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("UPDATE books SET avail = ?")
         .bind(avail)
         .execute(pool)
@@ -161,7 +161,7 @@ pub async fn set_avail_all(pool: &SqlitePool, avail: i32) -> Result<u64, sqlx::E
     Ok(result.rows_affected())
 }
 
-pub async fn set_avail(pool: &SqlitePool, id: i64, avail: i32) -> Result<(), sqlx::Error> {
+pub async fn set_avail(pool: &DbPool, id: i64, avail: i32) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE books SET avail = ? WHERE id = ?")
         .bind(avail)
         .bind(id)
@@ -170,14 +170,14 @@ pub async fn set_avail(pool: &SqlitePool, id: i64, avail: i32) -> Result<(), sql
     Ok(())
 }
 
-pub async fn delete_unavailable(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
+pub async fn delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("DELETE FROM books WHERE avail = 0")
         .execute(pool)
         .await?;
     Ok(result.rows_affected())
 }
 
-pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM books WHERE avail > 0")
         .fetch_one(pool)
         .await?;

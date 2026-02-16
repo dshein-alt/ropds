@@ -1,21 +1,21 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::db::models::Counter;
 
-pub async fn get(pool: &SqlitePool, name: &str) -> Result<Option<Counter>, sqlx::Error> {
+pub async fn get(pool: &DbPool, name: &str) -> Result<Option<Counter>, sqlx::Error> {
     sqlx::query_as::<_, Counter>("SELECT * FROM counters WHERE name = ?")
         .bind(name)
         .fetch_optional(pool)
         .await
 }
 
-pub async fn get_all(pool: &SqlitePool) -> Result<Vec<Counter>, sqlx::Error> {
+pub async fn get_all(pool: &DbPool) -> Result<Vec<Counter>, sqlx::Error> {
     sqlx::query_as::<_, Counter>("SELECT * FROM counters ORDER BY name")
         .fetch_all(pool)
         .await
 }
 
-pub async fn set(pool: &SqlitePool, name: &str, value: i64) -> Result<(), sqlx::Error> {
+pub async fn set(pool: &DbPool, name: &str, value: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE counters SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
     )
@@ -27,7 +27,7 @@ pub async fn set(pool: &SqlitePool, name: &str, value: i64) -> Result<(), sqlx::
 }
 
 /// Recalculate all counters from actual table counts.
-pub async fn update_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+pub async fn update_all(pool: &DbPool) -> Result<(), sqlx::Error> {
     let books: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM books WHERE avail > 0")
         .fetch_one(pool)
         .await?;

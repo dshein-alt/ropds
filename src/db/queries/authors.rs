@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::db::models::Author;
 
-pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Author>, sqlx::Error> {
+pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Author>, sqlx::Error> {
     sqlx::query_as::<_, Author>("SELECT * FROM authors WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -10,10 +10,10 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Author>, sql
 }
 
 pub async fn search_by_name(
-    pool: &SqlitePool,
+    pool: &DbPool,
     term: &str,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Author>, sqlx::Error> {
     let pattern = format!("%{term}%");
     sqlx::query_as::<_, Author>(
@@ -28,11 +28,11 @@ pub async fn search_by_name(
 }
 
 pub async fn get_by_lang_code_prefix(
-    pool: &SqlitePool,
+    pool: &DbPool,
     lang_code: i32,
     prefix: &str,
-    limit: u32,
-    offset: u32,
+    limit: i32,
+    offset: i32,
 ) -> Result<Vec<Author>, sqlx::Error> {
     let pattern = format!("{prefix}%");
     sqlx::query_as::<_, Author>(
@@ -47,7 +47,7 @@ pub async fn get_by_lang_code_prefix(
     .await
 }
 
-pub async fn find_by_name(pool: &SqlitePool, full_name: &str) -> Result<Option<Author>, sqlx::Error> {
+pub async fn find_by_name(pool: &DbPool, full_name: &str) -> Result<Option<Author>, sqlx::Error> {
     sqlx::query_as::<_, Author>("SELECT * FROM authors WHERE full_name = ?")
         .bind(full_name)
         .fetch_optional(pool)
@@ -55,7 +55,7 @@ pub async fn find_by_name(pool: &SqlitePool, full_name: &str) -> Result<Option<A
 }
 
 pub async fn insert(
-    pool: &SqlitePool,
+    pool: &DbPool,
     full_name: &str,
     search_full_name: &str,
     lang_code: i32,
@@ -68,10 +68,10 @@ pub async fn insert(
     .bind(lang_code)
     .execute(pool)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(result.last_insert_id().unwrap_or(0))
 }
 
-pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM authors")
         .fetch_one(pool)
         .await?;
@@ -79,7 +79,7 @@ pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
 }
 
 pub async fn link_book(
-    pool: &SqlitePool,
+    pool: &DbPool,
     book_id: i64,
     author_id: i64,
 ) -> Result<(), sqlx::Error> {
@@ -91,7 +91,7 @@ pub async fn link_book(
     Ok(())
 }
 
-pub async fn get_for_book(pool: &SqlitePool, book_id: i64) -> Result<Vec<Author>, sqlx::Error> {
+pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Author>, sqlx::Error> {
     sqlx::query_as::<_, Author>(
         "SELECT a.* FROM authors a \
          JOIN book_authors ba ON ba.author_id = a.id \

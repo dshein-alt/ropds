@@ -1,4 +1,3 @@
-use chrono::NaiveDateTime;
 use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow)]
@@ -26,9 +25,9 @@ pub struct Book {
     pub size: i64,
     pub avail: i32,
     pub cat_type: i32,
-    pub cover: bool,
+    pub cover: i32,
     pub cover_type: String,
-    pub reg_date: NaiveDateTime,
+    pub reg_date: String,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -82,8 +81,8 @@ pub struct User {
     pub id: i64,
     pub username: String,
     pub password_hash: String,
-    pub is_superuser: bool,
-    pub created_at: NaiveDateTime,
+    pub is_superuser: i32,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -91,14 +90,14 @@ pub struct Bookshelf {
     pub id: i64,
     pub user_id: i64,
     pub book_id: i64,
-    pub read_time: NaiveDateTime,
+    pub read_time: String,
 }
 
 #[derive(Debug, Clone, FromRow)]
 pub struct Counter {
     pub name: String,
     pub value: i64,
-    pub updated_at: NaiveDateTime,
+    pub updated_at: String,
 }
 
 // Constants for cat_type values
