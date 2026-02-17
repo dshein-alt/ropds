@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod error;
 mod opds;
+mod password;
 mod pdf;
 mod scanner;
 mod scheduler;
@@ -227,9 +228,11 @@ async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, s
         .fetch_optional(pool)
         .await?;
 
+    let hashed = password::hash(password);
+
     if let Some((id,)) = existing {
         sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
-            .bind(password)
+            .bind(&hashed)
             .bind(id)
             .execute(pool)
             .await?;
@@ -238,7 +241,7 @@ async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, s
         sqlx::query(
             "INSERT INTO users (username, password_hash, is_superuser) VALUES ('admin', ?, 1)",
         )
-        .bind(password)
+        .bind(&hashed)
         .execute(pool)
         .await?;
         Ok(true)

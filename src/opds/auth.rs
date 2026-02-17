@@ -52,18 +52,16 @@ pub async fn basic_auth_layer(
     }
 }
 
-/// Verify username/password against the users table.
-/// For now, we do a simple plaintext comparison.
-/// TODO: Switch to argon2 password hashing in Phase 6.
+/// Verify username/password against the users table using argon2.
 async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: &str) -> bool {
     let result: Result<Option<(String,)>, _> =
-        sqlx::query_as("SELECT password FROM users WHERE username = ?")
+        sqlx::query_as("SELECT password_hash FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(pool)
             .await;
 
     match result {
-        Ok(Some((stored_password,))) => stored_password == password,
+        Ok(Some((stored_hash,))) => crate::password::verify(password, &stored_hash),
         _ => false,
     }
 }

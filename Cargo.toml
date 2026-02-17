@@ -52,5 +52,8 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 
+# Password hashing
+argon2 = "0.5"
+
 # CLI
 clap = { version = "4", features = ["derive"] }

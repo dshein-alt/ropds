@@ -179,7 +179,7 @@ pub async fn logout(jar: CookieJar) -> impl IntoResponse {
     (jar.remove(cookie), Redirect::to("/web/login"))
 }
 
-/// Verify username/password against the users table.
+/// Verify username/password against the users table using argon2.
 async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: &str) -> bool {
     let result: Result<Option<(String,)>, _> =
         sqlx::query_as("SELECT password_hash FROM users WHERE username = ?")
@@ -188,7 +188,7 @@ async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: 
             .await;
 
     match result {
-        Ok(Some((stored_hash,))) => stored_hash == password,
+        Ok(Some((stored_hash,))) => crate::password::verify(password, &stored_hash),
         _ => false,
     }
 }
