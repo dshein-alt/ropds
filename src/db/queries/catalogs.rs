@@ -35,14 +35,16 @@ pub async fn insert(
     path: &str,
     cat_name: &str,
     cat_type: i32,
+    cat_size: i64,
 ) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
-        "INSERT INTO catalogs (parent_id, path, cat_name, cat_type) VALUES (?, ?, ?, ?)",
+        "INSERT INTO catalogs (parent_id, path, cat_name, cat_type, cat_size) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(parent_id)
     .bind(path)
     .bind(cat_name)
     .bind(cat_type)
+    .bind(cat_size)
     .execute(pool)
     .await?;
     if let Some(id) = result.last_insert_id() {
@@ -56,6 +58,21 @@ pub async fn insert(
     Ok(row.0)
 }
 
+pub async fn update_archive_meta(
+    pool: &DbPool,
+    id: i64,
+    cat_type: i32,
+    cat_size: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE catalogs SET cat_type = ?, cat_size = ? WHERE id = ?")
+        .bind(cat_type)
+        .bind(cat_size)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM catalogs")
         .fetch_one(pool)
@@ -65,20 +82,18 @@ pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
 
 /// Count child catalogs for a given parent.
 pub async fn count_children(pool: &DbPool, parent_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM catalogs WHERE parent_id = ?")
-            .bind(parent_id)
-            .fetch_one(pool)
-            .await?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM catalogs WHERE parent_id = ?")
+        .bind(parent_id)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 
 /// Count root catalogs (parent_id IS NULL).
 pub async fn count_root(pool: &DbPool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM catalogs WHERE parent_id IS NULL")
-            .fetch_one(pool)
-            .await?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM catalogs WHERE parent_id IS NULL")
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 

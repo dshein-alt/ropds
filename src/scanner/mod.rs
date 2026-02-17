@@ -163,8 +163,13 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
     counters::update_all(pool).await?;
 
     info!(
-        "Scan complete: added={}, skipped={}, deleted={}, errors={}",
-        stats.books_added, stats.books_skipped, stats.books_deleted, stats.errors
+        "Scan complete: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",
+        stats.books_added,
+        stats.books_skipped,
+        stats.books_deleted,
+        stats.archives_scanned,
+        stats.archives_skipped,
+        stats.errors
     );
 
     Ok(stats)
@@ -328,6 +333,14 @@ async fn process_zip(
         format!("{rel_dir}/{zip_filename}")
     };
 
+    let zip_size = fs::metadata(zip_path)?.len() as i64;
+    if try_skip_zip_archive(pool, &rel_zip, zip_size).await? {
+        stats.archives_skipped += 1;
+        return Ok(());
+    }
+
+    let catalog_id = ensure_archive_catalog(pool, &rel_zip, models::CAT_ZIP, zip_size).await?;
+
     // Read ZIP contents in a blocking task
     let zip_path_buf = zip_path.to_path_buf();
     let extensions_clone = extensions.clone();
@@ -336,8 +349,6 @@ async fn process_zip(
         tokio::task::spawn_blocking(move || read_zip_entries(&zip_path_buf, &extensions_clone))
             .await
             .map_err(|e| ScanError::Internal(e.to_string()))??;
-
-    let catalog_id = ensure_catalog(pool, &rel_zip, models::CAT_ZIP).await?;
 
     for ze in zip_entries {
         // Check if already in DB
@@ -396,6 +407,20 @@ async fn process_inpx(
     stats: &mut ScanStats,
     covers_dir: &Path,
 ) -> Result<(), ScanError> {
+    let inpx_size = fs::metadata(inpx_path)?.len() as i64;
+    let inpx_dir = Path::new(rel_path)
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_string_lossy()
+        .to_string();
+
+    if try_skip_inpx_archive(pool, rel_path, &inpx_dir, inpx_size).await? {
+        stats.archives_skipped += 1;
+        return Ok(());
+    }
+
+    ensure_archive_catalog(pool, rel_path, models::CAT_INPX, inpx_size).await?;
+
     let inpx_path_buf = inpx_path.to_path_buf();
     let records = tokio::task::spawn_blocking(move || {
         let file = fs::File::open(&inpx_path_buf)?;
@@ -409,20 +434,10 @@ async fn process_inpx(
     info!("INPX: parsed {} records from {}", records.len(), rel_path);
 
     for record in records {
-        let book_path = if rel_path.is_empty() {
+        let book_path = if inpx_dir.is_empty() {
             record.folder.clone()
         } else {
-            // rel_path is the path to the .inpx file's directory
-            let inpx_dir = Path::new(rel_path)
-                .parent()
-                .unwrap_or(Path::new(""))
-                .to_string_lossy()
-                .to_string();
-            if inpx_dir.is_empty() {
-                record.folder.clone()
-            } else {
-                format!("{inpx_dir}/{}", record.folder)
-            }
+            format!("{inpx_dir}/{}", record.folder)
         };
 
         // Check if already in DB
@@ -672,8 +687,75 @@ async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<i64,
         .to_string_lossy()
         .to_string();
 
-    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type).await?;
+    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, 0).await?;
     Ok(id)
+}
+
+/// Ensure a catalog for an archive exists and update its archive metadata.
+async fn ensure_archive_catalog(
+    pool: &DbPool,
+    path: &str,
+    cat_type: i32,
+    cat_size: i64,
+) -> Result<i64, ScanError> {
+    if let Some(cat) = catalogs::find_by_path(pool, path).await? {
+        if cat.cat_type != cat_type || cat.cat_size != cat_size {
+            catalogs::update_archive_meta(pool, cat.id, cat_type, cat_size).await?;
+        }
+        return Ok(cat.id);
+    }
+
+    // Determine parent catalog
+    let parent_path = Path::new(path).parent();
+    let parent_id = match parent_path {
+        Some(p) if !p.as_os_str().is_empty() => {
+            let pp = p.to_string_lossy().to_string();
+            Some(Box::pin(ensure_catalog(pool, &pp, models::CAT_NORMAL)).await?)
+        }
+        _ => None,
+    };
+
+    let cat_name = Path::new(path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, cat_size).await?;
+    Ok(id)
+}
+
+/// Try to skip scanning an unchanged ZIP archive.
+async fn try_skip_zip_archive(
+    pool: &DbPool,
+    rel_zip: &str,
+    zip_size: i64,
+) -> Result<bool, ScanError> {
+    let Some(cat) = catalogs::find_by_path(pool, rel_zip).await? else {
+        return Ok(false);
+    };
+    if cat.cat_type != models::CAT_ZIP || cat.cat_size != zip_size {
+        return Ok(false);
+    }
+    let updated = books::set_avail_by_path(pool, rel_zip, models::AVAIL_CONFIRMED).await?;
+    Ok(updated > 0)
+}
+
+/// Try to skip scanning an unchanged INPX archive.
+async fn try_skip_inpx_archive(
+    pool: &DbPool,
+    rel_inpx: &str,
+    inpx_dir: &str,
+    inpx_size: i64,
+) -> Result<bool, ScanError> {
+    let Some(cat) = catalogs::find_by_path(pool, rel_inpx).await? else {
+        return Ok(false);
+    };
+    if cat.cat_type != models::CAT_INPX || cat.cat_size != inpx_size {
+        return Ok(false);
+    }
+    let updated = books::set_avail_for_inpx_dir(pool, inpx_dir, models::AVAIL_CONFIRMED).await?;
+    Ok(updated > 0)
 }
 
 /// Insert a book record and link authors, genres, series.

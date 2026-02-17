@@ -104,10 +104,12 @@ pub async fn run(pool: DbPool, config: Config) {
                 match scanner::run_scan(&pool, &config).await {
                     Ok(stats) => {
                         info!(
-                            "Scheduled scan finished: added={}, skipped={}, deleted={}, errors={}",
+                            "Scheduled scan finished: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",
                             stats.books_added,
                             stats.books_skipped,
                             stats.books_deleted,
+                            stats.archives_scanned,
+                            stats.archives_skipped,
                             stats.errors,
                         );
                     }

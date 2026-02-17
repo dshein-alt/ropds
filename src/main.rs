@@ -130,10 +130,12 @@ async fn main() {
         match scanner::run_scan(&pool, &config).await {
             Ok(stats) => {
                 tracing::info!(
-                    "Scan finished: added={}, skipped={}, deleted={}, errors={}",
+                    "Scan finished: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",
                     stats.books_added,
                     stats.books_skipped,
                     stats.books_deleted,
+                    stats.archives_scanned,
+                    stats.archives_skipped,
                     stats.errors,
                 );
             }
