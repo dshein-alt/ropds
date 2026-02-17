@@ -162,3 +162,49 @@ fn filesizeformat(
     };
     Ok(tera::Value::String(result))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum_extra::extract::cookie::{Cookie, CookieJar};
+
+    #[test]
+    fn test_csrf_token_deterministic() {
+        let secret = b"test-secret";
+        let t1 = generate_csrf_token("session123", secret);
+        let t2 = generate_csrf_token("session123", secret);
+        assert_eq!(t1, t2);
+    }
+
+    #[test]
+    fn test_csrf_token_differs_by_session() {
+        let secret = b"test-secret";
+        let t1 = generate_csrf_token("session-a", secret);
+        let t2 = generate_csrf_token("session-b", secret);
+        assert_ne!(t1, t2);
+    }
+
+    #[test]
+    fn test_validate_csrf_valid() {
+        let secret = b"test-secret";
+        let session = "42:9999999999:abcdef";
+        let token = generate_csrf_token(session, secret);
+        let jar = CookieJar::new().add(Cookie::new("session", session.to_string()));
+        assert!(validate_csrf(&jar, secret, &token));
+    }
+
+    #[test]
+    fn test_validate_csrf_invalid() {
+        let secret = b"test-secret";
+        let session = "42:9999999999:abcdef";
+        let jar = CookieJar::new().add(Cookie::new("session", session.to_string()));
+        assert!(!validate_csrf(&jar, secret, "wrong-token"));
+    }
+
+    #[test]
+    fn test_validate_csrf_no_session() {
+        let secret = b"test-secret";
+        let jar = CookieJar::new();
+        assert!(!validate_csrf(&jar, secret, "any-token"));
+    }
+}
