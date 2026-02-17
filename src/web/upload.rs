@@ -153,6 +153,59 @@ struct UploadState {
 }
 
 // ---------------------------------------------------------------------------
+// Stale upload cleanup
+// ---------------------------------------------------------------------------
+
+/// Remove abandoned upload temp files older than `max_age_secs`.
+/// Reads each `upload_*.json` state file; if `created_at` is older than the
+/// threshold, deletes the state file plus its associated book and cover files.
+fn cleanup_stale_uploads(temp_dir: &std::path::Path, max_age_secs: u64) {
+    let cutoff = chrono::Utc::now()
+        - chrono::Duration::seconds(max_age_secs as i64);
+
+    let entries = match std::fs::read_dir(temp_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+
+        // Only look at state JSON files
+        if !name.starts_with("upload_") || !name.ends_with(".json") {
+            continue;
+        }
+
+        let json = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let state: UploadState = match serde_json::from_str(&json) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let created = match chrono::DateTime::parse_from_rfc3339(&state.created_at) {
+            Ok(dt) => dt.with_timezone(&chrono::Utc),
+            Err(_) => continue,
+        };
+
+        if created < cutoff {
+            tracing::info!("Cleaning up stale upload: {name}");
+            let _ = std::fs::remove_file(&state.temp_path);
+            if let Some(ref cover) = state.cover_path {
+                let _ = std::fs::remove_file(cover);
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ZIP extraction helper
 // ---------------------------------------------------------------------------
 
@@ -292,6 +345,9 @@ pub async fn upload_file(
     jar: CookieJar,
     mut multipart: axum::extract::Multipart,
 ) -> Response {
+    // 0. Clean up stale uploads (older than 1 hour)
+    cleanup_stale_uploads(&state.config.upload.upload_path, 3600);
+
     // 1. Permission check
     let user_id = match check_upload_permission(&state, &jar).await {
         Ok(id) => id,
