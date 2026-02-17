@@ -43,7 +43,14 @@
             <tbody>
               {% for user in users %}
               <tr>
-                <td><i class="bi bi-person me-1"></i>{{ user.username }}</td>
+                <td>
+                  <i class="bi bi-person me-1"></i>{{ user.username }}
+                  {% if user.password_change_required %}
+                  <span class="badge bg-warning text-dark ms-2" title="{{ t.admin.password_change_pending }}">
+                    <i class="bi bi-key"></i>
+                  </span>
+                  {% endif %}
+                </td>
                 <td>
                   {% if user.is_superuser %}
                   <span class="badge bg-warning text-dark"><i class="bi bi-shield-check me-1"></i>{{ t.admin.superuser }}</span>

@@ -1,4 +1,4 @@
-use axum::extract::{Path, Request, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -163,13 +163,12 @@ pub async fn change_password(
     }
 
     let hash = crate::password::hash(&form.password);
-    match users::update_password(&state.db, user_id, &hash).await {
-        Ok(_) => Redirect::to("/web/admin?msg=password_changed").into_response(),
-        Err(e) => {
-            tracing::error!("Failed to update password for user {user_id}: {e}");
-            Redirect::to("/web/admin?error=db_error").into_response()
-        }
+    if let Err(e) = users::update_password(&state.db, user_id, &hash).await {
+        tracing::error!("Failed to update password for user {user_id}: {e}");
+        return Redirect::to("/web/admin?error=db_error").into_response();
     }
+
+    Redirect::to("/web/admin?msg=password_changed").into_response()
 }
 
 #[derive(Deserialize)]
@@ -254,13 +253,97 @@ pub async fn profile_change_password(
     }
 
     let hash = crate::password::hash(&form.password);
-    match users::update_password(&state.db, user_id, &hash).await {
-        Ok(_) => Redirect::to("/web/profile?msg=password_changed").into_response(),
+    if let Err(e) = users::update_password(&state.db, user_id, &hash).await {
+        tracing::error!("Failed to update password for user {user_id}: {e}");
+        return Redirect::to("/web/profile?error=db_error").into_response();
+    }
+
+    // Clear forced password change flag
+    let _ = users::clear_password_change_required(&state.db, user_id).await;
+
+    Redirect::to("/web/profile?msg=password_changed").into_response()
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordPageQuery {
+    pub next: Option<String>,
+    pub error: Option<String>,
+    pub msg: Option<String>,
+}
+
+/// GET /web/change-password — forced password change page.
+pub async fn change_password_page(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(query): Query<ChangePasswordPageQuery>,
+) -> Response {
+    let secret = state.config.server.session_secret.as_bytes();
+    if get_session_user_id(&jar, secret).is_none() {
+        return Redirect::to("/web/login").into_response();
+    }
+
+    let mut ctx = build_context(&state, &jar, "change-password").await;
+    ctx.insert("next", &query.next.unwrap_or_default());
+    ctx.insert("error", &query.error.unwrap_or_default());
+    ctx.insert("msg", &query.msg.unwrap_or_default());
+
+    match state.tera.render("web/change_password.html", &ctx) {
+        Ok(html) => Html(html).into_response(),
         Err(e) => {
-            tracing::error!("Failed to update password for user {user_id}: {e}");
-            Redirect::to("/web/profile?error=db_error").into_response()
+            tracing::error!("Template error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordSubmitForm {
+    pub password: String,
+    #[serde(default)]
+    pub next: Option<String>,
+    #[serde(default)]
+    pub csrf_token: String,
+}
+
+/// POST /web/change-password — submit forced password change.
+pub async fn change_password_submit(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<ChangePasswordSubmitForm>,
+) -> impl IntoResponse {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
+    let user_id = match get_session_user_id(&jar, secret) {
+        Some(id) => id,
+        None => return Redirect::to("/web/login").into_response(),
+    };
+
+    if !is_valid_password(&form.password) {
+        return Redirect::to("/web/change-password?error=password_short").into_response();
+    }
+
+    let hash = crate::password::hash(&form.password);
+    if let Err(e) = users::update_password(&state.db, user_id, &hash).await {
+        tracing::error!("Failed to update password for user {user_id}: {e}");
+        return Redirect::to("/web/change-password?error=db_error").into_response();
+    }
+
+    // Clear the forced password change flag
+    if let Err(e) = users::clear_password_change_required(&state.db, user_id).await {
+        tracing::error!("Failed to clear password_change_required for user {user_id}: {e}");
+        return Redirect::to("/web/change-password?error=db_error").into_response();
+    }
+
+    // Redirect to original destination or home
+    let redirect_to = form
+        .next
+        .filter(|n| !n.is_empty() && n.starts_with('/'))
+        .unwrap_or_else(|| "/web".to_string());
+
+    Redirect::to(&redirect_to).into_response()
 }
 
 /// Format elapsed seconds as human-readable uptime using translations from context.

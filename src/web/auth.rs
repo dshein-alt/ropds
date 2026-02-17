@@ -70,16 +70,43 @@ pub async fn session_auth_layer(
 
     let secret = state.config.server.session_secret.as_bytes();
 
-    if let Some(cookie) = jar.get("session") {
-        if verify_session(cookie.value(), secret).is_some() {
-            return next.run(request).await;
+    let user_id = jar
+        .get("session")
+        .and_then(|c| verify_session(c.value(), secret));
+
+    match user_id {
+        Some(uid) => {
+            // Allow these paths even when password change is required
+            if path == "/change-password"
+                || path == "/profile/password"
+                || path == "/logout"
+            {
+                return next.run(request).await;
+            }
+
+            // Check if user must change password before accessing the app
+            let must_change = crate::db::queries::users::password_change_required(
+                &state.db, uid,
+            )
+            .await
+            .unwrap_or(false);
+
+            if must_change {
+                let original_path = format!("/web{path}");
+                let next_url = urlencoding::encode(&original_path);
+                return Redirect::to(&format!("/web/change-password?next={next_url}"))
+                    .into_response();
+            }
+
+            next.run(request).await
+        }
+        None => {
+            // No valid session — redirect to login
+            let original_path = format!("/web{path}");
+            let next_url = urlencoding::encode(&original_path);
+            Redirect::to(&format!("/web/login?next={next_url}")).into_response()
         }
     }
-
-    // Redirect to login, preserving the original path (with /web prefix for browser)
-    let original_path = format!("/web{path}");
-    let next_url = urlencoding::encode(&original_path);
-    Redirect::to(&format!("/web/login?next={next_url}")).into_response()
 }
 
 #[derive(Deserialize)]

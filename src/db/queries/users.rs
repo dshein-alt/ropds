@@ -11,12 +11,13 @@ pub struct UserView {
     pub is_superuser: i32,
     pub created_at: String,
     pub last_login: String,
+    pub password_change_required: i32,
 }
 
 /// Get all users for admin panel listing (excludes password_hash).
 pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> {
     let users: Vec<UserView> = sqlx::query_as(
-        "SELECT id, username, is_superuser, created_at, last_login FROM users ORDER BY id"
+        "SELECT id, username, is_superuser, created_at, last_login, password_change_required FROM users ORDER BY id"
     )
     .fetch_all(pool)
     .await?;
@@ -26,7 +27,7 @@ pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> 
 /// Get a single user by ID.
 pub async fn get_by_id(pool: &DbPool, user_id: i64) -> Result<Option<User>, sqlx::Error> {
     let user: Option<User> = sqlx::query_as(
-        "SELECT id, username, password_hash, is_superuser, created_at, last_login FROM users WHERE id = ?"
+        "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required FROM users WHERE id = ?"
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -53,7 +54,7 @@ pub async fn create(
     is_superuser: i32,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query(
-        "INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, ?)"
+        "INSERT INTO users (username, password_hash, is_superuser, password_change_required) VALUES (?, ?, ?, 1)"
     )
     .bind(username)
     .bind(password_hash)
@@ -98,6 +99,26 @@ pub async fn delete(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
 pub async fn update_last_login(pool: &DbPool, user_id: i64, timestamp: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE users SET last_login = ? WHERE id = ?")
         .bind(timestamp)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Check if user must change password before accessing the app.
+pub async fn password_change_required(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT password_change_required FROM users WHERE id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(v,)| v == 1).unwrap_or(false))
+}
+
+/// Clear the password_change_required flag after user changes password.
+pub async fn clear_password_change_required(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET password_change_required = 0 WHERE id = ?")
         .bind(user_id)
         .execute(pool)
         .await?;
@@ -156,6 +177,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_password_hash_verify() {
+        let pool = create_test_pool().await;
+        let old_hash = crate::password::hash("old_password");
+        let id = create(&pool, "frank", &old_hash, 0).await.unwrap();
+
+        // Verify old password works
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert!(crate::password::verify("old_password", &user.password_hash));
+
+        // Admin changes password
+        let new_hash = crate::password::hash("new_password");
+        update_password(&pool, id, &new_hash).await.unwrap();
+
+        // Old password no longer works, new one does
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert!(!crate::password::verify("old_password", &user.password_hash));
+        assert!(crate::password::verify("new_password", &user.password_hash));
+    }
+
+    #[tokio::test]
     async fn test_delete() {
         let pool = create_test_pool().await;
         let id = create(&pool, "dave", "hash", 0).await.unwrap();
@@ -174,4 +215,28 @@ mod tests {
         let views = get_all_views(&pool).await.unwrap();
         assert_eq!(views[0].last_login, "2026-01-15 10:30:00");
     }
+
+    #[tokio::test]
+    async fn test_create_sets_password_change_required() {
+        let pool = create_test_pool().await;
+        let id = create(&pool, "newuser", "hash", 0).await.unwrap();
+
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(user.password_change_required, 1);
+        assert!(password_change_required(&pool, id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_clear_password_change_required() {
+        let pool = create_test_pool().await;
+        let id = create(&pool, "testuser", "hash", 0).await.unwrap();
+        assert!(password_change_required(&pool, id).await.unwrap());
+
+        clear_password_change_required(&pool, id).await.unwrap();
+        assert!(!password_change_required(&pool, id).await.unwrap());
+
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(user.password_change_required, 0);
+    }
+
 }
