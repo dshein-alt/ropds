@@ -396,15 +396,17 @@ pub async fn search_books(
 
     let pagination = Pagination::new(params.page, max_items, total);
 
-    let display_query = if matches!(params.search_type.as_str(), "a" | "s") {
-        params
+    let display_query = match params.search_type.as_str() {
+        // Preserve original typed query for grouped author/series flows.
+        "a" | "s" => params
             .src_q
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .unwrap_or(&params.q)
-            .to_string()
-    } else {
-        params.q.clone()
+            .to_string(),
+        // ID-based direct jumps (e.g. random book) should not prefill the search box.
+        "i" => String::new(),
+        _ => params.q.clone(),
     };
 
     let mut pagination_qs = format!(
