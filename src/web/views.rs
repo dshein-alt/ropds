@@ -1,11 +1,11 @@
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::{Html, Redirect};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use serde::{Deserialize, Serialize};
 
 use crate::db::models::{Author, Genre};
-use crate::db::queries::{authors, books, catalogs, genres, series};
+use crate::db::queries::{authors, books, bookshelf, catalogs, genres, series};
 use crate::state::AppState;
 use crate::web::context::build_context;
 use crate::web::pagination::Pagination;
@@ -680,4 +680,55 @@ pub async fn set_language(
         .filter(|r| r.starts_with('/') && !r.starts_with("//"))
         .unwrap_or("/web");
     (jar, Redirect::to(redirect))
+}
+
+/// GET /web/download/:book_id/:zip_flag — download a book via the web UI.
+///
+/// Reuses the OPDS download helpers for file reading and response building.
+/// Tracks the download on the user's bookshelf via session cookie.
+pub async fn web_download(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Path((book_id, zip_flag)): Path<(i64, i32)>,
+) -> Response {
+    let book = match books::get_by_id(&state.db, book_id).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return (StatusCode::NOT_FOUND, "Book not found").into_response(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response(),
+    };
+
+    let root = &state.config.library.root_path;
+
+    let data = match crate::opds::download::read_book_file(root, &book.path, &book.filename, book.cat_type) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("Failed to read book {}: {e}", book_id);
+            return (StatusCode::NOT_FOUND, "File not found").into_response();
+        }
+    };
+
+    // Fire-and-forget bookshelf tracking via session cookie
+    let secret = state.config.server.session_secret.as_bytes();
+    if let Some(user_id) = jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+    {
+        let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
+    }
+
+    let filename = &book.filename;
+    let mime = crate::opds::xml::mime_for_format(&book.format);
+
+    if zip_flag == 1 && !crate::opds::xml::is_nozip_format(&book.format) {
+        match crate::opds::download::wrap_in_zip(filename, &data) {
+            Ok(zipped) => {
+                let zip_name = format!("{filename}.zip");
+                let zip_mime = crate::opds::xml::mime_for_zip(&book.format);
+                crate::opds::download::file_response(&zipped, &zip_name, &zip_mime)
+            }
+            Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ZIP error").into_response(),
+        }
+    } else {
+        crate::opds::download::file_response(&data, filename, mime)
+    }
 }

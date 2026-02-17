@@ -39,6 +39,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/profile", get(admin::profile_page))
         .route("/profile/password", post(admin::profile_change_password))
         .route("/profile/display-name", post(admin::profile_update_display_name))
+        .route("/download/{book_id}/{zip_flag}", get(views::web_download))
         .nest("/admin", admin_router)
         .layer(middleware::from_fn_with_state(
             state,
