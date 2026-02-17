@@ -13,7 +13,7 @@ use crate::db::DbPool;
 use crate::db::models;
 use crate::db::queries::{authors, books, catalogs, counters, genres, series};
 
-use parsers::{detect_lang_code, normalise_author_name, BookMeta};
+use parsers::{BookMeta, detect_lang_code, normalise_author_name};
 
 /// Global scan lock — prevents overlapping scans.
 static SCAN_LOCK: AtomicBool = AtomicBool::new(false);
@@ -82,9 +82,16 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
 
     for entry in entries {
         match entry {
-            ScanEntry::File { path, rel_path, filename, extension, size } => {
+            ScanEntry::File {
+                path,
+                rel_path,
+                filename,
+                extension,
+                size,
+            } => {
                 match process_file(
-                    pool, root, &path, &rel_path, &filename, &extension, size, &mut stats, covers_dir,
+                    pool, root, &path, &rel_path, &filename, &extension, size, &mut stats,
+                    covers_dir,
                 )
                 .await
                 {
@@ -96,7 +103,17 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
                 }
             }
             ScanEntry::Zip { path, rel_path } => {
-                match process_zip(pool, root, &path, &rel_path, &extensions, &mut stats, covers_dir).await {
+                match process_zip(
+                    pool,
+                    root,
+                    &path,
+                    &rel_path,
+                    &extensions,
+                    &mut stats,
+                    covers_dir,
+                )
+                .await
+                {
                     Ok(()) => {}
                     Err(e) => {
                         debug!("Error processing ZIP {}: {e}", path.display());
@@ -234,12 +251,7 @@ async fn process_file(
 ) -> Result<(), ScanError> {
     // Check if already in DB
     if let Some(_existing) = books::find_by_path_and_filename(pool, rel_path, filename).await? {
-        books::set_avail(
-            pool,
-            _existing.id,
-            models::AVAIL_CONFIRMED,
-        )
-        .await?;
+        books::set_avail(pool, _existing.id, models::AVAIL_CONFIRMED).await?;
         stats.books_skipped += 1;
         return Ok(());
     }
@@ -299,11 +311,10 @@ async fn process_zip(
     let zip_path_buf = zip_path.to_path_buf();
     let extensions_clone = extensions.clone();
 
-    let zip_entries = tokio::task::spawn_blocking(move || {
-        read_zip_entries(&zip_path_buf, &extensions_clone)
-    })
-    .await
-    .map_err(|e| ScanError::Internal(e.to_string()))??;
+    let zip_entries =
+        tokio::task::spawn_blocking(move || read_zip_entries(&zip_path_buf, &extensions_clone))
+            .await
+            .map_err(|e| ScanError::Internal(e.to_string()))??;
 
     let catalog_id = ensure_catalog(pool, &rel_zip, models::CAT_ZIP).await?;
 
@@ -434,6 +445,28 @@ fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
             let file = fs::File::open(path)?;
             parsers::epub::parse(file).map_err(|e| ScanError::Parse(e.to_string()))
         }
+        "pdf" => {
+            let mut meta = BookMeta {
+                title: path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+                ..Default::default()
+            };
+
+            match crate::pdf::render_first_page_jpeg_from_path(path) {
+                Ok(cover) => {
+                    meta.cover_data = Some(cover);
+                    meta.cover_type = "image/jpeg".to_string();
+                }
+                Err(e) => {
+                    warn!("Failed to render PDF cover for {}: {}", path.display(), e);
+                }
+            }
+
+            Ok(meta)
+        }
         _ => {
             // For unsupported formats, return minimal metadata from filename
             Ok(BookMeta {
@@ -459,9 +492,20 @@ fn parse_book_bytes(data: &[u8], ext: &str) -> Result<BookMeta, ScanError> {
             let cursor = Cursor::new(data);
             parsers::epub::parse(cursor).map_err(|e| ScanError::Parse(e.to_string()))
         }
-        _ => {
-            Ok(BookMeta::default())
+        "pdf" => {
+            let mut meta = BookMeta::default();
+            match crate::pdf::render_first_page_jpeg_from_bytes(data) {
+                Ok(cover) => {
+                    meta.cover_data = Some(cover);
+                    meta.cover_type = "image/jpeg".to_string();
+                }
+                Err(e) => {
+                    warn!("Failed to render PDF cover from archive bytes: {}", e);
+                }
+            }
+            Ok(meta)
         }
+        _ => Ok(BookMeta::default()),
     }
 }
 
@@ -473,7 +517,10 @@ struct ZipBookEntry {
 }
 
 /// Read all matching book files from a ZIP archive.
-fn read_zip_entries(path: &Path, extensions: &HashSet<String>) -> Result<Vec<ZipBookEntry>, ScanError> {
+fn read_zip_entries(
+    path: &Path,
+    extensions: &HashSet<String>,
+) -> Result<Vec<ZipBookEntry>, ScanError> {
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut archive = zip::ZipArchive::new(reader)?;
@@ -664,7 +711,12 @@ async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> 
 }
 
 /// Save cover image bytes to disk as `{covers_dir}/{book_id}.{ext}`.
-fn save_cover(covers_dir: &Path, book_id: i64, data: &[u8], mime: &str) -> Result<(), std::io::Error> {
+fn save_cover(
+    covers_dir: &Path,
+    book_id: i64,
+    data: &[u8],
+    mime: &str,
+) -> Result<(), std::io::Error> {
     let ext = mime_to_ext(mime);
     let path = covers_dir.join(format!("{book_id}.{ext}"));
     fs::write(&path, data)

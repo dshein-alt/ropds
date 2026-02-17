@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod error;
 mod opds;
+mod pdf;
 mod scanner;
 mod state;
 mod web;
@@ -9,10 +10,10 @@ mod web;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use axum::Router;
 use axum::extract::State;
 use axum::response::Json;
 use axum::routing::get;
-use axum::Router;
 use clap::Parser;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -47,7 +48,10 @@ async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> 
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(|| async { axum::response::Redirect::to("/web") }))
-        .route("/web/", get(|| async { axum::response::Redirect::to("/web") }))
+        .route(
+            "/web/",
+            get(|| async { axum::response::Redirect::to("/web") }),
+        )
         .route("/health", get(health_check))
         .nest("/opds", opds::router(state.clone()))
         .nest("/web", web::router(state.clone()))
@@ -71,6 +75,12 @@ async fn main() {
         EnvFilter::try_new(&config.server.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
+    if !pdf::pdftoppm_available() {
+        tracing::warn!(
+            "`pdftoppm` is not available in PATH; PDF cover/thumbnail generation is disabled"
+        );
+    }
+
     // Initialize database
     let pool = db::create_pool(&config.database).await.unwrap_or_else(|e| {
         tracing::error!("Failed to initialize database: {e}");
@@ -80,7 +90,10 @@ async fn main() {
 
     // Ensure covers directory exists
     if let Err(e) = std::fs::create_dir_all(&config.opds.covers_dir) {
-        tracing::error!("Failed to create covers directory {:?}: {e}", config.opds.covers_dir);
+        tracing::error!(
+            "Failed to create covers directory {:?}: {e}",
+            config.opds.covers_dir
+        );
         std::process::exit(1);
     }
 
@@ -114,8 +127,8 @@ async fn main() {
     tracing::info!("Templates loaded");
 
     // Load translations
-    let translations =
-        web::i18n::load_translations(std::path::Path::new("locales")).unwrap_or_else(|e| {
+    let translations = web::i18n::load_translations(std::path::Path::new("locales"))
+        .unwrap_or_else(|e| {
             tracing::error!("Failed to load translations: {e}");
             std::process::exit(1);
         });
@@ -126,17 +139,13 @@ async fn main() {
 
     // Server mode
     let addr = SocketAddr::new(
-        config
-            .server
-            .host
-            .parse()
-            .unwrap_or_else(|_| {
-                tracing::warn!(
-                    "Invalid host '{}', falling back to 0.0.0.0",
-                    config.server.host
-                );
-                "0.0.0.0".parse().unwrap()
-            }),
+        config.server.host.parse().unwrap_or_else(|_| {
+            tracing::warn!(
+                "Invalid host '{}', falling back to 0.0.0.0",
+                config.server.host
+            );
+            "0.0.0.0".parse().unwrap()
+        }),
         config.server.port,
     );
 
