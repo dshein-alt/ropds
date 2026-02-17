@@ -3,36 +3,12 @@ use std::io::{Cursor, Read, Write};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use base64::Engine;
 
 use crate::db::models;
 use crate::db::queries::{books, bookshelf};
 use crate::state::AppState;
 
 use super::xml;
-
-/// Extract user_id from Basic Auth header.
-/// Parses `Authorization: Basic <base64>`, decodes, splits on `:`,
-/// and looks up the username in the database.
-async fn get_user_id_from_basic_auth(
-    pool: &crate::db::DbPool,
-    headers: &HeaderMap,
-) -> Option<i64> {
-    let auth = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let encoded = auth.strip_prefix("Basic ")?;
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .ok()?;
-    let credentials = String::from_utf8(decoded).ok()?;
-    let (username, _password) = credentials.split_once(':')?;
-
-    let result: Result<Option<(i64,)>, _> =
-        sqlx::query_as("SELECT id FROM users WHERE username = ?")
-            .bind(username)
-            .fetch_optional(pool)
-            .await;
-    result.ok().flatten().map(|(id,)| id)
-}
 
 /// GET /opds/download/:book_id/:zip_flag/
 ///
@@ -60,7 +36,7 @@ pub async fn download(
     };
 
     // Fire-and-forget bookshelf tracking
-    if let Some(user_id) = get_user_id_from_basic_auth(&state.db, &headers).await {
+    if let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, &headers).await {
         let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
     }
 
