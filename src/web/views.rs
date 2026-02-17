@@ -93,6 +93,8 @@ pub struct SearchBooksParams {
     #[serde(default)]
     pub q: String,
     #[serde(default)]
+    pub src_q: Option<String>,
+    #[serde(default)]
     pub page: i32,
 }
 
@@ -303,7 +305,12 @@ pub async fn search_books(
     Query(params): Query<SearchBooksParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "books").await;
-    ctx.insert("search_target", "title"); // same as default, explicit for clarity
+    let search_target = match params.search_type.as_str() {
+        "a" => "author",
+        "s" => "series",
+        _ => "title",
+    };
+    ctx.insert("search_target", search_target);
     let max_items = state.config.opds.max_items as i32;
     let offset = params.page * max_items;
 
@@ -389,18 +396,31 @@ pub async fn search_books(
 
     let pagination = Pagination::new(params.page, max_items, total);
 
+    let display_query = if matches!(params.search_type.as_str(), "a" | "s") {
+        params
+            .src_q
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&params.q)
+            .to_string()
+    } else {
+        params.q.clone()
+    };
+
+    let mut pagination_qs = format!(
+        "type={}&q={}&",
+        params.search_type,
+        urlencoding::encode(&params.q)
+    );
+    if let Some(src_q) = params.src_q.as_deref().filter(|s| !s.trim().is_empty()) {
+        pagination_qs.push_str(&format!("src_q={}&", urlencoding::encode(src_q)));
+    }
+
     ctx.insert("books", &book_views);
     ctx.insert("pagination", &pagination);
     ctx.insert("search_type", &params.search_type);
-    ctx.insert("search_terms", &params.q);
-    ctx.insert(
-        "pagination_qs",
-        &format!(
-            "type={}&q={}&",
-            params.search_type,
-            urlencoding::encode(&params.q)
-        ),
-    );
+    ctx.insert("search_terms", &display_query);
+    ctx.insert("pagination_qs", &pagination_qs);
 
     render(&state.tera, "web/books.html", &ctx)
 }
@@ -575,10 +595,12 @@ pub async fn search_authors(
     }
 
     let pagination = Pagination::new(params.page, max_items, total);
+    let search_terms_encoded = urlencoding::encode(&params.q).to_string();
 
     ctx.insert("authors", &enriched);
     ctx.insert("pagination", &pagination);
     ctx.insert("search_terms", &params.q);
+    ctx.insert("search_terms_encoded", &search_terms_encoded);
     ctx.insert(
         "pagination_qs",
         &format!(
@@ -623,10 +645,12 @@ pub async fn search_series(
     }
 
     let pagination = Pagination::new(params.page, max_items, total);
+    let search_terms_encoded = urlencoding::encode(&params.q).to_string();
 
     ctx.insert("series_list", &enriched);
     ctx.insert("pagination", &pagination);
     ctx.insert("search_terms", &params.q);
+    ctx.insert("search_terms_encoded", &search_terms_encoded);
     ctx.insert(
         "pagination_qs",
         &format!(

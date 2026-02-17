@@ -10,7 +10,7 @@
   {% else %}
   <div class="list-group">
     {% for author in authors %}
-    <a href="/web/search/books?type=a&q={{ author.id }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+    <a href="/web/search/books?type=a&q={{ author.id }}{% if search_terms_encoded is defined and search_terms_encoded != '' %}&src_q={{ search_terms_encoded }}{% endif %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
       <span>{{ author.full_name }}</span>
       <span class="badge text-bg-secondary rounded-pill">{{ author.book_count }}</span>
     </a>
