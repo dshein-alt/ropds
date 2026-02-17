@@ -2,8 +2,8 @@ use axum_extra::extract::cookie::CookieJar;
 use serde::Serialize;
 use tera::Context;
 
-use crate::db::queries::{authors, books, counters};
 use crate::db::models::Author;
+use crate::db::queries::{authors, books, counters};
 use crate::state::AppState;
 use crate::web::i18n;
 
@@ -25,11 +25,7 @@ pub struct RandomBook {
 }
 
 /// Build a Tera context with all shared variables.
-pub async fn build_context(
-    state: &AppState,
-    jar: &CookieJar,
-    active_page: &str,
-) -> Context {
+pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str) -> Context {
     let mut ctx = Context::new();
 
     // Locale
@@ -64,10 +60,26 @@ pub async fn build_context(
     // Stats from counters table
     let counters_list = counters::get_all(&state.db).await.unwrap_or_default();
     let stats = Stats {
-        allbooks: counters_list.iter().find(|c| c.name == "allbooks").map(|c| c.value).unwrap_or(0),
-        allauthors: counters_list.iter().find(|c| c.name == "allauthors").map(|c| c.value).unwrap_or(0),
-        allgenres: counters_list.iter().find(|c| c.name == "allgenres").map(|c| c.value).unwrap_or(0),
-        allseries: counters_list.iter().find(|c| c.name == "allseries").map(|c| c.value).unwrap_or(0),
+        allbooks: counters_list
+            .iter()
+            .find(|c| c.name == "allbooks")
+            .map(|c| c.value)
+            .unwrap_or(0),
+        allauthors: counters_list
+            .iter()
+            .find(|c| c.name == "allauthors")
+            .map(|c| c.value)
+            .unwrap_or(0),
+        allgenres: counters_list
+            .iter()
+            .find(|c| c.name == "allgenres")
+            .map(|c| c.value)
+            .unwrap_or(0),
+        allseries: counters_list
+            .iter()
+            .find(|c| c.name == "allseries")
+            .map(|c| c.value)
+            .unwrap_or(0),
     };
     ctx.insert("stats", &stats);
 

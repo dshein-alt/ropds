@@ -182,7 +182,10 @@ pub fn extract_cover_from_bytes(data: &[u8], cover_id: &str) -> Option<(Vec<u8>,
         // Find the end of the opening tag
         let tag_end = match text[abs_start..].find('>') {
             Some(p) => abs_start + p,
-            None => { search_pos = abs_start + 1; continue; }
+            None => {
+                search_pos = abs_start + 1;
+                continue;
+            }
         };
 
         let tag = &text[abs_start..=tag_end];
@@ -228,7 +231,9 @@ fn handle_open_tag(
     meta: &mut BookMeta,
 ) {
     // <sequence name="..." number="..."/>
-    if local == "sequence" && matches_path_with(path, local, &["description", "title-info", "sequence"]) {
+    if local == "sequence"
+        && matches_path_with(path, local, &["description", "title-info", "sequence"])
+    {
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
             let val = attr.unescape_value().unwrap_or_default();
@@ -244,7 +249,10 @@ fn handle_open_tag(
     }
 
     // <image l:href="#cover.jpg"/> inside <coverpage>
-    if local == "image" && (path_contains(path, "coverpage") || path.last().map(|s| s.as_str()) == Some("coverpage")) {
+    if local == "image"
+        && (path_contains(path, "coverpage")
+            || path.last().map(|s| s.as_str()) == Some("coverpage"))
+    {
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
             if key.ends_with("href") {
@@ -376,10 +384,7 @@ fn matches_path(path: &[String], suffix: &[&str]) -> bool {
         return false;
     }
     let start = path.len() - suffix.len();
-    path[start..]
-        .iter()
-        .zip(suffix.iter())
-        .all(|(a, b)| a == b)
+    path[start..].iter().zip(suffix.iter()).all(|(a, b)| a == b)
 }
 
 /// Check path match including a tag that hasn't been pushed yet.

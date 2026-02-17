@@ -3,7 +3,7 @@ use std::io::{Read, Seek};
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
-use super::{strip_meta, BookMeta};
+use super::{BookMeta, strip_meta};
 
 /// Parse EPUB metadata from a ZIP archive.
 /// The reader must implement Read + Seek (for the zip crate).
@@ -14,7 +14,9 @@ pub fn parse<R: Read + Seek>(reader: R) -> Result<BookMeta, EpubError> {
     let mut meta = parse_opf(&opf_data)?;
 
     // Try to extract cover image
-    if let Some((cover_data, cover_type)) = extract_cover_from_opf(&opf_data, &opf_path, &mut archive) {
+    if let Some((cover_data, cover_type)) =
+        extract_cover_from_opf(&opf_data, &opf_path, &mut archive)
+    {
         meta.cover_data = Some(cover_data);
         meta.cover_type = cover_type;
     }
@@ -267,7 +269,12 @@ fn parse_opf_manifest(data: &[u8]) -> (Vec<ManifestItem>, Option<String>) {
                             _ => {}
                         }
                     }
-                    items.push(ManifestItem { id, href, media_type, properties });
+                    items.push(ManifestItem {
+                        id,
+                        href,
+                        media_type,
+                        properties,
+                    });
                 }
                 if local == "meta" {
                     let mut name_attr = String::new();

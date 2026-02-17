@@ -17,11 +17,9 @@ pub async fn get_children(pool: &DbPool, parent_id: i64) -> Result<Vec<Catalog>,
 }
 
 pub async fn get_root_catalogs(pool: &DbPool) -> Result<Vec<Catalog>, sqlx::Error> {
-    sqlx::query_as::<_, Catalog>(
-        "SELECT * FROM catalogs WHERE parent_id IS NULL ORDER BY cat_name",
-    )
-    .fetch_all(pool)
-    .await
+    sqlx::query_as::<_, Catalog>("SELECT * FROM catalogs WHERE parent_id IS NULL ORDER BY cat_name")
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn find_by_path(pool: &DbPool, path: &str) -> Result<Option<Catalog>, sqlx::Error> {

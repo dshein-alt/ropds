@@ -151,12 +151,10 @@ fn default_log_level() -> String {
 }
 
 fn default_book_extensions() -> Vec<String> {
-    vec![
-        "fb2", "epub", "mobi", "pdf", "djvu", "doc", "docx", "zip",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect()
+    vec!["fb2", "epub", "mobi", "pdf", "djvu", "doc", "docx", "zip"]
+        .into_iter()
+        .map(String::from)
+        .collect()
 }
 
 fn default_true() -> bool {

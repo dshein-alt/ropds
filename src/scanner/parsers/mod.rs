@@ -1,5 +1,5 @@
-pub mod fb2;
 pub mod epub;
+pub mod fb2;
 pub mod inpx;
 
 /// Metadata extracted from a single book file.
@@ -24,7 +24,10 @@ pub struct BookMeta {
 pub fn strip_meta(s: &str) -> String {
     s.trim_matches(|c: char| {
         c.is_whitespace()
-            || matches!(c, '»' | '«' | '\'' | '"' | '&' | '-' | '.' | '#' | '\\' | '`')
+            || matches!(
+                c,
+                '»' | '«' | '\'' | '"' | '&' | '-' | '.' | '#' | '\\' | '`'
+            )
     })
     .to_string()
 }
@@ -47,16 +50,14 @@ fn is_cyrillic(c: char) -> bool {
 /// Reorder "First Last" → "Last First" (matching Python scanner behaviour).
 /// If the name already contains a comma, just replace commas with spaces.
 pub fn normalise_author_name(name: &str) -> String {
-    let name = name
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
     let name = strip_meta(&name);
     if name.is_empty() {
         return String::new();
     }
     if name.contains(',') {
-        return name.replace(',', " ")
+        return name
+            .replace(',', " ")
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");

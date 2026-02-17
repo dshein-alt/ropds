@@ -194,34 +194,30 @@ pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
 
 /// Random available book (for footer).
 pub async fn get_random(pool: &DbPool) -> Result<Option<Book>, sqlx::Error> {
-    sqlx::query_as::<_, Book>(
-        "SELECT * FROM books WHERE avail > 0 ORDER BY ABS(RANDOM()) LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
+    sqlx::query_as::<_, Book>("SELECT * FROM books WHERE avail > 0 ORDER BY ABS(RANDOM()) LIMIT 1")
+        .fetch_optional(pool)
+        .await
 }
 
 /// Count books matching a title search (contains).
 pub async fn count_by_title_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0",
-    )
-    .bind(&pattern)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0")
+            .bind(&pattern)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 
 /// Count books matching a title-starts-with search.
 pub async fn count_by_title_prefix(pool: &DbPool, prefix: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("{prefix}%");
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0",
-    )
-    .bind(&pattern)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0")
+            .bind(&pattern)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 
@@ -285,12 +281,11 @@ pub async fn count_by_series(pool: &DbPool, series_id: i64) -> Result<i64, sqlx:
 
 /// Count books in a catalog.
 pub async fn count_by_catalog(pool: &DbPool, catalog_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0",
-    )
-    .bind(catalog_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0")
+            .bind(catalog_id)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 

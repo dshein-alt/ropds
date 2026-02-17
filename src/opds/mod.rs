@@ -4,9 +4,9 @@ pub mod download;
 pub mod feeds;
 pub mod xml;
 
+use axum::Router;
 use axum::middleware;
 use axum::routing::get;
-use axum::Router;
 
 use crate::state::AppState;
 

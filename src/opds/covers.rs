@@ -1,7 +1,7 @@
 use std::io::{BufReader, Cursor};
 
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use image::imageops::FilterType;
 
@@ -13,18 +13,12 @@ const THUMB_SIZE: u32 = 200;
 const THUMB_JPEG_QUALITY: u8 = 85;
 
 /// GET /opds/cover/:book_id/ — Full-size cover image.
-pub async fn cover(
-    State(state): State<AppState>,
-    Path((book_id,)): Path<(i64,)>,
-) -> Response {
+pub async fn cover(State(state): State<AppState>, Path((book_id,)): Path<(i64,)>) -> Response {
     serve_cover(&state, book_id, false).await
 }
 
 /// GET /opds/thumb/:book_id/ — Thumbnail cover image.
-pub async fn thumbnail(
-    State(state): State<AppState>,
-    Path((book_id,)): Path<(i64,)>,
-) -> Response {
+pub async fn thumbnail(State(state): State<AppState>, Path((book_id,)): Path<(i64,)>) -> Response {
     serve_cover(&state, book_id, true).await
 }
 
@@ -35,7 +29,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response(),
     };
 
-    if book.cover == 0 {
+    if book.cover == 0 && book.format != "pdf" {
         return (StatusCode::NOT_FOUND, "No cover").into_response();
     }
 
@@ -134,6 +128,18 @@ fn extract_book_cover(
             let opf_data = read_zip_vec(&mut archive, &opf_path).ok()?;
             extract_epub_cover(&opf_data, &opf_path, &mut archive)
         }
+        "pdf" => match crate::pdf::render_first_page_jpeg_from_bytes(&data) {
+            Ok(jpg) => Some((jpg, "image/jpeg".to_string())),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to render PDF cover for {}/{}: {}",
+                    book_path,
+                    filename,
+                    e
+                );
+                None
+            }
+        },
         _ => None,
     }
 }

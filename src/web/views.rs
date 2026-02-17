@@ -1,11 +1,11 @@
 use axum::extract::{Query, State};
-use axum::response::{Html, Redirect};
 use axum::http::StatusCode;
+use axum::response::{Html, Redirect};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use serde::{Deserialize, Serialize};
 
-use crate::db::queries::{authors, books, catalogs, genres, series};
 use crate::db::models::{Author, Genre};
+use crate::db::queries::{authors, books, catalogs, genres, series};
 use crate::state::AppState;
 use crate::web::context::build_context;
 use crate::web::pagination::Pagination;
@@ -111,14 +111,22 @@ pub struct SetLanguageParams {
     pub redirect: Option<String>,
 }
 
-fn default_m() -> String { "m".to_string() }
+fn default_m() -> String {
+    "m".to_string()
+}
 
 // ── Helper: enrich a Book into a BookView ───────────────────────────
 
 async fn enrich_book(state: &AppState, book: crate::db::models::Book) -> BookView {
-    let book_authors = authors::get_for_book(&state.db, book.id).await.unwrap_or_default();
-    let book_genres = genres::get_for_book(&state.db, book.id).await.unwrap_or_default();
-    let book_series = series::get_for_book(&state.db, book.id).await.unwrap_or_default();
+    let book_authors = authors::get_for_book(&state.db, book.id)
+        .await
+        .unwrap_or_default();
+    let book_genres = genres::get_for_book(&state.db, book.id)
+        .await
+        .unwrap_or_default();
+    let book_series = series::get_for_book(&state.db, book.id)
+        .await
+        .unwrap_or_default();
 
     let is_nozip = book.format == "epub" || book.format == "mobi";
     let is_fb2 = book.format == "fb2";
@@ -152,13 +160,15 @@ async fn enrich_book(state: &AppState, book: crate::db::models::Book) -> BookVie
 
 // ── Helper: render template or return error ─────────────────────────
 
-fn render(tera: &tera::Tera, template: &str, ctx: &tera::Context) -> Result<Html<String>, StatusCode> {
-    tera.render(template, ctx)
-        .map(Html)
-        .map_err(|e| {
-            tracing::error!("Template render error ({}): {}", template, e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
+fn render(
+    tera: &tera::Tera,
+    template: &str,
+    ctx: &tera::Context,
+) -> Result<Html<String>, StatusCode> {
+    tera.render(template, ctx).map(Html).map_err(|e| {
+        tracing::error!("Template render error ({}): {}", template, e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
 }
 
 // ── Helper: build breadcrumbs for catalog hierarchy ─────────────────
@@ -205,32 +215,46 @@ pub async fn catalogs(
     let offset = params.page * max_items;
 
     let subcatalogs = if cat_id == 0 {
-        catalogs::get_root_catalogs(&state.db).await.unwrap_or_default()
+        catalogs::get_root_catalogs(&state.db)
+            .await
+            .unwrap_or_default()
     } else {
-        catalogs::get_children(&state.db, cat_id).await.unwrap_or_default()
+        catalogs::get_children(&state.db, cat_id)
+            .await
+            .unwrap_or_default()
     };
 
     let (catalog_books, book_total) = if cat_id > 0 {
-        let bks = books::get_by_catalog(&state.db, cat_id, max_items, offset).await.unwrap_or_default();
-        let cnt = books::count_by_catalog(&state.db, cat_id).await.unwrap_or(0);
+        let bks = books::get_by_catalog(&state.db, cat_id, max_items, offset)
+            .await
+            .unwrap_or_default();
+        let cnt = books::count_by_catalog(&state.db, cat_id)
+            .await
+            .unwrap_or(0);
         (bks, cnt)
     } else {
         (vec![], 0)
     };
 
-    let mut entries: Vec<CatalogEntry> = subcatalogs.iter().map(|c| CatalogEntry {
-        id: c.id,
-        cat_name: c.cat_name.clone(),
-        cat_type: c.cat_type,
-        is_catalog: true,
-        title: None,
-        format: None,
-        authors_str: None,
-    }).collect();
+    let mut entries: Vec<CatalogEntry> = subcatalogs
+        .iter()
+        .map(|c| CatalogEntry {
+            id: c.id,
+            cat_name: c.cat_name.clone(),
+            cat_type: c.cat_type,
+            is_catalog: true,
+            title: None,
+            format: None,
+            authors_str: None,
+        })
+        .collect();
 
     for book in &catalog_books {
-        let book_authors = authors::get_for_book(&state.db, book.id).await.unwrap_or_default();
-        let authors_str = book_authors.iter()
+        let book_authors = authors::get_for_book(&state.db, book.id)
+            .await
+            .unwrap_or_default();
+        let authors_str = book_authors
+            .iter()
             .map(|a| a.full_name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
@@ -272,7 +296,9 @@ pub async fn search_books(
     let (raw_books, total) = match params.search_type.as_str() {
         "a" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_author(&state.db, id, max_items, offset).await.unwrap_or_default();
+            let bks = books::get_by_author(&state.db, id, max_items, offset)
+                .await
+                .unwrap_or_default();
             let cnt = books::count_by_author(&state.db, id).await.unwrap_or(0);
             if let Ok(Some(author)) = authors::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &author.full_name);
@@ -281,7 +307,9 @@ pub async fn search_books(
         }
         "s" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_series(&state.db, id, max_items, offset).await.unwrap_or_default();
+            let bks = books::get_by_series(&state.db, id, max_items, offset)
+                .await
+                .unwrap_or_default();
             let cnt = books::count_by_series(&state.db, id).await.unwrap_or(0);
             if let Ok(Some(ser)) = series::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &ser.ser_name);
@@ -290,7 +318,9 @@ pub async fn search_books(
         }
         "g" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_genre(&state.db, id, max_items, offset).await.unwrap_or_default();
+            let bks = books::get_by_genre(&state.db, id, max_items, offset)
+                .await
+                .unwrap_or_default();
             let cnt = books::count_by_genre(&state.db, id).await.unwrap_or(0);
             if let Ok(Some(genre)) = genres::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &genre.subsection);
@@ -299,14 +329,20 @@ pub async fn search_books(
         }
         "b" => {
             let term = params.q.to_uppercase();
-            let bks = books::search_by_title_prefix(&state.db, &term, max_items, offset).await.unwrap_or_default();
-            let cnt = books::count_by_title_prefix(&state.db, &term).await.unwrap_or(0);
+            let bks = books::search_by_title_prefix(&state.db, &term, max_items, offset)
+                .await
+                .unwrap_or_default();
+            let cnt = books::count_by_title_prefix(&state.db, &term)
+                .await
+                .unwrap_or(0);
             (bks, cnt)
         }
         "i" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_id(&state.db, id).await
-                .ok().flatten()
+            let bks = books::get_by_id(&state.db, id)
+                .await
+                .ok()
+                .flatten()
                 .map(|b| vec![b])
                 .unwrap_or_default();
             let cnt = bks.len() as i64;
@@ -314,8 +350,12 @@ pub async fn search_books(
         }
         _ => {
             let term = params.q.to_uppercase();
-            let bks = books::search_by_title(&state.db, &term, max_items, offset).await.unwrap_or_default();
-            let cnt = books::count_by_title_search(&state.db, &term).await.unwrap_or(0);
+            let bks = books::search_by_title(&state.db, &term, max_items, offset)
+                .await
+                .unwrap_or_default();
+            let cnt = books::count_by_title_search(&state.db, &term)
+                .await
+                .unwrap_or(0);
             (bks, cnt)
         }
     };
@@ -331,7 +371,14 @@ pub async fn search_books(
     ctx.insert("pagination", &pagination);
     ctx.insert("search_type", &params.search_type);
     ctx.insert("search_terms", &params.q);
-    ctx.insert("pagination_qs", &format!("type={}&q={}&", params.search_type, urlencoding::encode(&params.q)));
+    ctx.insert(
+        "pagination_qs",
+        &format!(
+            "type={}&q={}&",
+            params.search_type,
+            urlencoding::encode(&params.q)
+        ),
+    );
 
     render(&state.tera, "web/books.html", &ctx)
 }
@@ -346,11 +393,17 @@ pub async fn books_browse(
 
     let prefix = params.chars.to_uppercase();
     let groups = books::get_title_prefix_groups(&state.db, params.lang, &prefix)
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
 
-    let prefix_groups: Vec<PrefixGroup> = groups.into_iter().map(|(p, cnt)| {
-        PrefixGroup { prefix: p, count: cnt, drill_deeper: cnt >= split_items }
-    }).collect();
+    let prefix_groups: Vec<PrefixGroup> = groups
+        .into_iter()
+        .map(|(p, cnt)| PrefixGroup {
+            prefix: p,
+            count: cnt,
+            drill_deeper: cnt >= split_items,
+        })
+        .collect();
 
     ctx.insert("groups", &prefix_groups);
     ctx.insert("lang", &params.lang);
@@ -373,11 +426,17 @@ pub async fn authors_browse(
 
     let prefix = params.chars.to_uppercase();
     let groups = authors::get_name_prefix_groups(&state.db, params.lang, &prefix)
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
 
-    let prefix_groups: Vec<PrefixGroup> = groups.into_iter().map(|(p, cnt)| {
-        PrefixGroup { prefix: p, count: cnt, drill_deeper: cnt >= split_items }
-    }).collect();
+    let prefix_groups: Vec<PrefixGroup> = groups
+        .into_iter()
+        .map(|(p, cnt)| PrefixGroup {
+            prefix: p,
+            count: cnt,
+            drill_deeper: cnt >= split_items,
+        })
+        .collect();
 
     ctx.insert("groups", &prefix_groups);
     ctx.insert("lang", &params.lang);
@@ -400,11 +459,17 @@ pub async fn series_browse(
 
     let prefix = params.chars.to_uppercase();
     let groups = series::get_name_prefix_groups(&state.db, params.lang, &prefix)
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
 
-    let prefix_groups: Vec<PrefixGroup> = groups.into_iter().map(|(p, cnt)| {
-        PrefixGroup { prefix: p, count: cnt, drill_deeper: cnt >= split_items }
-    }).collect();
+    let prefix_groups: Vec<PrefixGroup> = groups
+        .into_iter()
+        .map(|(p, cnt)| PrefixGroup {
+            prefix: p,
+            count: cnt,
+            drill_deeper: cnt >= split_items,
+        })
+        .collect();
 
     ctx.insert("groups", &prefix_groups);
     ctx.insert("lang", &params.lang);
@@ -427,21 +492,26 @@ pub async fn genres(
     match params.section {
         None => {
             let sections = genres::get_sections_with_counts(&state.db)
-                .await.unwrap_or_default();
+                .await
+                .unwrap_or_default();
             ctx.insert("sections", &sections);
             ctx.insert("is_top_level", &true);
         }
         Some(ref section) => {
             let subsections = genres::get_by_section_with_counts(&state.db, section)
-                .await.unwrap_or_default();
-            let items: Vec<serde_json::Value> = subsections.into_iter().map(|(g, cnt)| {
-                serde_json::json!({
-                    "id": g.id,
-                    "subsection": g.subsection,
-                    "code": g.code,
-                    "count": cnt,
+                .await
+                .unwrap_or_default();
+            let items: Vec<serde_json::Value> = subsections
+                .into_iter()
+                .map(|(g, cnt)| {
+                    serde_json::json!({
+                        "id": g.id,
+                        "subsection": g.subsection,
+                        "code": g.code,
+                        "count": cnt,
+                    })
                 })
-            }).collect();
+                .collect();
             ctx.insert("subsections", &items);
             ctx.insert("is_top_level", &false);
             ctx.insert("section_name", section);
@@ -462,13 +532,17 @@ pub async fn search_authors(
 
     let term = params.q.to_uppercase();
     let items = authors::search_by_name(&state.db, &term, max_items, offset)
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
     let total = authors::count_by_name_search(&state.db, &term)
-        .await.unwrap_or(0);
+        .await
+        .unwrap_or(0);
 
     let mut enriched: Vec<serde_json::Value> = Vec::new();
     for author in &items {
-        let book_count = books::count_by_author(&state.db, author.id).await.unwrap_or(0);
+        let book_count = books::count_by_author(&state.db, author.id)
+            .await
+            .unwrap_or(0);
         enriched.push(serde_json::json!({
             "id": author.id,
             "full_name": author.full_name,
@@ -481,7 +555,14 @@ pub async fn search_authors(
     ctx.insert("authors", &enriched);
     ctx.insert("pagination", &pagination);
     ctx.insert("search_terms", &params.q);
-    ctx.insert("pagination_qs", &format!("type={}&q={}&", params.search_type, urlencoding::encode(&params.q)));
+    ctx.insert(
+        "pagination_qs",
+        &format!(
+            "type={}&q={}&",
+            params.search_type,
+            urlencoding::encode(&params.q)
+        ),
+    );
 
     render(&state.tera, "web/authors.html", &ctx)
 }
@@ -497,9 +578,11 @@ pub async fn search_series(
 
     let term = params.q.to_uppercase();
     let items = series::search_by_name(&state.db, &term, max_items, offset)
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
     let total = series::count_by_name_search(&state.db, &term)
-        .await.unwrap_or(0);
+        .await
+        .unwrap_or(0);
 
     let mut enriched: Vec<serde_json::Value> = Vec::new();
     for ser in &items {
@@ -516,7 +599,14 @@ pub async fn search_series(
     ctx.insert("series_list", &enriched);
     ctx.insert("pagination", &pagination);
     ctx.insert("search_terms", &params.q);
-    ctx.insert("pagination_qs", &format!("type={}&q={}&", params.search_type, urlencoding::encode(&params.q)));
+    ctx.insert(
+        "pagination_qs",
+        &format!(
+            "type={}&q={}&",
+            params.search_type,
+            urlencoding::encode(&params.q)
+        ),
+    );
 
     render(&state.tera, "web/series.html", &ctx)
 }

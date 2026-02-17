@@ -3,8 +3,8 @@ pub mod i18n;
 pub mod pagination;
 pub mod views;
 
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 
 use crate::state::AppState;
 

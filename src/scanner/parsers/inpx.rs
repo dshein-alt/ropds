@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::Path;
 
-use super::{strip_meta, BookMeta};
+use super::{BookMeta, strip_meta};
 
 const INPX_SEPARATOR: u8 = 0x04;
 
@@ -94,7 +94,12 @@ fn parse_inp(reader: impl BufRead, folder: &str, out: &mut Vec<InpxRecord>) {
         // Authors: colon-separated, commas replaced with spaces
         let authors: Vec<String> = fields[I_AUTHOR]
             .split(':')
-            .map(|a| a.replace(',', " ").split_whitespace().collect::<Vec<_>>().join(" "))
+            .map(|a| {
+                a.replace(',', " ")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
             .filter(|a| !a.is_empty())
             .collect();
 
@@ -112,10 +117,7 @@ fn parse_inp(reader: impl BufRead, folder: &str, out: &mut Vec<InpxRecord>) {
             .map(|s| strip_meta(s))
             .filter(|s| !s.is_empty());
 
-        let series_index = fields[I_SERNO]
-            .trim()
-            .parse::<i32>()
-            .unwrap_or(0);
+        let series_index = fields[I_SERNO].trim().parse::<i32>().unwrap_or(0);
 
         let size = fields[I_SIZE].trim().parse::<i64>().unwrap_or(0);
 

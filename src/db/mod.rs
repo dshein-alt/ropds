@@ -35,12 +35,8 @@ pub async fn create_pool(config: &DatabaseConfig) -> Result<DbPool, sqlx::Error>
 
 /// Set SQLite pragmas for WAL journal mode and foreign key enforcement.
 async fn configure_sqlite(pool: &DbPool) -> Result<(), sqlx::Error> {
-    sqlx::query("PRAGMA journal_mode=WAL")
-        .execute(pool)
-        .await?;
-    sqlx::query("PRAGMA foreign_keys=ON")
-        .execute(pool)
-        .await?;
+    sqlx::query("PRAGMA journal_mode=WAL").execute(pool).await?;
+    sqlx::query("PRAGMA foreign_keys=ON").execute(pool).await?;
     Ok(())
 }
 

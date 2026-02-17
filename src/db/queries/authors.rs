@@ -85,11 +85,7 @@ pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
     Ok(row.0)
 }
 
-pub async fn link_book(
-    pool: &DbPool,
-    book_id: i64,
-    author_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn link_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT OR IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)")
         .bind(book_id)
         .bind(author_id)
@@ -112,12 +108,10 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Author>, sq
 /// Count authors matching a name search (contains).
 pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM authors WHERE search_full_name LIKE ?",
-    )
-    .bind(&pattern)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM authors WHERE search_full_name LIKE ?")
+        .bind(&pattern)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 

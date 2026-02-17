@@ -13,12 +13,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
-        config: Config,
-        db: DbPool,
-        tera: tera::Tera,
-        translations: Translations,
-    ) -> Self {
+    pub fn new(config: Config, db: DbPool, tera: tera::Tera, translations: Translations) -> Self {
         Self {
             config: Arc::new(config),
             db,

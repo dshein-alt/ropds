@@ -25,12 +25,10 @@ pub async fn get_sections(pool: &DbPool) -> Result<Vec<String>, sqlx::Error> {
 }
 
 pub async fn get_by_section(pool: &DbPool, section: &str) -> Result<Vec<Genre>, sqlx::Error> {
-    sqlx::query_as::<_, Genre>(
-        "SELECT * FROM genres WHERE section = ? ORDER BY subsection",
-    )
-    .bind(section)
-    .fetch_all(pool)
-    .await
+    sqlx::query_as::<_, Genre>("SELECT * FROM genres WHERE section = ? ORDER BY subsection")
+        .bind(section)
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn get_all(pool: &DbPool) -> Result<Vec<Genre>, sqlx::Error> {
@@ -46,11 +44,7 @@ pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
     Ok(row.0)
 }
 
-pub async fn link_book(
-    pool: &DbPool,
-    book_id: i64,
-    genre_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn link_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)")
         .bind(book_id)
         .bind(genre_id)
@@ -61,11 +55,7 @@ pub async fn link_book(
 
 /// Link a book to a genre by genre code. If the code doesn't match
 /// any seeded genre, the link is silently skipped.
-pub async fn link_book_by_code(
-    pool: &DbPool,
-    book_id: i64,
-    code: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn link_book_by_code(pool: &DbPool, book_id: i64, code: &str) -> Result<(), sqlx::Error> {
     if let Some(genre) = get_by_code(pool, code).await? {
         link_book(pool, book_id, genre.id).await?;
     }
@@ -118,7 +108,15 @@ pub async fn get_by_section_with_counts(
     Ok(rows
         .into_iter()
         .map(|(id, code, section, subsection, cnt)| {
-            (Genre { id, code, section, subsection }, cnt)
+            (
+                Genre {
+                    id,
+                    code,
+                    section,
+                    subsection,
+                },
+                cnt,
+            )
         })
         .collect())
 }

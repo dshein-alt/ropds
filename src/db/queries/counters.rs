@@ -16,13 +16,11 @@ pub async fn get_all(pool: &DbPool) -> Result<Vec<Counter>, sqlx::Error> {
 }
 
 pub async fn set(pool: &DbPool, name: &str, value: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE counters SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
-    )
-    .bind(value)
-    .bind(name)
-    .execute(pool)
-    .await?;
+    sqlx::query("UPDATE counters SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?")
+        .bind(value)
+        .bind(name)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -37,10 +35,9 @@ pub async fn update_all(pool: &DbPool) -> Result<(), sqlx::Error> {
     let authors: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM authors")
         .fetch_one(pool)
         .await?;
-    let genres: (i64,) =
-        sqlx::query_as("SELECT COUNT(DISTINCT genre_id) FROM book_genres")
-            .fetch_one(pool)
-            .await?;
+    let genres: (i64,) = sqlx::query_as("SELECT COUNT(DISTINCT genre_id) FROM book_genres")
+        .fetch_one(pool)
+        .await?;
     let series: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM series")
         .fetch_one(pool)
         .await?;

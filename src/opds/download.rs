@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read, Write};
 
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
 use crate::db::models;
@@ -74,7 +74,8 @@ fn read_book_file(
             let mut archive = zip::ZipArchive::new(reader)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-            let mut entry = archive.by_name(filename)
+            let mut entry = archive
+                .by_name(filename)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
 
             let mut data = Vec::new();

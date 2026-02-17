@@ -90,21 +90,16 @@ pub async fn link_book(
     series_id: i64,
     ser_no: i32,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)",
-    )
-    .bind(book_id)
-    .bind(series_id)
-    .bind(ser_no)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT OR IGNORE INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)")
+        .bind(book_id)
+        .bind(series_id)
+        .bind(ser_no)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
-pub async fn get_for_book(
-    pool: &DbPool,
-    book_id: i64,
-) -> Result<Vec<(Series, i32)>, sqlx::Error> {
+pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<(Series, i32)>, sqlx::Error> {
     let rows: Vec<(i64, String, String, i32, i32)> = sqlx::query_as(
         "SELECT s.id, s.ser_name, s.search_ser, s.lang_code, bs.ser_no \
          FROM series s JOIN book_series bs ON bs.series_id = s.id \
@@ -133,12 +128,10 @@ pub async fn get_for_book(
 /// Count series matching a name search (contains).
 pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM series WHERE search_ser LIKE ?",
-    )
-    .bind(&pattern)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM series WHERE search_ser LIKE ?")
+        .bind(&pattern)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 

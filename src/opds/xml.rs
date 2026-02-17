@@ -157,7 +157,12 @@ impl FeedBuilder {
     }
 
     /// Begin a book acquisition entry.
-    pub fn begin_entry(&mut self, id: &str, title: &str, updated: &str) -> Result<(), quick_xml::Error> {
+    pub fn begin_entry(
+        &mut self,
+        id: &str,
+        title: &str,
+        updated: &str,
+    ) -> Result<(), quick_xml::Error> {
         self.writer
             .write_event(Event::Start(BytesStart::new("entry")))?;
         self.write_text_element("id", id)?;
@@ -214,8 +219,7 @@ impl FeedBuilder {
         let mut el = BytesStart::new("content");
         el.push_attribute(("type", "text"));
         self.writer.write_event(Event::Start(el))?;
-        self.writer
-            .write_event(Event::Text(BytesText::new(text)))?;
+        self.writer.write_event(Event::Text(BytesText::new(text)))?;
         self.writer
             .write_event(Event::End(BytesEnd::new("content")))?;
         Ok(())
@@ -249,8 +253,7 @@ impl FeedBuilder {
 
     /// Close the </feed> and return the complete XML as bytes.
     pub fn finish(mut self) -> Result<Vec<u8>, quick_xml::Error> {
-        self.writer
-            .write_event(Event::End(BytesEnd::new("feed")))?;
+        self.writer.write_event(Event::End(BytesEnd::new("feed")))?;
         Ok(self.writer.into_inner().into_inner())
     }
 
@@ -276,10 +279,8 @@ impl FeedBuilder {
     fn write_text_element(&mut self, tag: &str, text: &str) -> Result<(), quick_xml::Error> {
         self.writer
             .write_event(Event::Start(BytesStart::new(tag)))?;
-        self.writer
-            .write_event(Event::Text(BytesText::new(text)))?;
-        self.writer
-            .write_event(Event::End(BytesEnd::new(tag)))?;
+        self.writer.write_event(Event::Text(BytesText::new(text)))?;
+        self.writer.write_event(Event::End(BytesEnd::new(tag)))?;
         Ok(())
     }
 }
