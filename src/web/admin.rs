@@ -356,20 +356,27 @@ pub async fn change_password_submit(
         None => return Redirect::to("/web/login").into_response(),
     };
 
+    let next_param = form
+        .next
+        .as_deref()
+        .filter(|n| !n.is_empty() && n.starts_with('/'))
+        .map(|n| format!("&next={}", urlencoding::encode(n)))
+        .unwrap_or_default();
+
     if !is_valid_password(&form.password) {
-        return Redirect::to("/web/change-password?error=password_short").into_response();
+        return Redirect::to(&format!("/web/change-password?error=password_short{next_param}")).into_response();
     }
 
     let hash = crate::password::hash(&form.password);
     if let Err(e) = users::update_password(&state.db, user_id, &hash).await {
         tracing::error!("Failed to update password for user {user_id}: {e}");
-        return Redirect::to("/web/change-password?error=db_error").into_response();
+        return Redirect::to(&format!("/web/change-password?error=db_error{next_param}")).into_response();
     }
 
     // Clear the forced password change flag
     if let Err(e) = users::clear_password_change_required(&state.db, user_id).await {
         tracing::error!("Failed to clear password_change_required for user {user_id}: {e}");
-        return Redirect::to("/web/change-password?error=db_error").into_response();
+        return Redirect::to(&format!("/web/change-password?error=db_error{next_param}")).into_response();
     }
 
     // Redirect to original destination or home

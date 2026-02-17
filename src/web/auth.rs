@@ -84,12 +84,14 @@ pub async fn session_auth_layer(
                 return next.run(request).await;
             }
 
-            // Check if user must change password before accessing the app
+            // Check if user must change password before accessing the app.
+            // Fail closed: DB errors are treated as "change required" to avoid
+            // bypassing enforcement when the check cannot be trusted.
             let must_change = crate::db::queries::users::password_change_required(
                 &state.db, uid,
             )
             .await
-            .unwrap_or(false);
+            .unwrap_or(true);
 
             if must_change {
                 let original_path = format!("/web{path}");
