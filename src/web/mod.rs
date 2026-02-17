@@ -3,6 +3,7 @@ pub mod auth;
 pub mod context;
 pub mod i18n;
 pub mod pagination;
+pub mod upload;
 pub mod views;
 
 use axum::Router;
@@ -51,6 +52,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/bookshelf/cards", get(views::bookshelf_cards))
         .route("/bookshelf/toggle", post(views::bookshelf_toggle))
         .route("/bookshelf/clear", post(views::bookshelf_clear))
+        .route("/upload", get(upload::upload_page))
+        .route("/upload/file", post(upload::upload_file))
+        .route("/upload/cover/{token}", get(upload::upload_cover))
+        .route("/upload/publish", post(upload::publish))
         .nest("/admin", admin_router)
         .layer(middleware::from_fn_with_state(
             state,

@@ -472,7 +472,7 @@ async fn process_inpx(
 }
 
 /// Parse a book file from disk by extension.
-fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
+pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
     match ext {
@@ -565,7 +565,7 @@ fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
 }
 
 /// Parse book metadata from in-memory bytes.
-fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMeta, ScanError> {
+pub fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMeta, ScanError> {
     match ext {
         "fb2" => {
             let reader = BufReader::new(Cursor::new(data));
@@ -712,7 +712,7 @@ fn read_zip_entries(
 }
 
 /// Ensure a catalog row exists for the given path, creating it if needed.
-async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<i64, ScanError> {
+pub async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<i64, ScanError> {
     if let Some(cat) = catalogs::find_by_path(pool, path).await? {
         return Ok(cat.id);
     }
@@ -807,7 +807,7 @@ async fn try_skip_inpx_archive(
 
 /// Insert a book record and link authors, genres, series.
 /// Saves cover image to `covers_dir` if present.
-async fn insert_book_with_meta(
+pub async fn insert_book_with_meta(
     pool: &DbPool,
     catalog_id: i64,
     filename: &str,
@@ -898,7 +898,7 @@ async fn insert_book_with_meta(
 }
 
 /// Find or create an author by name.
-async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError> {
+pub async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError> {
     if let Some(a) = authors::find_by_name(pool, full_name).await? {
         return Ok(a.id);
     }
@@ -909,7 +909,7 @@ async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError>
 }
 
 /// Find or create a series by name.
-async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> {
+pub async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> {
     if let Some(s) = series::find_by_name(pool, ser_name).await? {
         return Ok(s.id);
     }
@@ -920,7 +920,7 @@ async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> 
 }
 
 /// Save cover image bytes to disk as `{covers_dir}/{book_id}.{ext}`.
-fn save_cover(
+pub fn save_cover(
     covers_dir: &Path,
     book_id: i64,
     data: &[u8],
