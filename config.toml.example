@@ -2,6 +2,8 @@
 host = "0.0.0.0"
 port = 8081
 log_level = "info"
+session_secret = "change-me-to-a-random-string"
+session_ttl_hours = 24
 
 [library]
 root_path = "/path/to/books"
@@ -11,25 +13,24 @@ zip_codepage = "cp866"
 inpx_enable = false
 
 [database]
-url = "sqlite://sopds.db"
+url = "sqlite://ropds.db?mode=rwc"
 
 [opds]
-title = "SimpleOPDS"
+title = "Rust OPDS Server"
 subtitle = "Personal Library"
 max_items = 30
 split_items = 300
 auth_required = true
 show_covers = true
 alphabet_menu = true
-hide_doubles = false
-cache_time = 600
+hide_doubles = true
+covers_dir = "covers"
 
 [scanner]
-schedule_minutes = "0"
-schedule_hours = "0,12"
-schedule_day = "*"
-schedule_day_of_week = "*"
-delete_logical = true
+schedule_minutes = [0]
+schedule_hours = [0, 12]
+schedule_day_of_week = []
+delete_logical = false
 
 [converter]
 fb2_to_epub = ""
