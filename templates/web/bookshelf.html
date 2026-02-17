@@ -1,14 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t.nav.books }} — {{ app_title }}{% endblock %}
+{% block title %}{{ t.bookshelf.title }} — {{ app_title }}{% endblock %}
 
 {% block content %}
-  {% if search_label is defined %}
-  <h4 class="mb-3">{{ search_label }}</h4>
-  {% endif %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">{{ t.bookshelf.title }}</h4>
+    {% if books | length > 0 %}
+    <form method="post" action="/web/bookshelf/clear" id="clear-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="button" class="btn btn-outline-danger btn-sm" onclick="if(confirm('{{ t.bookshelf.confirm_clear }}')) document.getElementById('clear-form').submit();">
+        <i class="bi bi-trash me-1"></i>{{ t.bookshelf.clear_all }}
+      </button>
+    </form>
+    {% endif %}
+  </div>
 
   {% if books | length == 0 %}
-    <p class="text-body-secondary">{{ t.common.no_results }}</p>
+    <p class="text-body-secondary">{{ t.bookshelf.empty }}</p>
   {% else %}
     <div class="row g-3">
     {% for item in books %}
@@ -17,7 +25,6 @@
           <div class="card-body">
             <div class="d-flex gap-3">
 
-              {# Cover #}
               {% if show_covers %}
               <div class="flex-shrink-0">
                 {% if item.cover %}
@@ -28,11 +35,9 @@
               </div>
               {% endif %}
 
-              {# Details #}
               <div class="flex-grow-1 min-width-0">
                 <h5 class="card-title mb-1">{{ item.title }}</h5>
 
-                {# Authors #}
                 {% if item.authors | length > 0 %}
                 <div class="mb-1">
                   <i class="bi bi-person text-body-secondary me-1"></i>
@@ -42,7 +47,6 @@
                 </div>
                 {% endif %}
 
-                {# Genres #}
                 {% if item.genres | length > 0 %}
                 <div class="mb-1">
                   <i class="bi bi-tags text-body-secondary me-1"></i>
@@ -52,7 +56,6 @@
                 </div>
                 {% endif %}
 
-                {# Series #}
                 {% if item.series_list | length > 0 %}
                 <div class="mb-1">
                   <i class="bi bi-collection text-body-secondary me-1"></i>
@@ -62,7 +65,6 @@
                 </div>
                 {% endif %}
 
-                {# Metadata line #}
                 <div class="small text-body-secondary mb-2">
                   <span class="badge text-bg-secondary">{{ item.format }}</span>
                   {% if item.doubles > 1 %}<span class="badge text-bg-info">{{ item.doubles }} formats</span>{% endif %}
@@ -71,7 +73,6 @@
                   {% if item.docdate and item.docdate != "" %}· {{ item.docdate }}{% endif %}
                 </div>
 
-                {# Download buttons #}
                 <div class="btn-group btn-group-sm">
                   <a href="/web/download/{{ item.id }}/0" class="btn btn-primary">
                     <i class="bi bi-download me-1"></i>{{ item.format }}
@@ -87,19 +88,15 @@
                   {% endif %}
                 </div>
 
-                {# Star/bookshelf toggle #}
-                {% if is_authenticated %}
                 <form method="post" action="/web/bookshelf/toggle" class="d-inline ms-2">
                   <input type="hidden" name="book_id" value="{{ item.id }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <input type="hidden" name="redirect" value="{{ current_path | default(value='/web') }}">
-                  <button type="submit" class="btn btn-sm {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}">
-                    <i class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                  <input type="hidden" name="redirect" value="/web/bookshelf">
+                  <button type="submit" class="btn btn-sm btn-warning" title="{{ t.bookshelf.remove }}">
+                    <i class="bi bi-star-fill"></i>
                   </button>
                 </form>
-                {% endif %}
 
-                {# Annotation #}
                 {% if item.annotation and item.annotation != "" %}
                 <details class="mt-2">
                   <summary class="small text-body-secondary">{{ t.book.annotation }}</summary>

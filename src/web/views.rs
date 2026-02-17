@@ -31,6 +31,7 @@ pub struct BookView {
     pub authors: Vec<Author>,
     pub genres: Vec<Genre>,
     pub series_list: Vec<SeriesEntry>,
+    pub on_bookshelf: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,6 +125,7 @@ async fn enrich_book(
     state: &AppState,
     book: crate::db::models::Book,
     hide_doubles: bool,
+    shelf_ids: Option<&std::collections::HashSet<i64>>,
 ) -> BookView {
     let book_authors = authors::get_for_book(&state.db, book.id)
         .await
@@ -169,6 +171,7 @@ async fn enrich_book(
                 ser_no,
             })
             .collect(),
+        on_bookshelf: shelf_ids.map_or(false, |s| s.contains(&book.id)),
     }
 }
 
@@ -389,9 +392,21 @@ pub async fn search_books(
         }
     };
 
+    let secret = state.config.server.session_secret.as_bytes();
+    let shelf_ids = if let Some(user_id) = jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+    {
+        crate::db::queries::bookshelf::get_book_ids_for_user(&state.db, user_id)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
     let mut book_views = Vec::with_capacity(raw_books.len());
     for book in raw_books {
-        book_views.push(enrich_book(&state, book, hide_doubles).await);
+        book_views.push(enrich_book(&state, book, hide_doubles, shelf_ids.as_ref()).await);
     }
 
     let pagination = Pagination::new(params.page, max_items, total);
@@ -418,6 +433,8 @@ pub async fn search_books(
         pagination_qs.push_str(&format!("src_q={}&", urlencoding::encode(src_q)));
     }
 
+    let current_url = format!("/web/search/books?{}", pagination_qs);
+    ctx.insert("current_path", &current_url);
     ctx.insert("books", &book_views);
     ctx.insert("pagination", &pagination);
     ctx.insert("search_type", &params.search_type);
@@ -699,7 +716,12 @@ pub async fn web_download(
 
     let root = &state.config.library.root_path;
 
-    let data = match crate::opds::download::read_book_file(root, &book.path, &book.filename, book.cat_type) {
+    let data = match crate::opds::download::read_book_file(
+        root,
+        &book.path,
+        &book.filename,
+        book.cat_type,
+    ) {
         Ok(d) => d,
         Err(e) => {
             tracing::warn!("Failed to read book {}: {e}", book_id);
@@ -731,4 +753,132 @@ pub async fn web_download(
     } else {
         crate::opds::download::file_response(&data, filename, mime)
     }
+}
+
+// ── Bookshelf toggle handler ────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BookshelfToggleForm {
+    pub book_id: i64,
+    pub csrf_token: String,
+    pub redirect: Option<String>,
+}
+
+pub async fn bookshelf_toggle(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<BookshelfToggleForm>,
+) -> Response {
+    use crate::web::context::validate_csrf;
+
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
+    }
+
+    let user_id = match jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+    {
+        Some(uid) => uid,
+        None => return Redirect::to("/web/login").into_response(),
+    };
+
+    let on_shelf = bookshelf::is_on_shelf(&state.db, user_id, form.book_id)
+        .await
+        .unwrap_or(false);
+    if on_shelf {
+        let _ = bookshelf::delete_one(&state.db, user_id, form.book_id).await;
+    } else {
+        let _ = bookshelf::upsert(&state.db, user_id, form.book_id).await;
+    }
+
+    let redirect = form
+        .redirect
+        .filter(|r| !r.is_empty() && r.starts_with('/'))
+        .unwrap_or_else(|| "/web".to_string());
+    Redirect::to(&redirect).into_response()
+}
+
+// ── Bookshelf page handler ──────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BookshelfPageParams {
+    #[serde(default)]
+    pub page: i32,
+}
+
+pub async fn bookshelf_page(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(params): Query<BookshelfPageParams>,
+) -> Result<Html<String>, StatusCode> {
+    let mut ctx = build_context(&state, &jar, "bookshelf").await;
+
+    let secret = state.config.server.session_secret.as_bytes();
+    let user_id = match jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+    {
+        Some(uid) => uid,
+        None => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    let max_items = state.config.opds.max_items as i32;
+    let offset = params.page * max_items;
+    let hide_doubles = state.config.opds.hide_doubles;
+
+    let raw_books = crate::db::queries::bookshelf::get_by_user(&state.db, user_id, max_items, offset)
+        .await
+        .unwrap_or_default();
+    let total = crate::db::queries::bookshelf::count_by_user(&state.db, user_id)
+        .await
+        .unwrap_or(0);
+
+    // All books on this page are on the shelf
+    let shelf_ids: std::collections::HashSet<i64> = raw_books.iter().map(|b| b.id).collect();
+    let mut book_views = Vec::with_capacity(raw_books.len());
+    for book in raw_books {
+        book_views.push(enrich_book(&state, book, hide_doubles, Some(&shelf_ids)).await);
+    }
+
+    let pagination = Pagination::new(params.page, max_items, total);
+
+    ctx.insert("books", &book_views);
+    ctx.insert("pagination", &pagination);
+    ctx.insert("pagination_qs", "");
+    ctx.insert("current_path", "/web/bookshelf");
+
+    render(&state.tera, "web/bookshelf.html", &ctx)
+}
+
+// ── Bookshelf clear handler ─────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BookshelfClearForm {
+    pub csrf_token: String,
+}
+
+pub async fn bookshelf_clear(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<BookshelfClearForm>,
+) -> Response {
+    use crate::web::context::validate_csrf;
+
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
+    }
+
+    let user_id = match jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+    {
+        Some(uid) => uid,
+        None => return Redirect::to("/web/login").into_response(),
+    };
+
+    let _ = crate::db::queries::bookshelf::clear_all(&state.db, user_id).await;
+    Redirect::to("/web/bookshelf").into_response()
 }

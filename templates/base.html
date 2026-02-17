@@ -95,6 +95,13 @@
               <i class="bi bi-tags me-1"></i>{{ t.nav.genres }}
             </a>
           </li>
+          {% if is_authenticated %}
+          <li class="nav-item">
+            <a class="nav-link{% if active_page == 'bookshelf' %} active{% endif %}" href="/web/bookshelf">
+              <i class="bi bi-star me-1"></i>{{ t.nav.bookshelf }}
+            </a>
+          </li>
+          {% endif %}
         </ul>
 
         {# ── Search Bar ──────────────────────────────── #}

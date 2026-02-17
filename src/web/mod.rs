@@ -35,11 +35,20 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/set-language", get(views::set_language))
         .route("/login", get(auth::login_page).post(auth::login_submit))
         .route("/logout", get(auth::logout))
-        .route("/change-password", get(admin::change_password_page).post(admin::change_password_submit))
+        .route(
+            "/change-password",
+            get(admin::change_password_page).post(admin::change_password_submit),
+        )
         .route("/profile", get(admin::profile_page))
         .route("/profile/password", post(admin::profile_change_password))
-        .route("/profile/display-name", post(admin::profile_update_display_name))
+        .route(
+            "/profile/display-name",
+            post(admin::profile_update_display_name),
+        )
         .route("/download/{book_id}/{zip_flag}", get(views::web_download))
+        .route("/bookshelf", get(views::bookshelf_page))
+        .route("/bookshelf/toggle", post(views::bookshelf_toggle))
+        .route("/bookshelf/clear", post(views::bookshelf_clear))
         .nest("/admin", admin_router)
         .layer(middleware::from_fn_with_state(
             state,
