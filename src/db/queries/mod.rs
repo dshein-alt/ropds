@@ -4,3 +4,4 @@ pub mod catalogs;
 pub mod counters;
 pub mod genres;
 pub mod series;
+pub mod users;
