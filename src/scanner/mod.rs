@@ -133,10 +133,22 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
         }
     }
 
-    // Step 3: Delete books still at avail <= 1
-    let deleted = books::delete_unavailable(pool).await?;
-    stats.books_deleted = deleted;
-    info!("Deleted {deleted} unavailable books");
+    // Step 3: Handle books not found during scan (avail <= 1)
+    if config.scanner.delete_logical {
+        let deleted = books::logical_delete_unavailable(pool).await?;
+        stats.books_deleted = deleted;
+        info!("Logically deleted {deleted} unavailable books");
+    } else {
+        // Get IDs before deletion so we can remove cover files
+        let ids = books::get_unavailable_ids(pool).await?;
+        let deleted = books::physical_delete_unavailable(pool).await?;
+        stats.books_deleted = deleted;
+        // Remove cover files from disk
+        for id in &ids {
+            delete_cover(covers_dir, *id);
+        }
+        info!("Physically deleted {deleted} unavailable books, removed {} covers", ids.len());
+    }
 
     // Step 4: Update counters
     counters::update_all(pool).await?;
@@ -727,6 +739,18 @@ fn mime_to_ext(mime: &str) -> &str {
         "image/png" => "png",
         "image/gif" => "gif",
         _ => "jpg",
+    }
+}
+
+/// Remove cover file for a book (tries all known extensions).
+fn delete_cover(covers_dir: &Path, book_id: i64) {
+    for ext in &["jpg", "png", "gif"] {
+        let path = covers_dir.join(format!("{book_id}.{ext}"));
+        if path.exists() {
+            if let Err(e) = fs::remove_file(&path) {
+                warn!("Failed to remove cover {}: {e}", path.display());
+            }
+        }
     }
 }
 
