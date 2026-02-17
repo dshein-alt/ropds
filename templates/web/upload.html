@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t.upload.title }} — {{ app_title }}{% endblock %}
+
+{% block content %}
+<style>
+  .upload-dropzone {
+    border: 2px dashed var(--bs-border-color);
+    border-radius: var(--bs-border-radius-lg);
+    transition: border-color 0.2s, background-color 0.2s;
+    cursor: pointer;
+  }
+  .upload-dropzone.drag-over {
+    border-color: var(--bs-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.05);
+  }
+</style>
+
+<h2 class="mb-4"><i class="bi bi-cloud-arrow-up me-2"></i>{{ t.upload.title }}</h2>
+
+{# ── Alert Area ──────────────────────────────────── #}
+<div id="upload-alert" class="alert alert-dismissible fade show d-none" role="alert">
+  <span id="upload-alert-text"></span>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+
+    {# ── Drop Zone ──────────────────────────────────── #}
+    <div id="upload-dropzone" class="upload-dropzone text-center p-5 mb-3">
+      <input type="file" id="upload-file-input" class="d-none" accept="{{ accepted_extensions }}">
+
+      <div id="dropzone-prompt">
+        <i class="bi bi-cloud-arrow-up display-1 text-body-secondary"></i>
+        <p class="mt-3 mb-1 fs-5">{{ t.upload.select_file }}</p>
+        <p class="text-body-secondary small mb-2">
+          {{ t.upload.supported_formats }}: <strong>{{ supported_formats }}</strong>
+        </p>
+        <p class="text-body-secondary small mb-3">
+          {{ t.upload.max_size }}: <strong>{{ max_upload_size_mb }} MB</strong>
+        </p>
+        <button type="button" id="browse-btn" class="btn btn-outline-primary">
+          <i class="bi bi-folder2-open me-1"></i>Browse
+        </button>
+      </div>
+
+      <div id="dropzone-overlay" class="d-none">
+        <i class="bi bi-download display-1 text-primary"></i>
+        <p class="mt-3 fs-5 text-primary fw-semibold">{{ t.upload.drop_here }}</p>
+      </div>
+
+      <div id="dropzone-file-info" class="d-none mt-3">
+        <span class="badge bg-secondary fs-6 me-1" id="file-name-badge"></span>
+        <span class="badge bg-info fs-6" id="file-size-badge"></span>
+      </div>
+    </div>
+
+    {# ── Action Buttons ────────────────────────────── #}
+    <div class="d-flex gap-2 mb-4">
+      <button type="button" id="upload-btn" class="btn btn-primary" disabled>
+        <span id="upload-btn-text">
+          <i class="bi bi-upload me-1"></i>{{ t.upload.upload_btn }}
+        </span>
+        <span id="upload-btn-spinner" class="d-none">
+          <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+          {{ t.upload.uploading }}
+        </span>
+      </button>
+      <button type="button" id="publish-btn" class="btn btn-success" disabled>
+        <span id="publish-btn-text">
+          <i class="bi bi-check-lg me-1"></i>{{ t.upload.publish_btn }}
+        </span>
+        <span id="publish-btn-spinner" class="d-none">
+          <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+          {{ t.upload.publishing }}
+        </span>
+      </button>
+    </div>
+
+    {# ── Metadata Preview Card ─────────────────────── #}
+    <div id="meta-card" class="card d-none mb-4">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>{{ t.upload.book_title }}</h5>
+      </div>
+      <div class="card-body">
+        <div class="d-flex gap-3">
+          <div id="meta-cover-wrap" class="d-none flex-shrink-0">
+            <img id="meta-cover" alt="" class="rounded" style="max-height: 180px; max-width: 120px; object-fit: cover;">
+          </div>
+          <div class="flex-grow-1">
+            <table class="table table-sm mb-0">
+              <tbody>
+                <tr>
+                  <td class="text-body-secondary" style="width: 35%">{{ t.upload.book_title }}</td>
+                  <td id="meta-title" class="fw-medium"></td>
+                </tr>
+                <tr>
+                  <td class="text-body-secondary">{{ t.upload.book_authors }}</td>
+                  <td id="meta-authors"></td>
+                </tr>
+                <tr>
+                  <td class="text-body-secondary">{{ t.upload.book_format }}</td>
+                  <td id="meta-format"></td>
+                </tr>
+                <tr>
+                  <td class="text-body-secondary">{{ t.upload.book_size }}</td>
+                  <td id="meta-size"></td>
+                </tr>
+                <tr>
+                  <td class="text-body-secondary">{{ t.upload.book_language }}</td>
+                  <td id="meta-lang"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  const csrfToken     = "{{ csrf_token }}";
+  const maxSizeMB     = {{ max_upload_size_mb }};
+  const maxSizeBytes  = maxSizeMB * 1024 * 1024;
+
+  // Translation strings (rendered by Tera before JS executes)
+  const MSG = {
+    errorNoFile:     "{{ t.upload.error_no_file }}",
+    errorTooLarge:   "{{ t.upload.error_too_large }}",
+    errorUnsupported:"{{ t.upload.error_unsupported }}",
+    errorUpload:     "{{ t.upload.error_upload }}",
+    errorPublish:    "{{ t.upload.error_publish }}",
+    success:         "{{ t.upload.success }}"
+  };
+
+  // DOM refs
+  const dropzone       = document.getElementById("upload-dropzone");
+  const fileInput      = document.getElementById("upload-file-input");
+  const browseBtn      = document.getElementById("browse-btn");
+  const dropzonePrompt = document.getElementById("dropzone-prompt");
+  const dropzoneOverlay= document.getElementById("dropzone-overlay");
+  const dropzoneInfo   = document.getElementById("dropzone-file-info");
+  const fileNameBadge  = document.getElementById("file-name-badge");
+  const fileSizeBadge  = document.getElementById("file-size-badge");
+  const uploadBtn      = document.getElementById("upload-btn");
+  const uploadBtnText  = document.getElementById("upload-btn-text");
+  const uploadBtnSpin  = document.getElementById("upload-btn-spinner");
+  const publishBtn     = document.getElementById("publish-btn");
+  const publishBtnText = document.getElementById("publish-btn-text");
+  const publishBtnSpin = document.getElementById("publish-btn-spinner");
+  const metaCard       = document.getElementById("meta-card");
+  const metaCoverWrap  = document.getElementById("meta-cover-wrap");
+  const metaCover      = document.getElementById("meta-cover");
+  const metaTitle      = document.getElementById("meta-title");
+  const metaAuthors    = document.getElementById("meta-authors");
+  const metaFormat     = document.getElementById("meta-format");
+  const metaSize       = document.getElementById("meta-size");
+  const metaLang       = document.getElementById("meta-lang");
+  const alertBox       = document.getElementById("upload-alert");
+  const alertText      = document.getElementById("upload-alert-text");
+
+  let selectedFile = null;
+  let uploadToken  = null;
+
+  // ── Helpers ────────────────────────────────────────
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function showAlert(msg, type) {
+    alertBox.className = "alert alert-dismissible fade show alert-" + type;
+    alertText.textContent = msg;
+    alertBox.classList.remove("d-none");
+  }
+
+  function hideAlert() {
+    alertBox.classList.add("d-none");
+  }
+
+  function setButtonLoading(btn, textEl, spinEl, loading) {
+    btn.disabled = loading;
+    textEl.classList.toggle("d-none", loading);
+    spinEl.classList.toggle("d-none", !loading);
+  }
+
+  function resetForm() {
+    selectedFile = null;
+    uploadToken  = null;
+    fileInput.value = "";
+    dropzoneInfo.classList.add("d-none");
+    metaCard.classList.add("d-none");
+    metaCoverWrap.classList.add("d-none");
+    uploadBtn.disabled  = true;
+    publishBtn.disabled = true;
+  }
+
+  // ── File Selection ─────────────────────────────────
+
+  function handleFile(file) {
+    hideAlert();
+
+    if (file.size > maxSizeBytes) {
+      showAlert(MSG.errorTooLarge, "danger");
+      return;
+    }
+
+    selectedFile = file;
+    uploadToken  = null;
+
+    // Show file info badges
+    fileNameBadge.textContent = file.name;
+    fileSizeBadge.textContent = formatSize(file.size);
+    dropzoneInfo.classList.remove("d-none");
+
+    // Enable Upload, disable Publish
+    uploadBtn.disabled  = false;
+    publishBtn.disabled = true;
+    metaCard.classList.add("d-none");
+  }
+
+  browseBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    fileInput.click();
+  });
+
+  dropzone.addEventListener("click", function() {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener("change", function() {
+    if (fileInput.files.length > 0) {
+      handleFile(fileInput.files[0]);
+    }
+  });
+
+  // ── Drag and Drop ──────────────────────────────────
+
+  let dragCounter = 0;
+
+  dropzone.addEventListener("dragenter", function(e) {
+    e.preventDefault();
+    dragCounter++;
+    dropzone.classList.add("drag-over");
+    dropzoneOverlay.classList.remove("d-none");
+    dropzonePrompt.classList.add("d-none");
+  });
+
+  dropzone.addEventListener("dragover", function(e) {
+    e.preventDefault();
+  });
+
+  dropzone.addEventListener("dragleave", function(e) {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      dropzone.classList.remove("drag-over");
+      dropzoneOverlay.classList.add("d-none");
+      dropzonePrompt.classList.remove("d-none");
+    }
+  });
+
+  dropzone.addEventListener("drop", function(e) {
+    e.preventDefault();
+    dragCounter = 0;
+    dropzone.classList.remove("drag-over");
+    dropzoneOverlay.classList.add("d-none");
+    dropzonePrompt.classList.remove("d-none");
+
+    if (e.dataTransfer.files.length > 0) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  // ── Upload ─────────────────────────────────────────
+
+  uploadBtn.addEventListener("click", async function() {
+    if (!selectedFile) {
+      showAlert(MSG.errorNoFile, "warning");
+      return;
+    }
+
+    hideAlert();
+    setButtonLoading(uploadBtn, uploadBtnText, uploadBtnSpin, true);
+    publishBtn.disabled = true;
+
+    try {
+      const fd = new FormData();
+      fd.append("file", selectedFile);
+      fd.append("csrf_token", csrfToken);
+
+      const resp = await fetch("/web/upload/file", { method: "POST", body: fd });
+      const data = await resp.json();
+
+      if (!data.success) {
+        showAlert(data.error || MSG.errorUpload, "danger");
+        return;
+      }
+
+      uploadToken = data.token;
+
+      // Populate metadata preview
+      const m = data.meta;
+      metaTitle.textContent   = m.title || "";
+      metaAuthors.textContent = m.authors || "";
+      metaFormat.textContent  = m.format || "";
+      metaSize.textContent    = m.size || "";
+      metaLang.textContent    = m.lang || "";
+
+      if (m.has_cover) {
+        metaCover.src = "/web/upload/cover/" + uploadToken;
+        metaCoverWrap.classList.remove("d-none");
+      } else {
+        metaCoverWrap.classList.add("d-none");
+      }
+
+      metaCard.classList.remove("d-none");
+      publishBtn.disabled = false;
+
+    } catch (err) {
+      showAlert(MSG.errorUpload, "danger");
+    } finally {
+      setButtonLoading(uploadBtn, uploadBtnText, uploadBtnSpin, false);
+    }
+  });
+
+  // ── Publish ────────────────────────────────────────
+
+  publishBtn.addEventListener("click", async function() {
+    if (!uploadToken) return;
+
+    hideAlert();
+    setButtonLoading(publishBtn, publishBtnText, publishBtnSpin, true);
+    uploadBtn.disabled = true;
+
+    try {
+      const resp = await fetch("/web/upload/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "token=" + encodeURIComponent(uploadToken) + "&csrf_token=" + encodeURIComponent(csrfToken)
+      });
+      const data = await resp.json();
+
+      if (!data.success) {
+        showAlert(data.error || MSG.errorPublish, "danger");
+        publishBtn.disabled = false;
+        uploadBtn.disabled = false;
+        return;
+      }
+
+      showAlert(MSG.success, "success");
+      resetForm();
+
+    } catch (err) {
+      showAlert(MSG.errorPublish, "danger");
+      publishBtn.disabled = false;
+      uploadBtn.disabled = false;
+    } finally {
+      setButtonLoading(publishBtn, publishBtnText, publishBtnSpin, false);
+    }
+  });
+
+})();
+</script>
+{% endblock %}
