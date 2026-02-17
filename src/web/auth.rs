@@ -156,6 +156,10 @@ pub async fn login_submit(
     // Get user_id for the session
     let user_id = get_user_id(&state.db, &form.username).await.unwrap_or(0);
 
+    // Record login timestamp
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let _ = crate::db::queries::users::update_last_login(&state.db, user_id, &now).await;
+
     let secret = state.config.server.session_secret.as_bytes();
     let ttl = state.config.server.session_ttl_hours;
     let token = sign_session(user_id, secret, ttl);
@@ -174,7 +178,14 @@ pub async fn login_submit(
 }
 
 /// GET /web/logout — clear session and redirect to login.
-pub async fn logout(jar: CookieJar) -> impl IntoResponse {
+pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> impl IntoResponse {
+    // Clear last_login if we can identify the user
+    let secret = state.config.server.session_secret.as_bytes();
+    if let Some(cookie) = jar.get("session") {
+        if let Some(user_id) = verify_session(cookie.value(), secret) {
+            let _ = crate::db::queries::users::clear_last_login(&state.db, user_id).await;
+        }
+    }
     let cookie = Cookie::build(("session", "")).path("/web").http_only(true);
     (jar.remove(cookie), Redirect::to("/web/login"))
 }
