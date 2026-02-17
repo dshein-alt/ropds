@@ -7,7 +7,7 @@ session_ttl_hours = 24
 
 [library]
 root_path = "/path/to/books"
-book_extensions = ["fb2", "epub", "mobi", "pdf", "djvu", "doc", "docx", "zip"]
+book_extensions = ["fb2", "epub", "mobi", "pdf", "djvu", "zip"]
 scan_zip = true
 zip_codepage = "cp866"
 inpx_enable = false
