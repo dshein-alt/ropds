@@ -12,6 +12,8 @@ pub struct Config {
     pub converter: ConverterConfig,
     #[serde(default)]
     pub web: WebConfig,
+    #[serde(default)]
+    pub upload: UploadConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +104,19 @@ pub struct WebConfig {
     pub language: String,
     #[serde(default = "default_theme")]
     pub theme: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct UploadConfig {
+    /// Master switch for upload functionality.
+    #[serde(default)]
+    pub allow_upload: bool,
+    /// Directory where uploaded books are stored before being moved to root_path.
+    #[serde(default)]
+    pub upload_path: PathBuf,
+    /// Maximum upload file size in megabytes (default 100).
+    #[serde(default = "default_max_upload_size_mb")]
+    pub max_upload_size_mb: u64,
 }
 
 impl Default for WebConfig {
@@ -204,6 +219,10 @@ fn default_session_ttl_hours() -> u64 {
 
 fn default_temp_dir() -> PathBuf {
     PathBuf::from("/tmp")
+}
+
+fn default_max_upload_size_mb() -> u64 {
+    100
 }
 
 fn default_language() -> String {

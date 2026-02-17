@@ -133,6 +133,48 @@ async fn main() {
         std::process::exit(1);
     }
 
+    // Validate upload configuration
+    if config.upload.allow_upload {
+        if config.upload.upload_path.as_os_str().is_empty() {
+            tracing::error!(
+                "Upload enabled but 'upload_path' is not set in [upload] config"
+            );
+            std::process::exit(1);
+        }
+
+        if !config.upload.upload_path.exists() {
+            if let Err(e) = std::fs::create_dir_all(&config.upload.upload_path) {
+                tracing::error!(
+                    "Upload enabled but failed to create upload_path '{}': {e}",
+                    config.upload.upload_path.display()
+                );
+                std::process::exit(1);
+            }
+            tracing::info!(
+                "Created upload directory: {}",
+                config.upload.upload_path.display()
+            );
+        }
+
+        let test_file = config.upload.upload_path.join(".ropds_write_test");
+        match std::fs::File::create(&test_file) {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&test_file);
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Upload enabled but upload_path '{}' is not writable: {e}",
+                    config.upload.upload_path.display()
+                );
+                std::process::exit(1);
+            }
+        }
+        tracing::info!(
+            "Upload enabled, upload_path: {}",
+            config.upload.upload_path.display()
+        );
+    }
+
     // One-shot scan mode
     if cli.scan {
         tracing::info!("Running one-shot scan...");

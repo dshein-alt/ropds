@@ -40,3 +40,8 @@ temp_dir = "/tmp"
 [web]
 language = "en"
 theme = "light"
+
+[upload]
+allow_upload = false
+upload_path = "uploads"
+max_upload_size_mb = 100
