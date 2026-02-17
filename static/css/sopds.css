@@ -124,6 +124,34 @@ footer {
   opacity: 0.6;
 }
 
+/* Cover preview */
+.cover-preview {
+  cursor: pointer;
+}
+
+.cover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+
+.cover-overlay[hidden] {
+  display: none;
+}
+
+.cover-overlay img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.4);
+}
+
 /* Search dropdown */
 .search-type-group .btn-check:checked + .btn {
   background-color: var(--sopds-accent);

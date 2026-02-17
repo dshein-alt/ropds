@@ -28,7 +28,7 @@
               {% if show_covers %}
               <div class="flex-shrink-0">
                 {% if item.cover %}
-                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded">
+                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/">
                 {% else %}
                 <img src="/static/images/nocover.svg" alt="" class="book-cover rounded">
                 {% endif %}

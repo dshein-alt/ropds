@@ -200,6 +200,36 @@
   });
 })();
 
+// Cover preview overlay
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    var overlay = document.getElementById("cover-overlay");
+    var overlayImg = document.getElementById("cover-overlay-img");
+    if (!overlay || !overlayImg) return;
+
+    document.addEventListener("click", function (e) {
+      var thumb = e.target.closest(".cover-preview");
+      if (thumb && thumb.dataset.coverUrl) {
+        e.preventDefault();
+        overlayImg.src = thumb.dataset.coverUrl;
+        overlay.hidden = false;
+      }
+    });
+
+    overlay.addEventListener("click", function () {
+      overlay.hidden = true;
+      overlayImg.src = "";
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !overlay.hidden) {
+        overlay.hidden = true;
+        overlayImg.src = "";
+      }
+    });
+  });
+})();
+
 // Convert UTC timestamps to local timezone
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
