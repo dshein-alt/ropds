@@ -75,6 +75,14 @@ pub async fn admin_page(
     ctx.insert("cfg_host", &state.config.server.host);
     ctx.insert("cfg_port", &state.config.server.port);
     ctx.insert("cfg_log_level", &state.config.server.log_level);
+    ctx.insert(
+        "cfg_pdf_preview_tool_available",
+        &state.pdf_preview_tool_available,
+    );
+    ctx.insert(
+        "cfg_djvu_preview_tool_available",
+        &state.djvu_preview_tool_available,
+    );
 
     ctx.insert("cfg_root_path", &state.config.library.root_path.display().to_string());
     ctx.insert("cfg_book_extensions", &state.config.library.book_extensions.join(", "));

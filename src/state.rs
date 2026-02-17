@@ -12,16 +12,27 @@ pub struct AppState {
     pub tera: Arc<tera::Tera>,
     pub translations: Arc<Translations>,
     pub started_at: Instant,
+    pub pdf_preview_tool_available: bool,
+    pub djvu_preview_tool_available: bool,
 }
 
 impl AppState {
-    pub fn new(config: Config, db: DbPool, tera: tera::Tera, translations: Translations) -> Self {
+    pub fn new(
+        config: Config,
+        db: DbPool,
+        tera: tera::Tera,
+        translations: Translations,
+        pdf_preview_tool_available: bool,
+        djvu_preview_tool_available: bool,
+    ) -> Self {
         Self {
             config: Arc::new(config),
             db,
             tera: Arc::new(tera),
             translations: Arc::new(translations),
             started_at: Instant::now(),
+            pdf_preview_tool_available,
+            djvu_preview_tool_available,
         }
     }
 }

@@ -229,6 +229,8 @@
             <tr><td class="text-body-secondary" style="width:40%">host</td><td><code>{{ cfg_host }}</code></td></tr>
             <tr><td class="text-body-secondary">port</td><td><code>{{ cfg_port }}</code></td></tr>
             <tr><td class="text-body-secondary">log_level</td><td><code>{{ cfg_log_level }}</code></td></tr>
+            <tr><td class="text-body-secondary">{{ t.admin.tool_pdf_preview }}</td><td>{% if cfg_pdf_preview_tool_available %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">{{ t.admin.tool_djvu_preview }}</td><td>{% if cfg_djvu_preview_tool_available %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
           </tbody>
         </table>
 

@@ -98,17 +98,20 @@ async fn main() {
         std::process::exit(1);
     }
 
-    if !pdf::pdftoppm_available() {
+    let pdf_preview_tool_available = pdf::pdftoppm_available();
+    if !pdf_preview_tool_available {
         tracing::warn!(
             "`pdftoppm` is not available in PATH; PDF cover/thumbnail generation is disabled"
         );
     }
-    if !pdf::pdfinfo_available() {
+    let pdf_metadata_tool_available = pdf::pdfinfo_available();
+    if !pdf_metadata_tool_available {
         tracing::warn!(
             "`pdfinfo` is not available in PATH; PDF metadata extraction (title/author) is disabled"
         );
     }
-    if !djvu::ddjvu_available() {
+    let djvu_preview_tool_available = djvu::ddjvu_available();
+    if !djvu_preview_tool_available {
         tracing::warn!(
             "`ddjvu` is not available in PATH; DJVU cover/thumbnail generation is disabled"
         );
@@ -213,7 +216,14 @@ async fn main() {
     // Start background scan scheduler
     tokio::spawn(scheduler::run(pool.clone(), config.clone()));
 
-    let state = AppState::new(config, pool, tera, translations);
+    let state = AppState::new(
+        config,
+        pool,
+        tera,
+        translations,
+        pdf_preview_tool_available,
+        djvu_preview_tool_available,
+    );
     let app = build_router(state);
 
     let listener = tokio::net::TcpListener::bind(addr)
