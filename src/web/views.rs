@@ -303,6 +303,7 @@ pub async fn search_books(
     Query(params): Query<SearchBooksParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "books").await;
+    ctx.insert("search_target", "title"); // same as default, explicit for clarity
     let max_items = state.config.opds.max_items as i32;
     let offset = params.page * max_items;
 
@@ -548,6 +549,7 @@ pub async fn search_authors(
     Query(params): Query<SearchListParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "authors").await;
+    ctx.insert("search_target", "author");
     let max_items = state.config.opds.max_items as i32;
     let offset = params.page * max_items;
 
@@ -595,6 +597,7 @@ pub async fn search_series(
     Query(params): Query<SearchListParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "series").await;
+    ctx.insert("search_target", "series");
     let max_items = state.config.opds.max_items as i32;
     let offset = params.page * max_items;
 

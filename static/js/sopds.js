@@ -34,7 +34,11 @@
     const form = document.getElementById("search-form");
     const radios = document.querySelectorAll('input[name="search-target"]');
     if (!form || !radios.length) return;
-
+    // Keep form action in sync with the currently selected radio on initial load.
+    const selected = document.querySelector('input[name="search-target"]:checked');
+    if (selected && selected.dataset.action) {
+      form.action = selected.dataset.action;
+    }
     radios.forEach(function (radio) {
       radio.addEventListener("change", function () {
         form.action = this.dataset.action;

@@ -98,21 +98,23 @@
         </ul>
 
         {# ── Search Bar ──────────────────────────────── #}
-        <form id="search-form" class="d-flex me-2" action="/web/search/books" method="get" role="search">
+        <form id="search-form" class="d-flex me-2"
+              action="{% if search_target == 'author' %}/web/search/authors{% elif search_target == 'series' %}/web/search/series{% else %}/web/search/books{% endif %}"
+              method="get" role="search">
           <div class="input-group">
             <input type="hidden" name="type" value="m">
-            <input class="form-control" type="search" name="q" placeholder="{{ t.search.placeholder }}" minlength="3" required>
+            <input class="form-control" type="search" name="q" placeholder="{{ t.search.placeholder }}" minlength="3" required value="{{ search_terms | default(value='') }}">
             <button class="btn btn-outline-secondary" type="submit">
               <i class="bi bi-search"></i>
             </button>
           </div>
         </form>
         <div class="search-type-group btn-group btn-group-sm me-2 d-none d-lg-flex" role="group">
-          <input type="radio" class="btn-check" name="search-target" id="st-title" data-action="/web/search/books" checked>
+          <input type="radio" class="btn-check" name="search-target" id="st-title" data-action="/web/search/books"{% if search_target == 'title' %} checked{% endif %}>
           <label class="btn btn-outline-secondary" for="st-title">{{ t.search.by_title }}</label>
-          <input type="radio" class="btn-check" name="search-target" id="st-author" data-action="/web/search/authors">
+          <input type="radio" class="btn-check" name="search-target" id="st-author" data-action="/web/search/authors"{% if search_target == 'author' %} checked{% endif %}>
           <label class="btn btn-outline-secondary" for="st-author">{{ t.search.by_author }}</label>
-          <input type="radio" class="btn-check" name="search-target" id="st-series" data-action="/web/search/series">
+          <input type="radio" class="btn-check" name="search-target" id="st-series" data-action="/web/search/series"{% if search_target == 'series' %} checked{% endif %}>
           <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
         </div>
 

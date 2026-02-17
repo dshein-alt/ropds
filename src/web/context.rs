@@ -44,6 +44,8 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
 
     // Active page for navbar highlighting
     ctx.insert("active_page", active_page);
+    // Navbar search target: title | author | series
+    ctx.insert("search_target", "title");
 
     // App config
     ctx.insert("app_title", &state.config.opds.title);
