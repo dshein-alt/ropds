@@ -7,12 +7,17 @@ pub mod upload;
 pub mod views;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::middleware;
 use axum::routing::{get, post};
 
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
+    // Body limit for upload: configured max + 1 MB overhead for multipart framing
+    let upload_body_limit =
+        (state.config.upload.max_upload_size_mb as usize * 1024 * 1024) + 1_048_576;
+
     let admin_router = Router::new()
         .route("/", get(admin::admin_page))
         .route("/users/create", post(admin::create_user))
@@ -53,7 +58,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/bookshelf/toggle", post(views::bookshelf_toggle))
         .route("/bookshelf/clear", post(views::bookshelf_clear))
         .route("/upload", get(upload::upload_page))
-        .route("/upload/file", post(upload::upload_file))
+        .route(
+            "/upload/file",
+            post(upload::upload_file).layer(DefaultBodyLimit::max(upload_body_limit)),
+        )
         .route("/upload/cover/{token}", get(upload::upload_cover))
         .route("/upload/publish", post(upload::publish))
         .nest("/admin", admin_router)

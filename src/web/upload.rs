@@ -50,18 +50,31 @@ async fn check_upload_permission(state: &AppState, jar: &CookieJar) -> Result<i6
 }
 
 // ---------------------------------------------------------------------------
-// Token generation (hex timestamp + pointer-based entropy)
+// Token generation (HMAC-SHA256 over timestamp + counter + pid)
 // ---------------------------------------------------------------------------
 
-fn generate_token() -> String {
+fn generate_token(secret: &[u8]) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    // Mix in some randomness from memory address
-    let rand_val = &ts as *const _ as usize;
-    format!("{:x}{:x}", ts, rand_val)
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret).expect("HMAC can take key of any size");
+    mac.update(b"upload-token:");
+    mac.update(&ts.to_le_bytes());
+    mac.update(&count.to_le_bytes());
+    mac.update(&pid.to_le_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 // ---------------------------------------------------------------------------
@@ -197,11 +210,13 @@ fn extract_book_from_zip(
 
     let (index, ext, name) = book_entry.ok_or("error_unsupported")?;
 
-    let mut entry = archive.by_index(index).map_err(|_| "error_unsupported")?;
+    let entry = archive.by_index(index).map_err(|_| "error_unsupported")?;
     let mut data = Vec::new();
-    entry.read_to_end(&mut data).map_err(|_| "error_unsupported")?;
-
-    // Double-check actual read size
+    // Use take() to enforce a hard streaming read limit — declared zip sizes can be forged
+    entry
+        .take(max_bytes + 1)
+        .read_to_end(&mut data)
+        .map_err(|_| "error_unsupported")?;
     if data.len() as u64 > max_bytes {
         return Err("error_too_large");
     }
@@ -339,7 +354,7 @@ pub async fn upload_file(
     };
 
     // 7. Generate token and save to temp dir
-    let token = generate_token();
+    let token = generate_token(secret);
     let temp_dir = &state.config.upload.upload_path;
     let temp_file = temp_dir.join(format!("upload_{token}.{book_ext}"));
 
@@ -413,6 +428,9 @@ pub async fn upload_file(
     if let Err(e) = std::fs::write(&state_file, &state_json) {
         tracing::error!("Failed to write upload state: {e}");
         let _ = std::fs::remove_file(&temp_file);
+        if let Some(ref cp) = upload_state.cover_path {
+            let _ = std::fs::remove_file(cp);
+        }
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_upload");
     }
 
@@ -544,20 +562,42 @@ pub async fn publish(
     let root_path = &state.config.library.root_path;
     let dest_path = root_path.join(&safe_filename);
 
-    // 7. Check for duplicates (file on disk or record in DB)
-    if dest_path.exists() {
-        return json_error(StatusCode::CONFLICT, "error_duplicate");
-    }
+    // 7. Check for DB duplicate
     if let Ok(Some(_)) =
         crate::db::queries::books::find_by_path_and_filename(&state.db, "", &safe_filename).await
     {
         return json_error(StatusCode::CONFLICT, "error_duplicate");
     }
 
-    // 8. Move file to root_path (copy + delete for cross-device support)
-    if let Err(e) = std::fs::copy(&upload_state.temp_path, &dest_path) {
-        tracing::error!("Failed to copy book to library: {e}");
-        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+    // 8. Atomically create destination file (prevents TOCTOU race on disk)
+    let source_data = match std::fs::read(&upload_state.temp_path) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::error!("Failed to read temp file: {e}");
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+        }
+    };
+    {
+        use std::io::Write;
+        let mut dest_file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest_path)
+        {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                return json_error(StatusCode::CONFLICT, "error_duplicate");
+            }
+            Err(e) => {
+                tracing::error!("Failed to create destination file: {e}");
+                return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+            }
+        };
+        if let Err(e) = dest_file.write_all(&source_data) {
+            tracing::error!("Failed to write to destination: {e}");
+            let _ = std::fs::remove_file(&dest_path);
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+        }
     }
 
     // 9. Build BookMeta and insert into DB
@@ -691,17 +731,19 @@ mod tests {
 
     #[test]
     fn test_generate_token_hex() {
-        let token = generate_token();
+        let token = generate_token(b"test-secret");
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(!token.is_empty());
+        // HMAC-SHA256 always produces 64 hex chars
+        assert_eq!(token.len(), 64);
     }
 
     #[test]
     fn test_generate_token_unique() {
-        let t1 = generate_token();
-        // Slight delay to get different timestamps
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        let t2 = generate_token();
+        let secret = b"test-secret";
+        // Tokens differ because of atomic counter even with same timestamp
+        let t1 = generate_token(secret);
+        let t2 = generate_token(secret);
         assert_ne!(t1, t2);
     }
 }
