@@ -11,6 +11,7 @@ use crate::state::AppState;
 
 const THUMB_SIZE: u32 = 200;
 const THUMB_JPEG_QUALITY: u8 = 85;
+const NOCOVER_SVG: &[u8] = include_bytes!("../../static/images/nocover.svg");
 
 /// GET /opds/cover/:book_id/ — Full-size cover image.
 pub async fn cover(State(state): State<AppState>, Path((book_id,)): Path<(i64,)>) -> Response {
@@ -30,7 +31,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
     };
 
     if book.cover == 0 && book.format != "pdf" {
-        return (StatusCode::NOT_FOUND, "No cover").into_response();
+        return image_response(NOCOVER_SVG, "image/svg+xml");
     }
 
     let covers_dir = state.config.opds.covers_dir.clone();
@@ -61,7 +62,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
 
     let (cover_data, cover_mime) = match cover_result {
         Ok(Some((data, mime))) => (data, mime),
-        _ => return (StatusCode::NOT_FOUND, "Cover not available").into_response(),
+        _ => return image_response(NOCOVER_SVG, "image/svg+xml"),
     };
 
     if as_thumbnail {
