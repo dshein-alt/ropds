@@ -30,7 +30,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response(),
     };
 
-    if book.cover == 0 && book.format != "pdf" {
+    if book.cover == 0 && book.format != "pdf" && book.format != "djvu" {
         return image_response(NOCOVER_SVG, "image/svg+xml");
     }
 
@@ -134,6 +134,18 @@ fn extract_book_cover(
             Err(e) => {
                 tracing::warn!(
                     "Failed to render PDF cover for {}/{}: {}",
+                    book_path,
+                    filename,
+                    e
+                );
+                None
+            }
+        },
+        "djvu" => match crate::djvu::render_first_page_jpeg_from_bytes(&data) {
+            Ok(jpg) => Some((jpg, "image/jpeg".to_string())),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to render DJVU cover for {}/{}: {}",
                     book_path,
                     filename,
                     e

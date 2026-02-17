@@ -527,6 +527,29 @@ fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
 
             Ok(meta)
         }
+        "djvu" => {
+            let fallback_title = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let mut meta = BookMeta {
+                title: fallback_title,
+                ..Default::default()
+            };
+
+            match crate::djvu::render_first_page_jpeg_from_path(path) {
+                Ok(cover) => {
+                    meta.cover_data = Some(cover);
+                    meta.cover_type = "image/jpeg".to_string();
+                }
+                Err(e) => {
+                    warn!("Failed to render DJVU cover for {}: {}", path.display(), e);
+                }
+            }
+
+            Ok(meta)
+        }
         _ => {
             // For unsupported formats, return minimal metadata from filename
             Ok(BookMeta {
@@ -591,6 +614,30 @@ fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMeta, 
                     warn!("Failed to render PDF cover from archive bytes: {}", e);
                 }
             }
+            Ok(meta)
+        }
+        "djvu" => {
+            let fallback_title = Path::new(filename)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            let mut meta = BookMeta {
+                title: fallback_title,
+                ..Default::default()
+            };
+
+            match crate::djvu::render_first_page_jpeg_from_bytes(data) {
+                Ok(cover) => {
+                    meta.cover_data = Some(cover);
+                    meta.cover_type = "image/jpeg".to_string();
+                }
+                Err(e) => {
+                    warn!("Failed to render DJVU cover from archive bytes: {}", e);
+                }
+            }
+
             Ok(meta)
         }
         _ => Ok(BookMeta {

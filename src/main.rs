@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod djvu;
 mod error;
 mod opds;
 mod password;
@@ -105,6 +106,11 @@ async fn main() {
     if !pdf::pdfinfo_available() {
         tracing::warn!(
             "`pdfinfo` is not available in PATH; PDF metadata extraction (title/author) is disabled"
+        );
+    }
+    if !djvu::ddjvu_available() {
+        tracing::warn!(
+            "`ddjvu` is not available in PATH; DJVU cover/thumbnail generation is disabled"
         );
     }
 
