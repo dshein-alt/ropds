@@ -67,8 +67,6 @@ pub struct OpdsConfig {
     pub alphabet_menu: bool,
     #[serde(default)]
     pub hide_doubles: bool,
-    #[serde(default = "default_cache_time")]
-    pub cache_time: u64,
     #[serde(default = "default_covers_dir")]
     pub covers_dir: PathBuf,
 }
@@ -188,10 +186,6 @@ fn default_split_items() -> u32 {
     300
 }
 
-fn default_cache_time() -> u64 {
-    600
-}
-
 fn default_covers_dir() -> PathBuf {
     PathBuf::from("covers")
 }
@@ -271,7 +265,6 @@ auth_required = false
 show_covers = false
 alphabet_menu = false
 hide_doubles = true
-cache_time = 300
 
 [scanner]
 schedule_minutes = [30]

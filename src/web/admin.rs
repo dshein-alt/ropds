@@ -90,7 +90,6 @@ pub async fn admin_page(
     ctx.insert("cfg_show_covers", &state.config.opds.show_covers);
     ctx.insert("cfg_alphabet_menu", &state.config.opds.alphabet_menu);
     ctx.insert("cfg_hide_doubles", &state.config.opds.hide_doubles);
-    ctx.insert("cfg_cache_time", &state.config.opds.cache_time);
     ctx.insert("cfg_covers_dir", &state.config.opds.covers_dir.display().to_string());
 
     // Scanner config
