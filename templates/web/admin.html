@@ -50,7 +50,7 @@
                   {% endif %}
                 </td>
                 <td class="text-body-secondary">
-                  {% if user.last_login %}{{ user.last_login }}{% else %}{{ t.admin.never }}{% endif %}
+                  {% if user.last_login %}<time class="utc-time" datetime="{{ user.last_login }}Z">{{ user.last_login }}</time>{% else %}{{ t.admin.never }}{% endif %}
                 </td>
                 <td class="text-end">
                   <button type="button" class="btn btn-outline-primary btn-sm"
@@ -78,8 +78,25 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                       </div>
                       <div class="modal-body">
-                        <label for="pw-{{ user.id }}" class="form-label">{{ t.admin.new_password }}</label>
-                        <input type="password" class="form-control" id="pw-{{ user.id }}" name="password" minlength="8" maxlength="32" required>
+                        <div class="mb-3">
+                          <label for="pw-{{ user.id }}" class="form-label">{{ t.admin.new_password }}</label>
+                          <div class="input-group">
+                            <input type="password" class="form-control" id="pw-{{ user.id }}" name="password" minlength="8" maxlength="32" required>
+                            <button class="btn btn-outline-secondary toggle-password" type="button" data-target="pw-{{ user.id }}" title="{{ t.admin.show_password }}">
+                              <i class="bi bi-eye"></i>
+                            </button>
+                          </div>
+                        </div>
+                        <div class="mb-3">
+                          <label for="pw-confirm-{{ user.id }}" class="form-label">{{ t.admin.confirm_password }}</label>
+                          <div class="input-group">
+                            <input type="password" class="form-control" id="pw-confirm-{{ user.id }}" data-confirm-for="pw-{{ user.id }}" minlength="8" maxlength="32" required>
+                            <button class="btn btn-outline-secondary toggle-password" type="button" data-target="pw-confirm-{{ user.id }}" title="{{ t.admin.show_password }}">
+                              <i class="bi bi-eye"></i>
+                            </button>
+                          </div>
+                          <div class="invalid-feedback">{{ t.admin.error_password_mismatch }}</div>
+                        </div>
                       </div>
                       <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
@@ -101,11 +118,15 @@
                     </div>
                     <div class="modal-body">
                       <p>{{ t.admin.confirm_delete }} <strong>{{ user.username }}</strong>?</p>
+                      <div class="mb-3">
+                        <label class="form-label">{{ t.admin.type_delete_to_confirm | safe }}</label>
+                        <input type="text" class="form-control delete-confirm-input" autocomplete="off">
+                      </div>
                     </div>
                     <div class="modal-footer">
                       <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
                       <form method="post" action="/web/admin/users/{{ user.id }}/delete" class="d-inline">
-                        <button type="submit" class="btn btn-danger">{{ t.admin.delete }}</button>
+                        <button type="submit" class="btn btn-danger delete-confirm-btn" disabled>{{ t.admin.delete }}</button>
                       </form>
                     </div>
                   </div>
@@ -134,7 +155,22 @@
                   </div>
                   <div class="mb-3">
                     <label for="new-password" class="form-label">{{ t.admin.password }}</label>
-                    <input type="password" class="form-control" id="new-password" name="password" minlength="8" maxlength="32" required>
+                    <div class="input-group">
+                      <input type="password" class="form-control" id="new-password" name="password" minlength="8" maxlength="32" required>
+                      <button class="btn btn-outline-secondary toggle-password" type="button" data-target="new-password" title="{{ t.admin.show_password }}">
+                        <i class="bi bi-eye"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="mb-3">
+                    <label for="new-password-confirm" class="form-label">{{ t.admin.confirm_password }}</label>
+                    <div class="input-group">
+                      <input type="password" class="form-control" id="new-password-confirm" data-confirm-for="new-password" minlength="8" maxlength="32" required>
+                      <button class="btn btn-outline-secondary toggle-password" type="button" data-target="new-password-confirm" title="{{ t.admin.show_password }}">
+                        <i class="bi bi-eye"></i>
+                      </button>
+                    </div>
+                    <div class="invalid-feedback">{{ t.admin.error_password_mismatch }}</div>
                   </div>
                   <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="new-superuser" name="is_superuser" value="on">

@@ -54,12 +54,14 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("split_items", &state.config.opds.split_items);
     ctx.insert("auth_required", &state.config.opds.auth_required);
 
-    // Superuser flag for navbar admin link
+    // Auth state for navbar (admin link / profile link)
     let mut is_superuser: i32 = 0;
+    let mut is_authenticated: i32 = 0;
     if state.config.opds.auth_required {
         let secret = state.config.server.session_secret.as_bytes();
         if let Some(cookie) = jar.get("session") {
             if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
+                is_authenticated = 1;
                 if crate::db::queries::users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
                     is_superuser = 1;
                 }
@@ -67,6 +69,7 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
         }
     }
     ctx.insert("is_superuser", &is_superuser);
+    ctx.insert("is_authenticated", &is_authenticated);
 
     // Converter availability
     let fb2toepub = !state.config.converter.fb2_to_epub.is_empty();

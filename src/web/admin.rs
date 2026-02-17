@@ -163,3 +163,39 @@ pub async fn delete_user(
     let _ = users::delete(&state.db, user_id).await;
     Redirect::to("/web/admin?msg=user_deleted")
 }
+
+/// GET /web/profile — render profile page for authenticated users.
+pub async fn profile_page(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<Html<String>, StatusCode> {
+    let ctx = build_context(&state, &jar, "profile").await;
+    match state.tera.render("web/profile.html", &ctx) {
+        Ok(html) => Ok(Html(html)),
+        Err(e) => {
+            tracing::error!("Template error: {e}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// POST /web/profile/password — change own password.
+pub async fn profile_change_password(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<ChangePasswordForm>,
+) -> impl IntoResponse {
+    let secret = state.config.server.session_secret.as_bytes();
+    let user_id = match get_session_user_id(&jar, secret) {
+        Some(id) => id,
+        None => return Redirect::to("/web/login").into_response(),
+    };
+
+    if form.password.chars().count() < 8 || form.password.chars().count() > 32 {
+        return Redirect::to("/web/profile?error=password_short").into_response();
+    }
+
+    let hash = crate::password::hash(&form.password);
+    let _ = users::update_password(&state.db, user_id, &hash).await;
+    Redirect::to("/web/profile?msg=password_changed").into_response()
+}

@@ -133,3 +133,17 @@ error_cannot_delete_self = "Вы не можете удалить свой ак�
 success_user_created = "Пользователь создан."
 success_password_changed = "Пароль изменён."
 success_user_deleted = "Пользователь удалён."
+confirm_password = "Подтвердите пароль"
+show_password = "Показать пароль"
+error_password_mismatch = "Пароли не совпадают."
+type_delete_to_confirm = "Введите <strong>delete</strong> для подтверждения"
+
+[profile]
+title = "Профиль"
+change_password = "Изменить пароль"
+new_password = "Новый пароль"
+confirm_password = "Подтвердите пароль"
+save = "Сохранить"
+success_password_changed = "Пароль изменён."
+error_password_short = "Пароль должен быть от 8 до 32 символов."
+error_password_mismatch = "Пароли не совпадают."

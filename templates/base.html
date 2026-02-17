@@ -118,9 +118,13 @@
           <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
         </div>
 
-        {# ── Admin Link (superuser only) ──────────────── #}
+        {# ── Settings Link (admin for superusers, profile for regular users) ── #}
         {% if is_superuser %}
         <a class="btn btn-sm btn-outline-secondary{% if active_page == 'admin' %} active{% endif %} me-2" href="/web/admin" title="{{ t.admin.title }}">
+          <i class="bi bi-gear"></i>
+        </a>
+        {% elif is_authenticated %}
+        <a class="btn btn-sm btn-outline-secondary{% if active_page == 'profile' %} active{% endif %} me-2" href="/web/profile" title="{{ t.profile.title }}">
           <i class="bi bi-gear"></i>
         </a>
         {% endif %}
@@ -137,7 +141,7 @@
             <ul class="dropdown-menu dropdown-menu-end">
               {% for loc in available_locales %}
               <li>
-                <a class="dropdown-item{% if loc == locale %} active{% endif %}"
+                <a class="dropdown-item lang-link{% if loc == locale %} active{% endif %}"
                    href="/web/set-language?lang={{ loc }}&redirect=/web">
                   {% if loc == "en" %}English{% elif loc == "ru" %}Русский{% else %}{{ loc }}{% endif %}
                 </a>
