@@ -50,6 +50,7 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("show_covers", &state.config.opds.show_covers);
     ctx.insert("alphabet_menu", &state.config.opds.alphabet_menu);
     ctx.insert("split_items", &state.config.opds.split_items);
+    ctx.insert("auth_required", &state.config.opds.auth_required);
 
     // Converter availability
     let fb2toepub = !state.config.converter.fb2_to_epub.is_empty();

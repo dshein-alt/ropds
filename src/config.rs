@@ -22,6 +22,12 @@ pub struct ServerConfig {
     pub port: u16,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    /// HMAC secret for signing session cookies. If empty, a random key is generated at startup.
+    #[serde(default)]
+    pub session_secret: String,
+    /// Session TTL in hours (default 24).
+    #[serde(default = "default_session_ttl_hours")]
+    pub session_ttl_hours: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -196,6 +202,10 @@ fn default_schedule_minutes() -> Vec<u32> {
 
 fn default_schedule_hours() -> Vec<u32> {
     vec![0, 12]
+}
+
+fn default_session_ttl_hours() -> u64 {
+    24
 }
 
 fn default_temp_dir() -> PathBuf {

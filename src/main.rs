@@ -34,6 +34,10 @@ struct Cli {
     /// Run a one-shot library scan and exit
     #[arg(long)]
     scan: bool,
+
+    /// Create or update the admin user password and exit
+    #[arg(long)]
+    set_admin: Option<String>,
 }
 
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
@@ -66,10 +70,20 @@ async fn main() {
     let cli = Cli::parse();
 
     // Load configuration
-    let config = Config::load(&cli.config).unwrap_or_else(|e| {
+    let mut config = Config::load(&cli.config).unwrap_or_else(|e| {
         eprintln!("Error loading config: {e}");
         std::process::exit(1);
     });
+
+    // Auto-generate session secret if not set
+    if config.server.session_secret.is_empty() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        config.server.session_secret = format!("ropds-auto-{seed}");
+    }
 
     // Setup tracing/logging
     let filter =
@@ -119,6 +133,28 @@ async fn main() {
             }
             Err(e) => {
                 tracing::error!("Scan failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // Set admin password mode
+    if let Some(ref password) = cli.set_admin {
+        if password.len() < 8 || password.len() > 32 {
+            tracing::error!("Password must be 8 to 32 characters long");
+            std::process::exit(1);
+        }
+        match set_admin_password(&pool, password).await {
+            Ok(created) => {
+                if created {
+                    tracing::info!("Admin user created");
+                } else {
+                    tracing::info!("Admin password updated");
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to set admin password: {e}");
                 std::process::exit(1);
             }
         }
@@ -177,4 +213,28 @@ async fn main() {
         tracing::error!("Server error: {e}");
         std::process::exit(1);
     });
+}
+
+/// Create the admin user or update its password.
+/// Returns `Ok(true)` if a new user was created, `Ok(false)` if updated.
+async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, sqlx::Error> {
+    let existing: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
+            .fetch_optional(pool)
+            .await?;
+
+    if let Some((id,)) = existing {
+        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+            .bind(password)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(false)
+    } else {
+        sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES ('admin', ?, 1)")
+            .bind(password)
+            .execute(pool)
+            .await?;
+        Ok(true)
+    }
 }

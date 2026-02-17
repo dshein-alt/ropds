@@ -47,5 +47,10 @@ encoding_rs = "0.8"
 # URL encoding
 urlencoding = "2"
 
+# HMAC session signing
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 # CLI
 clap = { version = "4", features = ["derive"] }

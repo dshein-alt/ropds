@@ -70,6 +70,12 @@ en = "English"
 ru = "Русский"
 switch = "Язык"
 
+[login]
+username = "Имя пользователя"
+password = "Пароль"
+submit = "Войти"
+error = "Неверное имя пользователя или пароль."
+
 [common]
 not_found = "Не найдено"
 error = "Ошибка"

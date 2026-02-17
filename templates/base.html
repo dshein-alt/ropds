@@ -25,7 +25,7 @@
       </button>
 
       <div class="collapse navbar-collapse" id="navMain">
-        <ul class="navbar-nav me-auto">
+        <ul class="navbar-nav me-auto flex-nowrap">
           <li class="nav-item">
             <a class="nav-link{% if active_page == 'catalogs' %} active{% endif %}" href="/web/catalogs">
               <i class="bi bi-folder2-open me-1"></i>{{ t.nav.catalogs }}
@@ -116,7 +116,7 @@
           <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
         </div>
 
-        {# ── Theme & Language ────────────────────────── #}
+        {# ── Theme, Language & Logout ────────────────── #}
         <div class="d-flex align-items-center gap-2">
           <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="{{ t.theme.toggle }}">
             <i id="theme-icon" class="bi bi-moon"></i>
@@ -136,6 +136,11 @@
               {% endfor %}
             </ul>
           </div>
+          {% if auth_required %}
+          <a class="btn btn-sm btn-outline-secondary d-flex align-items-center" href="/web/logout" title="{{ t.nav.logout }}">
+            <i class="bi bi-box-arrow-right"></i>
+          </a>
+          {% endif %}
         </div>
 
       </div>

@@ -27,6 +27,10 @@ main {
   margin-right: 0.5rem;
 }
 
+.navbar-nav .nav-link {
+  white-space: nowrap;
+}
+
 /* Book cards */
 .book-card {
   transition: box-shadow 0.15s ease;

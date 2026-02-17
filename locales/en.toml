@@ -70,6 +70,12 @@ en = "English"
 ru = "Русский"
 switch = "Language"
 
+[login]
+username = "Username"
+password = "Password"
+submit = "Sign in"
+error = "Invalid username or password."
+
 [common]
 not_found = "Not found"
 error = "Error"
