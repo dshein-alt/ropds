@@ -79,6 +79,7 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     let mut is_authenticated: i32 = 0;
     let mut display_name = String::new();
     let mut username = String::new();
+    let mut user_allow_upload: i32 = 0;
     if let Some(cookie) = jar.get("session") {
         if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
             is_authenticated = 1;
@@ -88,6 +89,7 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
                 }
                 display_name = user.display_name;
                 username = user.username;
+                user_allow_upload = user.allow_upload;
             }
             ctx.insert("csrf_token", &generate_csrf_token(cookie.value(), secret));
         }
@@ -96,6 +98,11 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("is_authenticated", &is_authenticated);
     ctx.insert("display_name", &display_name);
     ctx.insert("username", &username);
+
+    // Upload permission: global config AND (admin OR user has allow_upload)
+    let can_upload = state.config.upload.allow_upload
+        && (is_superuser == 1 || user_allow_upload == 1);
+    ctx.insert("can_upload", &can_upload);
 
     // Converter availability
     let fb2toepub = !state.config.converter.fb2_to_epub.is_empty();

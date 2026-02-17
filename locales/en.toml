@@ -10,6 +10,7 @@ search = "Search"
 login = "Login"
 logout = "Logout"
 settings = "Settings"
+upload = "Upload"
 
 [search]
 placeholder = "Search..."
