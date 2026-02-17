@@ -118,6 +118,13 @@
           <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
         </div>
 
+        {# ── Admin Link (superuser only) ──────────────── #}
+        {% if is_superuser %}
+        <a class="btn btn-sm btn-outline-secondary{% if active_page == 'admin' %} active{% endif %} me-2" href="/web/admin" title="{{ t.admin.title }}">
+          <i class="bi bi-gear"></i>
+        </a>
+        {% endif %}
+
         {# ── Theme, Language & Logout ────────────────── #}
         <div class="d-flex align-items-center gap-2">
           <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="{{ t.theme.toggle }}">
