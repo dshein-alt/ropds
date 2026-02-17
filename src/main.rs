@@ -249,7 +249,7 @@ async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, s
     let hashed = password::hash(password);
 
     if let Some((id,)) = existing {
-        sqlx::query("UPDATE users SET password_hash = ?, display_name = CASE WHEN display_name = '' THEN 'Administrator' ELSE display_name END WHERE id = ?")
+        sqlx::query("UPDATE users SET password_hash = ?, allow_upload = 1, display_name = CASE WHEN display_name = '' THEN 'Administrator' ELSE display_name END WHERE id = ?")
             .bind(&hashed)
             .bind(id)
             .execute(pool)
@@ -257,7 +257,7 @@ async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, s
         Ok(false)
     } else {
         sqlx::query(
-            "INSERT INTO users (username, password_hash, is_superuser, display_name) VALUES ('admin', ?, 1, 'Administrator')",
+            "INSERT INTO users (username, password_hash, is_superuser, display_name, allow_upload) VALUES ('admin', ?, 1, 'Administrator', 1)",
         )
         .bind(&hashed)
         .execute(pool)

@@ -13,12 +13,13 @@ pub struct UserView {
     pub last_login: String,
     pub password_change_required: i32,
     pub display_name: String,
+    pub allow_upload: i32,
 }
 
 /// Get all users for admin panel listing (excludes password_hash).
 pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> {
     let users: Vec<UserView> = sqlx::query_as(
-        "SELECT id, username, is_superuser, created_at, last_login, password_change_required, display_name FROM users ORDER BY id"
+        "SELECT id, username, is_superuser, created_at, last_login, password_change_required, display_name, allow_upload FROM users ORDER BY id"
     )
     .fetch_all(pool)
     .await?;
@@ -28,7 +29,7 @@ pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> 
 /// Get a single user by ID.
 pub async fn get_by_id(pool: &DbPool, user_id: i64) -> Result<Option<User>, sqlx::Error> {
     let user: Option<User> = sqlx::query_as(
-        "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required, display_name FROM users WHERE id = ?"
+        "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required, display_name, allow_upload FROM users WHERE id = ?"
     )
     .bind(user_id)
     .fetch_optional(pool)

@@ -87,6 +87,7 @@ pub struct User {
     pub last_login: String,
     pub password_change_required: i32,
     pub display_name: String,
+    pub allow_upload: i32,
 }
 
 #[derive(Debug, Clone, FromRow)]
