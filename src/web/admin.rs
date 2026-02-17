@@ -49,8 +49,8 @@ pub async fn admin_page(
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "admin").await;
 
-    // Load all users
-    let all_users = users::get_all(&state.db).await.unwrap_or_default();
+    // Load all users (view struct excludes password_hash)
+    let all_users = users::get_all_views(&state.db).await.unwrap_or_default();
     ctx.insert("users", &all_users);
 
     // Current user id (to prevent self-delete in template)
@@ -113,7 +113,7 @@ pub async fn create_user(
     if username.is_empty() {
         return Redirect::to("/web/admin?error=username_empty").into_response();
     }
-    if form.password.len() < 8 || form.password.len() > 32 {
+    if form.password.chars().count() < 8 || form.password.chars().count() > 32 {
         return Redirect::to("/web/admin?error=password_short").into_response();
     }
 
@@ -132,7 +132,7 @@ pub async fn change_password(
     Path(user_id): Path<i64>,
     axum::Form(form): axum::Form<ChangePasswordForm>,
 ) -> impl IntoResponse {
-    if form.password.len() < 8 || form.password.len() > 32 {
+    if form.password.chars().count() < 8 || form.password.chars().count() > 32 {
         return Redirect::to("/web/admin?error=password_short");
     }
 

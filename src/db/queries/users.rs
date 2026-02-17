@@ -1,10 +1,22 @@
+use sqlx::FromRow;
+
 use crate::db::DbPool;
 use crate::db::models::User;
 
-/// Get all users (for admin panel listing).
-pub async fn get_all(pool: &DbPool) -> Result<Vec<User>, sqlx::Error> {
-    let users: Vec<User> = sqlx::query_as(
-        "SELECT id, username, password_hash, is_superuser, created_at, last_login FROM users ORDER BY id"
+/// User data safe for template rendering (no password_hash).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct UserView {
+    pub id: i64,
+    pub username: String,
+    pub is_superuser: i32,
+    pub created_at: String,
+    pub last_login: String,
+}
+
+/// Get all users for admin panel listing (excludes password_hash).
+pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> {
+    let users: Vec<UserView> = sqlx::query_as(
+        "SELECT id, username, is_superuser, created_at, last_login FROM users ORDER BY id"
     )
     .fetch_all(pool)
     .await?;
