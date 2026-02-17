@@ -37,6 +37,7 @@
                 <th>{{ t.admin.username }}</th>
                 <th>{{ t.admin.display_name }}</th>
                 <th>{{ t.admin.superuser }}</th>
+                <th>{{ t.admin.allow_upload }}</th>
                 <th>{{ t.admin.last_login }}</th>
                 <th class="text-end">{{ t.admin.actions }}</th>
               </tr>
@@ -56,6 +57,20 @@
                 <td>
                   {% if user.is_superuser %}
                   <span class="badge bg-warning text-dark"><i class="bi bi-shield-check me-1"></i>{{ t.admin.superuser }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if user.is_superuser %}
+                    <i class="bi bi-check-circle-fill text-success" title="{{ t.admin.superuser }}"></i>
+                  {% else %}
+                    <form method="post" action="/web/admin/users/{{ user.id }}/upload" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="allow_upload" value="on"
+                               {% if user.allow_upload %}checked{% endif %}
+                               onchange="this.form.submit()">
+                      </div>
+                    </form>
                   {% endif %}
                 </td>
                 <td class="text-body-secondary">
@@ -325,7 +340,8 @@
 window._flashMessages = {
   user_created: "{{ t.admin.success_user_created }}",
   password_changed: "{{ t.admin.success_password_changed }}",
-  user_deleted: "{{ t.admin.success_user_deleted }}"
+  user_deleted: "{{ t.admin.success_user_deleted }}",
+  upload_toggled: "{{ t.admin.success_upload_toggled }}"
 };
 window._flashErrors = {
   username_exists: "{{ t.admin.error_username_exists }}",

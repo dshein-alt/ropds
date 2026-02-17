@@ -109,6 +109,20 @@ pub async fn update_last_login(pool: &DbPool, user_id: i64, timestamp: &str) -> 
     Ok(())
 }
 
+/// Update the allow_upload flag for a user.
+pub async fn update_allow_upload(
+    pool: &DbPool,
+    user_id: i64,
+    allow_upload: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET allow_upload = ? WHERE id = ?")
+        .bind(allow_upload)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Update a user's display name.
 pub async fn update_display_name(
     pool: &DbPool,

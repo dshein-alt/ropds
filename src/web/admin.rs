@@ -223,6 +223,41 @@ pub async fn delete_user(
     }
 }
 
+#[derive(Deserialize)]
+pub struct ToggleUploadForm {
+    #[serde(default)]
+    pub allow_upload: Option<String>, // checkbox: present = "on", absent = None
+    #[serde(default)]
+    pub csrf_token: String,
+}
+
+/// POST /web/admin/users/:id/upload
+pub async fn toggle_upload(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Path(user_id): Path<i64>,
+    axum::Form(form): axum::Form<ToggleUploadForm>,
+) -> impl IntoResponse {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
+    // Prevent toggling superuser upload permission (they always have it)
+    if users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
+        return Redirect::to("/web/admin").into_response();
+    }
+
+    let allow = if form.allow_upload.is_some() { 1 } else { 0 };
+    match users::update_allow_upload(&state.db, user_id, allow).await {
+        Ok(_) => Redirect::to("/web/admin?msg=upload_toggled").into_response(),
+        Err(e) => {
+            tracing::error!("Failed to toggle upload for user {user_id}: {e}");
+            Redirect::to("/web/admin?error=db_error").into_response()
+        }
+    }
+}
+
 /// GET /web/profile — render profile page for authenticated users.
 pub async fn profile_page(
     State(state): State<AppState>,

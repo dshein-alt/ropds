@@ -17,6 +17,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/users/create", post(admin::create_user))
         .route("/users/{id}/password", post(admin::change_password))
         .route("/users/{id}/delete", post(admin::delete_user))
+        .route("/users/{id}/upload", post(admin::toggle_upload))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,
