@@ -4,6 +4,7 @@ mod error;
 mod opds;
 mod scanner;
 mod state;
+mod web;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -13,11 +14,13 @@ use axum::response::Json;
 use axum::routing::get;
 use axum::Router;
 use clap::Parser;
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::state::AppState;
+use crate::web::context;
 
 #[derive(Parser)]
 #[command(name = "ropds", version, about = "Rust OPDS Server")]
@@ -41,15 +44,14 @@ async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> 
     }))
 }
 
-async fn root() -> &'static str {
-    "Rust OPDS Server"
-}
-
 fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(root))
+        .route("/", get(|| async { axum::response::Redirect::to("/web") }))
+        .route("/web/", get(|| async { axum::response::Redirect::to("/web") }))
         .route("/health", get(health_check))
         .nest("/opds", opds::router(state.clone()))
+        .nest("/web", web::router(state.clone()))
+        .nest_service("/static", ServeDir::new("static"))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -76,6 +78,12 @@ async fn main() {
     });
     tracing::info!("Database initialized: {}", config.database.url);
 
+    // Ensure covers directory exists
+    if let Err(e) = std::fs::create_dir_all(&config.opds.covers_dir) {
+        tracing::error!("Failed to create covers directory {:?}: {e}", config.opds.covers_dir);
+        std::process::exit(1);
+    }
+
     // One-shot scan mode
     if cli.scan {
         tracing::info!("Running one-shot scan...");
@@ -97,6 +105,25 @@ async fn main() {
         return;
     }
 
+    // Initialize Tera templates
+    let mut tera = tera::Tera::new("templates/**/*.html").unwrap_or_else(|e| {
+        tracing::error!("Failed to load templates: {e}");
+        std::process::exit(1);
+    });
+    context::register_filters(&mut tera);
+    tracing::info!("Templates loaded");
+
+    // Load translations
+    let translations =
+        web::i18n::load_translations(std::path::Path::new("locales")).unwrap_or_else(|e| {
+            tracing::error!("Failed to load translations: {e}");
+            std::process::exit(1);
+        });
+    tracing::info!(
+        "Translations loaded: {:?}",
+        translations.keys().collect::<Vec<_>>()
+    );
+
     // Server mode
     let addr = SocketAddr::new(
         config
@@ -117,7 +144,7 @@ async fn main() {
     tracing::info!("Library root: {}", config.library.root_path.display());
     tracing::info!("Listening on {addr}");
 
-    let state = AppState::new(config, pool);
+    let state = AppState::new(config, pool, tera, translations);
     let app = build_router(state);
 
     let listener = tokio::net::TcpListener::bind(addr)

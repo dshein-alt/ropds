@@ -1,0 +1,22 @@
+<nav aria-label="Page navigation" class="mt-4">
+  <ul class="pagination justify-content-center">
+    <li class="page-item{% if not pagination.has_previous %} disabled{% endif %}">
+      <a class="page-link" href="?{{ pagination_qs | default(value='') }}page={{ pagination.previous_page }}">
+        {{ t.page.previous }}
+      </a>
+    </li>
+    {% for p in pagination.page_range %}
+    <li class="page-item{% if p == pagination.current_page %} active{% endif %}">
+      <a class="page-link" href="?{{ pagination_qs | default(value='') }}page={{ p }}">{{ p + 1 }}</a>
+    </li>
+    {% endfor %}
+    <li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
+      <a class="page-link" href="?{{ pagination_qs | default(value='') }}page={{ pagination.next_page }}">
+        {{ t.page.next }}
+      </a>
+    </li>
+  </ul>
+  <div class="text-center small text-body-secondary">
+    {{ pagination.current_page + 1 }} {{ t.page.of }} {{ pagination.total_pages }}
+  </div>
+</nav>

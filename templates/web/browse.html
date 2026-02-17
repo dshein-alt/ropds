@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t.nav[browse_type] | default(value=browse_type) }} — {{ app_title }}{% endblock %}
+
+{% block content %}
+  <h4 class="mb-3">
+    {{ t.nav[browse_type] | default(value=browse_type) }}
+    {% if chars and chars != "" %}
+    <small class="text-body-secondary">/ {{ chars }}</small>
+    {% endif %}
+  </h4>
+
+  {# Language tabs #}
+  <ul class="nav nav-pills mb-4">
+    <li class="nav-item">
+      <a class="nav-link{% if lang == 0 %} active{% endif %}" href="{{ browse_url }}?lang=0">{{ t.browse.all_languages }}</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link{% if lang == 1 %} active{% endif %}" href="{{ browse_url }}?lang=1">{{ t.browse.cyrillic }}</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link{% if lang == 2 %} active{% endif %}" href="{{ browse_url }}?lang=2">{{ t.browse.latin }}</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link{% if lang == 3 %} active{% endif %}" href="{{ browse_url }}?lang=3">{{ t.browse.digits }}</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link{% if lang == 9 %} active{% endif %}" href="{{ browse_url }}?lang=9">{{ t.browse.other }}</a>
+    </li>
+  </ul>
+
+  {% if groups | length == 0 %}
+    <p class="text-body-secondary">{{ t.common.no_results }}</p>
+  {% else %}
+  <div class="prefix-grid">
+    {% for g in groups %}
+      {% if g.drill_deeper %}
+      <a href="{{ browse_url }}?lang={{ lang }}&chars={{ g.prefix }}" class="prefix-item">
+        <div class="fw-semibold">{{ g.prefix }}</div>
+        <small class="text-body-secondary">{{ g.count }}</small>
+      </a>
+      {% else %}
+      <a href="{{ search_url }}?type={{ search_type_param }}&q={{ g.prefix }}" class="prefix-item">
+        <div class="fw-semibold">{{ g.prefix }}</div>
+        <small class="text-body-secondary">{{ g.count }}</small>
+      </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,77 @@
+[nav]
+home = "Главная"
+catalogs = "Каталоги"
+books = "Книги"
+authors = "Авторы"
+genres = "Жанры"
+series = "Серии"
+search = "Поиск"
+login = "Вход"
+logout = "Выход"
+settings = "Настройки"
+
+[search]
+placeholder = "Поиск..."
+by_title = "Название"
+by_author = "Автор"
+by_series = "Серия"
+min_chars = "Минимум 3 символа"
+
+[book]
+authors = "Авторы"
+genres = "Жанры"
+series = "Серия"
+series_no = "№"
+file = "Файл"
+size = "Размер"
+date = "Дата"
+lang = "Язык"
+download = "Скачать"
+annotation = "Аннотация"
+no_annotation = "Описание отсутствует."
+
+[footer]
+statistics = "Статистика"
+books = "книг"
+authors = "авторов"
+genres = "жанров"
+series = "серий"
+last_scan = "Последнее сканирование"
+never = "Никогда"
+random_book = "Случайная книга"
+
+[home]
+welcome = "Добро пожаловать в"
+description = "Персональный сервер книжной библиотеки. Просматривайте коллекцию, ищите по названию, автору, серии или жанру и скачивайте книги в любом формате."
+
+[page]
+previous = "Назад"
+next = "Вперёд"
+of = "из"
+
+[browse]
+all_languages = "Все языки"
+cyrillic = "Кириллица"
+latin = "Латиница"
+digits = "Цифры"
+other = "Другие"
+total = "Всего"
+
+[genre]
+sections = "Разделы жанров"
+
+[theme]
+light = "Светлая"
+dark = "Тёмная"
+toggle = "Переключить тему"
+
+[lang]
+en = "English"
+ru = "Русский"
+switch = "Язык"
+
+[common]
+not_found = "Не найдено"
+error = "Ошибка"
+no_results = "Ничего не найдено."
+root = "Корень"

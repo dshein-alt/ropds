@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t.nav.genres }} — {{ app_title }}{% endblock %}
+
+{% block content %}
+  <h4 class="mb-3">
+    {{ t.nav.genres }}
+    {% if section_name is defined %}
+    <small class="text-body-secondary">/ {{ section_name }}</small>
+    {% endif %}
+  </h4>
+
+  {% if is_top_level %}
+    {% if sections | length == 0 %}
+      <p class="text-body-secondary">{{ t.common.no_results }}</p>
+    {% else %}
+    <div class="list-group">
+      {% for section in sections %}
+      <a href="/web/genres?section={{ section.0 | urlencode }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+        <span class="fw-medium">{{ section.0 }}</span>
+        <span class="badge text-bg-secondary rounded-pill">{{ section.1 }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% else %}
+    <nav class="mb-3">
+      <a href="/web/genres" class="text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>{{ t.genre.sections }}
+      </a>
+    </nav>
+
+    {% if subsections | length == 0 %}
+      <p class="text-body-secondary">{{ t.common.no_results }}</p>
+    {% else %}
+    <div class="list-group">
+      {% for item in subsections %}
+      <a href="/web/search/books?type=g&q={{ item.id }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+        <span>{{ item.subsection }}</span>
+        <span class="badge text-bg-secondary rounded-pill">{{ item.count }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

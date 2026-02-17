@@ -150,7 +150,15 @@ pub async fn insert(
     .bind(cover_type)
     .execute(pool)
     .await?;
-    Ok(result.last_insert_id().unwrap_or(0))
+    if let Some(id) = result.last_insert_id() {
+        return Ok(id);
+    }
+    let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE path = ? AND filename = ?")
+        .bind(path)
+        .bind(filename)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
 }
 
 pub async fn set_avail_all(pool: &DbPool, avail: i32) -> Result<u64, sqlx::Error> {
@@ -182,4 +190,134 @@ pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
         .fetch_one(pool)
         .await?;
     Ok(row.0)
+}
+
+/// Random available book (for footer).
+pub async fn get_random(pool: &DbPool) -> Result<Option<Book>, sqlx::Error> {
+    sqlx::query_as::<_, Book>(
+        "SELECT * FROM books WHERE avail > 0 ORDER BY ABS(RANDOM()) LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Count books matching a title search (contains).
+pub async fn count_by_title_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
+    let pattern = format!("%{term}%");
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0",
+    )
+    .bind(&pattern)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Count books matching a title-starts-with search.
+pub async fn count_by_title_prefix(pool: &DbPool, prefix: &str) -> Result<i64, sqlx::Error> {
+    let pattern = format!("{prefix}%");
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0",
+    )
+    .bind(&pattern)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Search books by title prefix (starts with).
+pub async fn search_by_title_prefix(
+    pool: &DbPool,
+    prefix: &str,
+    limit: i32,
+    offset: i32,
+) -> Result<Vec<Book>, sqlx::Error> {
+    let pattern = format!("{prefix}%");
+    sqlx::query_as::<_, Book>(
+        "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
+         ORDER BY search_title LIMIT ? OFFSET ?",
+    )
+    .bind(&pattern)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+/// Count books by author.
+pub async fn count_by_author(pool: &DbPool, author_id: i64) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books b \
+         JOIN book_authors ba ON ba.book_id = b.id \
+         WHERE ba.author_id = ? AND b.avail > 0",
+    )
+    .bind(author_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Count books by genre.
+pub async fn count_by_genre(pool: &DbPool, genre_id: i64) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books b \
+         JOIN book_genres bg ON bg.book_id = b.id \
+         WHERE bg.genre_id = ? AND b.avail > 0",
+    )
+    .bind(genre_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Count books by series.
+pub async fn count_by_series(pool: &DbPool, series_id: i64) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books b \
+         JOIN book_series bs ON bs.book_id = b.id \
+         WHERE bs.series_id = ? AND b.avail > 0",
+    )
+    .bind(series_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Count books in a catalog.
+pub async fn count_by_catalog(pool: &DbPool, catalog_id: i64) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0",
+    )
+    .bind(catalog_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Alphabet drill-down: get prefix groups for book titles.
+/// Returns `(prefix_string, count)` pairs.
+/// `current_prefix` is the prefix already selected (empty for first level).
+/// `lang_code` = 0 means all languages.
+pub async fn get_title_prefix_groups(
+    pool: &DbPool,
+    lang_code: i32,
+    current_prefix: &str,
+) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    let prefix_len = (current_prefix.chars().count() + 1) as i32;
+    let like_pattern = format!("{}%", current_prefix);
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT SUBSTR(search_title, 1, ?) as prefix, COUNT(*) as cnt \
+         FROM books \
+         WHERE avail > 0 AND (? = 0 OR lang_code = ?) AND search_title LIKE ? \
+         GROUP BY SUBSTR(search_title, 1, ?) \
+         ORDER BY prefix",
+    )
+    .bind(prefix_len)
+    .bind(lang_code)
+    .bind(lang_code)
+    .bind(&like_pattern)
+    .bind(prefix_len)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }

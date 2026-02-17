@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}{{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8 text-center py-5">
+    <img src="/static/images/logo.png" alt="{{ app_title }}" class="mb-4" style="width: 128px; height: 128px;"
+         onerror="this.style.display='none'">
+    <h1 class="display-6 fw-semibold mb-3">{{ t.home.welcome }} {{ app_title }}</h1>
+    <p class="lead text-body-secondary mb-4">{{ t.home.description }}</p>
+
+    <div class="d-flex flex-wrap justify-content-center gap-3">
+      <a href="/web/catalogs" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-folder2-open me-2"></i>{{ t.nav.catalogs }}
+      </a>
+      <a href="/web/books?lang=0" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-book me-2"></i>{{ t.nav.books }}
+      </a>
+      <a href="/web/authors?lang=0" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-people me-2"></i>{{ t.nav.authors }}
+      </a>
+      <a href="/web/genres" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-tags me-2"></i>{{ t.nav.genres }}
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

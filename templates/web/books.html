@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t.nav.books }} — {{ app_title }}{% endblock %}
+
+{% block content %}
+  {% if search_label is defined %}
+  <h4 class="mb-3">{{ search_label }}</h4>
+  {% endif %}
+
+  {% if books | length == 0 %}
+    <p class="text-body-secondary">{{ t.common.no_results }}</p>
+  {% else %}
+    <div class="row g-3">
+    {% for item in books %}
+      <div class="col-12">
+        <div class="card book-card">
+          <div class="card-body">
+            <div class="d-flex gap-3">
+
+              {# Cover #}
+              {% if show_covers %}
+              <div class="flex-shrink-0">
+                {% if item.cover %}
+                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded">
+                {% else %}
+                <img src="/static/images/nocover.svg" alt="" class="book-cover rounded">
+                {% endif %}
+              </div>
+              {% endif %}
+
+              {# Details #}
+              <div class="flex-grow-1 min-width-0">
+                <h5 class="card-title mb-1">{{ item.title }}</h5>
+
+                {# Authors #}
+                {% if item.authors | length > 0 %}
+                <div class="mb-1">
+                  <i class="bi bi-person text-body-secondary me-1"></i>
+                  {% for author in item.authors %}
+                    <a href="/web/search/books?type=a&q={{ author.id }}" class="text-decoration-none">{{ author.full_name }}</a>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Genres #}
+                {% if item.genres | length > 0 %}
+                <div class="mb-1">
+                  <i class="bi bi-tags text-body-secondary me-1"></i>
+                  {% for genre in item.genres %}
+                    <a href="/web/search/books?type=g&q={{ genre.id }}" class="badge text-bg-light text-decoration-none">{{ genre.subsection }}</a>
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Series #}
+                {% if item.series_list | length > 0 %}
+                <div class="mb-1">
+                  <i class="bi bi-collection text-body-secondary me-1"></i>
+                  {% for s in item.series_list %}
+                    <a href="/web/search/books?type=s&q={{ s.id }}" class="text-decoration-none">{{ s.ser_name }}</a>{% if s.ser_no > 0 %} <span class="text-body-secondary">#{{ s.ser_no }}</span>{% endif %}{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Metadata line #}
+                <div class="small text-body-secondary mb-2">
+                  <span class="badge text-bg-secondary">{{ item.format }}</span>
+                  {{ item.size | filesizeformat }}
+                  {% if item.lang and item.lang != "un" %}· {{ item.lang }}{% endif %}
+                  {% if item.docdate and item.docdate != "" %}· {{ item.docdate }}{% endif %}
+                </div>
+
+                {# Download buttons #}
+                <div class="btn-group btn-group-sm">
+                  <a href="/opds/download/{{ item.id }}/0/" class="btn btn-primary">
+                    <i class="bi bi-download me-1"></i>{{ item.format }}
+                  </a>
+                  {% if item.show_zip %}
+                  <a href="/opds/download/{{ item.id }}/1/" class="btn btn-outline-primary">{{ item.format }}+zip</a>
+                  {% endif %}
+                  {% if item.show_epub_convert %}
+                  <a href="/opds/convert/{{ item.id }}/epub/" class="btn btn-outline-success">epub</a>
+                  {% endif %}
+                  {% if item.show_mobi_convert %}
+                  <a href="/opds/convert/{{ item.id }}/mobi/" class="btn btn-outline-success">mobi</a>
+                  {% endif %}
+                </div>
+
+                {# Annotation #}
+                {% if item.annotation and item.annotation != "" %}
+                <details class="mt-2">
+                  <summary class="small text-body-secondary">{{ t.book.annotation }}</summary>
+                  <p class="small mt-1">{{ item.annotation | truncate(length=600) }}</p>
+                </details>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if pagination.total_pages > 1 %}
+  {% include "web/_pagination.html" %}
+  {% endif %}
+{% endblock %}

@@ -82,3 +82,43 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Genre>, sql
     .fetch_all(pool)
     .await
 }
+
+/// Get genre sections with book counts.
+pub async fn get_sections_with_counts(pool: &DbPool) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT g.section, COUNT(DISTINCT bg.book_id) as cnt \
+         FROM genres g \
+         JOIN book_genres bg ON bg.genre_id = g.id \
+         JOIN books b ON b.id = bg.book_id AND b.avail > 0 \
+         GROUP BY g.section \
+         ORDER BY g.section",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Get genres within a section, each with its book count.
+pub async fn get_by_section_with_counts(
+    pool: &DbPool,
+    section: &str,
+) -> Result<Vec<(Genre, i64)>, sqlx::Error> {
+    let rows: Vec<(i64, String, String, String, i64)> = sqlx::query_as(
+        "SELECT g.id, g.code, g.section, g.subsection, COUNT(DISTINCT bg.book_id) as cnt \
+         FROM genres g \
+         LEFT JOIN book_genres bg ON bg.genre_id = g.id \
+         LEFT JOIN books b ON b.id = bg.book_id AND b.avail > 0 \
+         WHERE g.section = ? \
+         GROUP BY g.id, g.code, g.section, g.subsection \
+         ORDER BY g.subsection",
+    )
+    .bind(section)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, code, section, subsection, cnt)| {
+            (Genre { id, code, section, subsection }, cnt)
+        })
+        .collect())
+}

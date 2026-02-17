@@ -1,0 +1,17 @@
+<svg width="80" height="100" viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(0,0)">
+    <rect x="18" y="16" width="44" height="44" rx="10" fill="#e7f1ff"/>
+
+    <!-- Book icon (material-inspired) -->
+    <path d="M28 47 Q34 44 40 47 V28 Q34 25 28 28 Z" fill="#ffffff" stroke="#0d6efd" stroke-width="2"/>
+    <path d="M40 47 Q46 44 52 47 V28 Q46 25 40 28 Z" fill="#ffffff" stroke="#0d6efd" stroke-width="2"/>
+    <path d="M40 28 V47" stroke="#6ea8fe" stroke-width="2"/>
+    <path d="M31 33 Q34 32 37 33" stroke="#6ea8fe" stroke-width="1.6" fill="none"/>
+    <path d="M43 33 Q46 32 49 33" stroke="#6ea8fe" stroke-width="1.6" fill="none"/>
+
+    <!-- No-cover slash -->
+    <path d="M26 52 L54 24" stroke="#dc3545" stroke-width="4" stroke-linecap="round"/>
+
+    <text x="40" y="78" text-anchor="middle" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" fill="#495057">No Cover</text>
+  </g>
+</svg>

@@ -1,6 +1,6 @@
 use sqlx::FromRow;
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Catalog {
     pub id: i64,
     pub parent_id: Option<i64>,
@@ -9,7 +9,7 @@ pub struct Catalog {
     pub cat_type: i32,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Book {
     pub id: i64,
     pub catalog_id: i64,
@@ -30,7 +30,7 @@ pub struct Book {
     pub reg_date: String,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Author {
     pub id: i64,
     pub full_name: String,
@@ -38,7 +38,7 @@ pub struct Author {
     pub lang_code: i32,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Genre {
     pub id: i64,
     pub code: String,
@@ -46,7 +46,7 @@ pub struct Genre {
     pub subsection: String,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Series {
     pub id: i64,
     pub ser_name: String,
@@ -93,7 +93,7 @@ pub struct Bookshelf {
     pub read_time: String,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Counter {
     pub name: String,
     pub value: i64,

@@ -1,0 +1,77 @@
+[nav]
+home = "Home"
+catalogs = "Catalogs"
+books = "Books"
+authors = "Authors"
+genres = "Genres"
+series = "Series"
+search = "Search"
+login = "Login"
+logout = "Logout"
+settings = "Settings"
+
+[search]
+placeholder = "Search..."
+by_title = "Title"
+by_author = "Author"
+by_series = "Series"
+min_chars = "Minimum 3 characters"
+
+[book]
+authors = "Authors"
+genres = "Genres"
+series = "Series"
+series_no = "No."
+file = "File"
+size = "Size"
+date = "Date"
+lang = "Language"
+download = "Download"
+annotation = "Annotation"
+no_annotation = "No description available."
+
+[footer]
+statistics = "Statistics"
+books = "books"
+authors = "authors"
+genres = "genres"
+series = "series"
+last_scan = "Last scan"
+never = "Never"
+random_book = "Random Book"
+
+[home]
+welcome = "Welcome to"
+description = "A personal ebook library server. Browse your collection, search by title, author, series, or genre, and download books in any format."
+
+[page]
+previous = "Previous"
+next = "Next"
+of = "of"
+
+[browse]
+all_languages = "All languages"
+cyrillic = "Cyrillic"
+latin = "Latin"
+digits = "Digits"
+other = "Other"
+total = "Total"
+
+[genre]
+sections = "Genre Sections"
+
+[theme]
+light = "Light"
+dark = "Dark"
+toggle = "Toggle theme"
+
+[lang]
+en = "English"
+ru = "Русский"
+switch = "Language"
+
+[common]
+not_found = "Not found"
+error = "Error"
+no_results = "No results found."
+root = "Root"

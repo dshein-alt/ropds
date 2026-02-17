@@ -25,9 +25,9 @@ CREATE TABLE IF NOT EXISTS books (
     size            INTEGER   NOT NULL DEFAULT 0,
     avail           INTEGER   NOT NULL DEFAULT 1,  -- 0=deleted, 1=unverified, 2=confirmed
     cat_type        INTEGER   NOT NULL DEFAULT 0,
-    cover           BOOLEAN   NOT NULL DEFAULT 0,
+    cover           INTEGER   NOT NULL DEFAULT 0,
     cover_type      TEXT      NOT NULL DEFAULT '',
-    reg_date        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    reg_date        TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_books_catalog    ON books(catalog_id);
 CREATE INDEX idx_books_search     ON books(search_title);
@@ -92,15 +92,15 @@ CREATE TABLE IF NOT EXISTS users (
     id              INTEGER   PRIMARY KEY AUTOINCREMENT,
     username        TEXT      NOT NULL UNIQUE,
     password_hash   TEXT      NOT NULL DEFAULT '',
-    is_superuser    BOOLEAN   NOT NULL DEFAULT 0,
-    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    is_superuser    INTEGER   NOT NULL DEFAULT 0,
+    created_at      TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bookshelves (
     id          INTEGER   PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER   NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     book_id     INTEGER   NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    read_time   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    read_time   TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX idx_bookshelves_unique ON bookshelves(user_id, book_id);
 CREATE INDEX idx_bookshelves_user          ON bookshelves(user_id);
@@ -108,7 +108,7 @@ CREATE INDEX idx_bookshelves_user          ON bookshelves(user_id);
 CREATE TABLE IF NOT EXISTS counters (
     name        TEXT      PRIMARY KEY,
     value       INTEGER   NOT NULL DEFAULT 0,
-    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at  TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Initialize default counters

@@ -63,6 +63,8 @@ pub struct OpdsConfig {
     pub hide_doubles: bool,
     #[serde(default = "default_cache_time")]
     pub cache_time: u64,
+    #[serde(default = "default_covers_dir")]
+    pub covers_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -183,6 +185,10 @@ fn default_split_items() -> u32 {
 
 fn default_cache_time() -> u64 {
     600
+}
+
+fn default_covers_dir() -> PathBuf {
+    PathBuf::from("covers")
 }
 
 fn default_schedule_zero() -> String {

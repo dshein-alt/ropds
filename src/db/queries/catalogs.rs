@@ -47,7 +47,15 @@ pub async fn insert(
     .bind(cat_type)
     .execute(pool)
     .await?;
-    Ok(result.last_insert_id().unwrap_or(0))
+    if let Some(id) = result.last_insert_id() {
+        return Ok(id);
+    }
+    // Fallback: query back by path
+    let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = ?")
+        .bind(path)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
 }
 
 pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
