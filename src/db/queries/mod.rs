@@ -1,5 +1,6 @@
 pub mod authors;
 pub mod books;
+pub mod bookshelf;
 pub mod catalogs;
 pub mod counters;
 pub mod genres;
