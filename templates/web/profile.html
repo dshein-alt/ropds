@@ -13,6 +13,21 @@
 
 <div class="row justify-content-center">
   <div class="col-md-6">
+    <div class="card mb-3">
+      <div class="card-header">
+        <h5 class="mb-0">{{ t.profile.display_name }}</h5>
+      </div>
+      <div class="card-body">
+        <form method="post" action="/web/profile/display-name">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="mb-3">
+            <label for="profile-display-name" class="form-label">{{ t.profile.display_name }}</label>
+            <input type="text" class="form-control" id="profile-display-name" name="display_name" maxlength="64" value="{{ display_name }}">
+          </div>
+          <button type="submit" class="btn btn-primary">{{ t.profile.save }}</button>
+        </form>
+      </div>
+    </div>
     <div class="card">
       <div class="card-header">
         <h5 class="mb-0">{{ t.profile.change_password }}</h5>
@@ -49,7 +64,8 @@
 {# ── Flash message config (logic in sopds.js) ── #}
 <script>
 window._flashMessages = {
-  password_changed: "{{ t.profile.success_password_changed }}"
+  password_changed: "{{ t.profile.success_password_changed }}",
+  display_name_changed: "{{ t.profile.success_display_name_changed }}"
 };
 window._flashErrors = {
   password_short: "{{ t.profile.error_password_short }}",

@@ -35,6 +35,7 @@
             <thead class="table-light">
               <tr>
                 <th>{{ t.admin.username }}</th>
+                <th>{{ t.admin.display_name }}</th>
                 <th>{{ t.admin.superuser }}</th>
                 <th>{{ t.admin.last_login }}</th>
                 <th class="text-end">{{ t.admin.actions }}</th>
@@ -51,6 +52,7 @@
                   </span>
                   {% endif %}
                 </td>
+                <td class="text-body-secondary">{{ user.display_name }}</td>
                 <td>
                   {% if user.is_superuser %}
                   <span class="badge bg-warning text-dark"><i class="bi bi-shield-check me-1"></i>{{ t.admin.superuser }}</span>
@@ -159,6 +161,10 @@
                   <div class="mb-3">
                     <label for="new-username" class="form-label">{{ t.admin.username }}</label>
                     <input type="text" class="form-control" id="new-username" name="username" required>
+                  </div>
+                  <div class="mb-3">
+                    <label for="new-display-name" class="form-label">{{ t.admin.display_name }}</label>
+                    <input type="text" class="form-control" id="new-display-name" name="display_name" maxlength="64">
                   </div>
                   <div class="mb-3">
                     <label for="new-password" class="form-label">{{ t.admin.password }}</label>

@@ -31,6 +31,30 @@ main {
   white-space: nowrap;
 }
 
+.navbar-user-btn {
+  max-width: 14rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.navbar-username {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10rem;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+#search-form {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.search-type-group {
+  flex-shrink: 0;
+}
+
 /* Book cards */
 .book-card {
   transition: box-shadow 0.15s ease;

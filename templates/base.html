@@ -118,19 +118,8 @@
           <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
         </div>
 
-        {# ── Settings Link (admin for superusers, profile for regular users) ── #}
-        {% if is_superuser %}
-        <a class="btn btn-sm btn-outline-secondary{% if active_page == 'admin' %} active{% endif %} me-2" href="/web/admin" title="{{ t.admin.title }}">
-          <i class="bi bi-gear"></i>
-        </a>
-        {% elif is_authenticated %}
-        <a class="btn btn-sm btn-outline-secondary{% if active_page == 'profile' %} active{% endif %} me-2" href="/web/profile" title="{{ t.profile.title }}">
-          <i class="bi bi-gear"></i>
-        </a>
-        {% endif %}
-
-        {# ── Theme, Language & Logout ────────────────── #}
-        <div class="d-flex align-items-center gap-2">
+        {# ── Theme, Language & User Menu ────────────── #}
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
           <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="{{ t.theme.toggle }}">
             <i id="theme-icon" class="bi bi-moon"></i>
           </button>
@@ -150,9 +139,32 @@
             </ul>
           </div>
           {% if auth_required %}
-          <a class="btn btn-sm btn-outline-secondary d-flex align-items-center" href="/web/logout" title="{{ t.nav.logout }}">
-            <i class="bi bi-box-arrow-right"></i>
-          </a>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle navbar-user-btn" data-bs-toggle="dropdown"
+                    title="{% if display_name %}{{ display_name }}{% else %}{{ username }}{% endif %}">
+              <i class="bi bi-person-circle me-1"></i><span class="d-none d-lg-inline navbar-username">{% if display_name %}{{ display_name }}{% else %}{{ username }}{% endif %}</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li>
+                <a class="dropdown-item{% if active_page == 'profile' %} active{% endif %}" href="/web/profile">
+                  <i class="bi bi-person me-2"></i>{{ t.profile.title }}
+                </a>
+              </li>
+              {% if is_superuser %}
+              <li>
+                <a class="dropdown-item{% if active_page == 'admin' %} active{% endif %}" href="/web/admin">
+                  <i class="bi bi-gear me-2"></i>{{ t.admin.title }}
+                </a>
+              </li>
+              {% endif %}
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item" href="/web/logout">
+                  <i class="bi bi-box-arrow-right me-2"></i>{{ t.nav.logout }}
+                </a>
+              </li>
+            </ul>
+          </div>
           {% endif %}
         </div>
 
