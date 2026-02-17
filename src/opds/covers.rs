@@ -9,7 +9,8 @@ use crate::db::models;
 use crate::db::queries::books;
 use crate::state::AppState;
 
-const THUMB_SIZE: u32 = 100;
+const THUMB_SIZE: u32 = 200;
+const THUMB_JPEG_QUALITY: u8 = 85;
 
 /// GET /opds/cover/:book_id/ — Full-size cover image.
 pub async fn cover(
@@ -19,7 +20,7 @@ pub async fn cover(
     serve_cover(&state, book_id, false).await
 }
 
-/// GET /opds/thumb/:book_id/ — Thumbnail cover image (100x100).
+/// GET /opds/thumb/:book_id/ — Thumbnail cover image.
 pub async fn thumbnail(
     State(state): State<AppState>,
     Path((book_id,)): Path<(i64,)>,
@@ -38,17 +39,29 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         return (StatusCode::NOT_FOUND, "No cover").into_response();
     }
 
-    let root = &state.config.library.root_path;
-
-    // Extract cover in a blocking task (involves I/O and parsing)
-    let root_clone = root.clone();
+    let covers_dir = state.config.opds.covers_dir.clone();
+    let root = state.config.library.root_path.clone();
     let path = book.path.clone();
     let filename = book.filename.clone();
     let format = book.format.clone();
     let cat_type = book.cat_type;
 
+    // Try disk cache first, then fallback to re-extraction from book file
     let cover_result = tokio::task::spawn_blocking(move || {
-        extract_book_cover(&root_clone, &path, &filename, &format, cat_type)
+        // 1. Try to load from disk cache
+        if let Some(result) = find_cover_file(&covers_dir, book_id) {
+            return Some(result);
+        }
+
+        // 2. Fallback: re-extract from the book file
+        let extracted = extract_book_cover(&root, &path, &filename, &format, cat_type)?;
+
+        // Save extracted cover to disk for next time
+        let ext = mime_to_ext(&extracted.1);
+        let save_path = covers_dir.join(format!("{book_id}.{ext}"));
+        let _ = std::fs::write(&save_path, &extracted.0);
+
+        Some(extracted)
     })
     .await;
 
@@ -58,13 +71,41 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
     };
 
     if as_thumbnail {
-        // Resize to thumbnail
         match make_thumbnail(&cover_data, THUMB_SIZE) {
             Ok(thumb) => image_response(&thumb, "image/jpeg"),
             Err(_) => image_response(&cover_data, &cover_mime),
         }
     } else {
         image_response(&cover_data, &cover_mime)
+    }
+}
+
+/// Try to find a cached cover file on disk for the given book id.
+fn find_cover_file(covers_dir: &std::path::Path, book_id: i64) -> Option<(Vec<u8>, String)> {
+    for ext in ["jpg", "png", "gif"] {
+        let path = covers_dir.join(format!("{book_id}.{ext}"));
+        if path.exists() {
+            let data = std::fs::read(&path).ok()?;
+            let mime = ext_to_mime(ext);
+            return Some((data, mime));
+        }
+    }
+    None
+}
+
+fn ext_to_mime(ext: &str) -> String {
+    match ext {
+        "png" => "image/png".to_string(),
+        "gif" => "image/gif".to_string(),
+        _ => "image/jpeg".to_string(),
+    }
+}
+
+fn mime_to_ext(mime: &str) -> &str {
+    match mime {
+        "image/png" => "png",
+        "image/gif" => "gif",
+        _ => "jpg",
     }
 }
 
@@ -80,8 +121,10 @@ fn extract_book_cover(
 
     match format {
         "fb2" => {
-            let reader = BufReader::new(Cursor::new(&data));
-            crate::scanner::parsers::fb2::extract_cover(reader)
+            // Find cover reference id, then extract binary from raw bytes
+            // (raw byte search is more reliable than XML parsing for malformed FB2)
+            let cover_id = find_fb2_cover_ref(&data)?;
+            crate::scanner::parsers::fb2::extract_cover_from_bytes(&data, &cover_id)
         }
         "epub" => {
             let cursor = Cursor::new(&data);
@@ -316,13 +359,37 @@ fn read_zip_opt<R: std::io::Read + std::io::Seek>(
     read_zip_vec(archive, name).ok()
 }
 
-/// Resize an image to a thumbnail (square).
+/// Resize an image to a thumbnail, preserving aspect ratio.
 fn make_thumbnail(data: &[u8], size: u32) -> Result<Vec<u8>, image::ImageError> {
     let img = image::load_from_memory(data)?;
     let thumb = img.resize(size, size, FilterType::Lanczos3);
     let mut buf = Cursor::new(Vec::new());
-    thumb.write_to(&mut buf, image::ImageFormat::Jpeg)?;
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, THUMB_JPEG_QUALITY);
+    thumb.write_with_encoder(encoder)?;
     Ok(buf.into_inner())
+}
+
+/// Find the cover image reference id from raw FB2 bytes.
+/// Searches for `<coverpage>...<image ...href="#id"/>...</coverpage>`.
+fn find_fb2_cover_ref(data: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(data);
+    let cp_start = text.find("<coverpage")?;
+    let cp_end = text[cp_start..].find("</coverpage>")? + cp_start;
+    let coverpage = &text[cp_start..cp_end];
+
+    // Find <image ...href="#id"...> within coverpage
+    let img_start = coverpage.find("<image ")?;
+    let img_end = coverpage[img_start..].find('>')? + img_start;
+    let img_tag = &coverpage[img_start..=img_end];
+
+    // Extract href attribute (could be l:href or xlink:href)
+    let href_pos = img_tag.find("href=\"")?;
+    let val_start = href_pos + 6;
+    let val_end = img_tag[val_start..].find('"')? + val_start;
+    let href = &img_tag[val_start..val_end];
+
+    let id = href.trim_start_matches('#').to_lowercase();
+    if id.is_empty() { None } else { Some(id) }
 }
 
 fn image_response(data: &[u8], mime: &str) -> Response {

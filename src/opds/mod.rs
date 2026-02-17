@@ -12,7 +12,8 @@ use crate::state::AppState;
 
 /// Build the OPDS router with all feed, download, and cover routes.
 pub fn router(state: AppState) -> Router<AppState> {
-    Router::new()
+    // Auth-protected routes (feeds, search, download)
+    let protected = Router::new()
         // Root feed
         .route("/", get(feeds::root_feed))
         // Catalogs
@@ -65,12 +66,15 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         // Download
         .route("/download/{book_id}/{zip_flag}/", get(download::download))
-        // Covers
-        .route("/cover/{book_id}/", get(covers::cover))
-        .route("/thumb/{book_id}/", get(covers::thumbnail))
-        // Auth middleware (applied to all OPDS routes)
+        // Auth middleware
         .layer(middleware::from_fn_with_state(
             state,
             auth::basic_auth_layer,
-        ))
+        ));
+
+    // Public routes (covers don't need auth, used by web UI img tags)
+    Router::new()
+        .route("/cover/{book_id}/", get(covers::cover))
+        .route("/thumb/{book_id}/", get(covers::thumbnail))
+        .merge(protected)
 }

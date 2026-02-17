@@ -49,6 +49,7 @@ pub async fn run_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanE
 
 async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError> {
     let root = &config.library.root_path;
+    let covers_dir = &config.opds.covers_dir;
     let extensions: HashSet<String> = config
         .library
         .book_extensions
@@ -83,7 +84,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
         match entry {
             ScanEntry::File { path, rel_path, filename, extension, size } => {
                 match process_file(
-                    pool, root, &path, &rel_path, &filename, &extension, size, &mut stats,
+                    pool, root, &path, &rel_path, &filename, &extension, size, &mut stats, covers_dir,
                 )
                 .await
                 {
@@ -95,7 +96,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
                 }
             }
             ScanEntry::Zip { path, rel_path } => {
-                match process_zip(pool, root, &path, &rel_path, &extensions, &mut stats).await {
+                match process_zip(pool, root, &path, &rel_path, &extensions, &mut stats, covers_dir).await {
                     Ok(()) => {}
                     Err(e) => {
                         debug!("Error processing ZIP {}: {e}", path.display());
@@ -104,7 +105,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
                 }
             }
             ScanEntry::Inpx { path, rel_path } => {
-                match process_inpx(pool, &path, &rel_path, &mut stats).await {
+                match process_inpx(pool, &path, &rel_path, &mut stats, covers_dir).await {
                     Ok(()) => {}
                     Err(e) => {
                         debug!("Error processing INPX {}: {e}", path.display());
@@ -229,6 +230,7 @@ async fn process_file(
     extension: &str,
     size: i64,
     stats: &mut ScanStats,
+    covers_dir: &Path,
 ) -> Result<(), ScanError> {
     // Check if already in DB
     if let Some(_existing) = books::find_by_path_and_filename(pool, rel_path, filename).await? {
@@ -264,6 +266,7 @@ async fn process_file(
         size,
         models::CAT_NORMAL,
         &meta,
+        covers_dir,
     )
     .await?;
 
@@ -279,6 +282,7 @@ async fn process_zip(
     rel_dir: &str,
     extensions: &HashSet<String>,
     stats: &mut ScanStats,
+    covers_dir: &Path,
 ) -> Result<(), ScanError> {
     let zip_filename = zip_path
         .file_name()
@@ -340,6 +344,7 @@ async fn process_zip(
             ze.size,
             models::CAT_ZIP,
             &meta,
+            covers_dir,
         )
         .await?;
 
@@ -356,6 +361,7 @@ async fn process_inpx(
     inpx_path: &Path,
     rel_path: &str,
     stats: &mut ScanStats,
+    covers_dir: &Path,
 ) -> Result<(), ScanError> {
     let inpx_path_buf = inpx_path.to_path_buf();
     let records = tokio::task::spawn_blocking(move || {
@@ -406,6 +412,7 @@ async fn process_inpx(
             record.size,
             models::CAT_INPX,
             &record.meta,
+            covers_dir,
         )
         .await?;
 
@@ -543,6 +550,7 @@ async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<i64,
 }
 
 /// Insert a book record and link authors, genres, series.
+/// Saves cover image to `covers_dir` if present.
 async fn insert_book_with_meta(
     pool: &DbPool,
     catalog_id: i64,
@@ -552,6 +560,7 @@ async fn insert_book_with_meta(
     size: i64,
     cat_type: i32,
     meta: &BookMeta,
+    covers_dir: &Path,
 ) -> Result<i64, ScanError> {
     let title = if meta.title.is_empty() {
         Path::new(filename)
@@ -592,6 +601,13 @@ async fn insert_book_with_meta(
         &meta.cover_type,
     )
     .await?;
+
+    // Save cover to disk
+    if let Some(ref cover_data) = meta.cover_data {
+        if let Err(e) = save_cover(covers_dir, book_id, cover_data, &meta.cover_type) {
+            warn!("Failed to save cover for book {book_id}: {e}");
+        }
+    }
 
     // Link authors
     if meta.authors.is_empty() {
@@ -645,6 +661,21 @@ async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> 
     let lang_code = detect_lang_code(ser_name);
     let id = series::insert(pool, ser_name, &search, lang_code).await?;
     Ok(id)
+}
+
+/// Save cover image bytes to disk as `{covers_dir}/{book_id}.{ext}`.
+fn save_cover(covers_dir: &Path, book_id: i64, data: &[u8], mime: &str) -> Result<(), std::io::Error> {
+    let ext = mime_to_ext(mime);
+    let path = covers_dir.join(format!("{book_id}.{ext}"));
+    fs::write(&path, data)
+}
+
+fn mime_to_ext(mime: &str) -> &str {
+    match mime {
+        "image/png" => "png",
+        "image/gif" => "gif",
+        _ => "jpg",
+    }
 }
 
 fn rel_path(root: &Path, path: &Path) -> String {
