@@ -76,13 +76,14 @@ pub struct BookSeries {
     pub ser_no: i32,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct User {
     pub id: i64,
     pub username: String,
     pub password_hash: String,
     pub is_superuser: i32,
     pub created_at: String,
+    pub last_login: String,
 }
 
 #[derive(Debug, Clone, FromRow)]
