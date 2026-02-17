@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t.admin.title }} — {{ app_title }}{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-gear me-2"></i>{{ t.admin.title }}</h2>
+
+{# ── Flash Messages ─────────────────────────────── #}
+<div id="flash-msg" class="alert alert-dismissible fade show d-none" role="alert">
+  <span id="flash-text"></span>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+
+<div class="accordion" id="adminAccordion">
+
+  {# ══════════════════════════════════════════════════ #}
+  {# ── 1. User Management ───────────────────────────── #}
+  {# ══════════════════════════════════════════════════ #}
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUsers">
+        <i class="bi bi-people me-2"></i>{{ t.admin.users }}
+      </button>
+    </h2>
+    <div id="collapseUsers" class="accordion-collapse collapse show" data-bs-parent="#adminAccordion">
+      <div class="accordion-body">
+        <p class="text-body-secondary">{{ t.admin.users_desc }}</p>
+
+        <button type="button" class="btn btn-primary btn-sm mb-3" data-bs-toggle="modal" data-bs-target="#createUserModal">
+          <i class="bi bi-plus-lg me-1"></i>{{ t.admin.add_user }}
+        </button>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>{{ t.admin.username }}</th>
+                <th>{{ t.admin.superuser }}</th>
+                <th>{{ t.admin.last_login }}</th>
+                <th class="text-end">{{ t.admin.actions }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+              <tr>
+                <td><i class="bi bi-person me-1"></i>{{ user.username }}</td>
+                <td>
+                  {% if user.is_superuser %}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-shield-check me-1"></i>{{ t.admin.superuser }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-body-secondary">
+                  {% if user.last_login %}{{ user.last_login }}{% else %}{{ t.admin.never }}{% endif %}
+                </td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-outline-primary btn-sm"
+                          data-bs-toggle="modal" data-bs-target="#pwModal{{ user.id }}"
+                          title="{{ t.admin.change_password }}">
+                    <i class="bi bi-key"></i>
+                  </button>
+                  {% if user.id != current_user_id %}
+                  <button type="button" class="btn btn-outline-danger btn-sm"
+                          data-bs-toggle="modal" data-bs-target="#delModal{{ user.id }}"
+                          title="{{ t.admin.delete_user }}">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                  {% endif %}
+                </td>
+              </tr>
+
+              {# ── Change Password Modal ── #}
+              <div class="modal fade" id="pwModal{{ user.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <div class="modal-content">
+                    <form method="post" action="/web/admin/users/{{ user.id }}/password">
+                      <div class="modal-header">
+                        <h5 class="modal-title">{{ t.admin.change_password }} — {{ user.username }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <label for="pw-{{ user.id }}" class="form-label">{{ t.admin.new_password }}</label>
+                        <input type="password" class="form-control" id="pw-{{ user.id }}" name="password" minlength="8" maxlength="32" required>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+                        <button type="submit" class="btn btn-primary">{{ t.admin.save }}</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              {% if user.id != current_user_id %}
+              {# ── Delete Confirmation Modal ── #}
+              <div class="modal fade" id="delModal{{ user.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title">{{ t.admin.delete_user }}</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                      <p>{{ t.admin.confirm_delete }} <strong>{{ user.username }}</strong>?</p>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+                      <form method="post" action="/web/admin/users/{{ user.id }}/delete" class="d-inline">
+                        <button type="submit" class="btn btn-danger">{{ t.admin.delete }}</button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {# ── Create User Modal ── #}
+        <div class="modal fade" id="createUserModal" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <form method="post" action="/web/admin/users/create">
+                <div class="modal-header">
+                  <h5 class="modal-title">{{ t.admin.add_user }}</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label for="new-username" class="form-label">{{ t.admin.username }}</label>
+                    <input type="text" class="form-control" id="new-username" name="username" required>
+                  </div>
+                  <div class="mb-3">
+                    <label for="new-password" class="form-label">{{ t.admin.password }}</label>
+                    <input type="password" class="form-control" id="new-password" name="password" minlength="8" maxlength="32" required>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="new-superuser" name="is_superuser" value="on">
+                    <label class="form-check-label" for="new-superuser">{{ t.admin.superuser }}</label>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+                  <button type="submit" class="btn btn-primary">{{ t.admin.create }}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════ #}
+  {# ── 2. Server Configuration ──────────────────────── #}
+  {# ══════════════════════════════════════════════════ #}
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseConfig">
+        <i class="bi bi-sliders me-2"></i>{{ t.admin.config }}
+      </button>
+    </h2>
+    <div id="collapseConfig" class="accordion-collapse collapse" data-bs-parent="#adminAccordion">
+      <div class="accordion-body">
+        <p class="text-body-secondary">{{ t.admin.config_desc }}</p>
+
+        {# Server #}
+        <h6 class="mt-3">{{ t.admin.section_server }}</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr><td class="text-body-secondary" style="width:40%">host</td><td><code>{{ cfg_host }}</code></td></tr>
+            <tr><td class="text-body-secondary">port</td><td><code>{{ cfg_port }}</code></td></tr>
+            <tr><td class="text-body-secondary">log_level</td><td><code>{{ cfg_log_level }}</code></td></tr>
+          </tbody>
+        </table>
+
+        {# Library #}
+        <h6 class="mt-3">{{ t.admin.section_library }}</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr><td class="text-body-secondary" style="width:40%">root_path</td><td><code>{{ cfg_root_path }}</code></td></tr>
+            <tr><td class="text-body-secondary">book_extensions</td><td><code>{{ cfg_book_extensions }}</code></td></tr>
+            <tr><td class="text-body-secondary">scan_zip</td><td>{% if cfg_scan_zip %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">zip_codepage</td><td><code>{{ cfg_zip_codepage }}</code></td></tr>
+            <tr><td class="text-body-secondary">inpx_enable</td><td>{% if cfg_inpx_enable %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+          </tbody>
+        </table>
+
+        {# OPDS #}
+        <h6 class="mt-3">{{ t.admin.section_opds }}</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr><td class="text-body-secondary" style="width:40%">title</td><td><code>{{ cfg_opds_title }}</code></td></tr>
+            <tr><td class="text-body-secondary">subtitle</td><td><code>{{ cfg_opds_subtitle }}</code></td></tr>
+            <tr><td class="text-body-secondary">max_items</td><td><code>{{ cfg_max_items }}</code></td></tr>
+            <tr><td class="text-body-secondary">split_items</td><td><code>{{ cfg_split_items }}</code></td></tr>
+            <tr><td class="text-body-secondary">auth_required</td><td>{% if cfg_auth_required %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">show_covers</td><td>{% if cfg_show_covers %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">alphabet_menu</td><td>{% if cfg_alphabet_menu %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">hide_doubles</td><td>{% if cfg_hide_doubles %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">cache_time</td><td><code>{{ cfg_cache_time }}s</code></td></tr>
+            <tr><td class="text-body-secondary">covers_dir</td><td><code>{{ cfg_covers_dir }}</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════ #}
+  {# ── 3. Scanner ───────────────────────────────────── #}
+  {# ══════════════════════════════════════════════════ #}
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseScanner">
+        <i class="bi bi-clock-history me-2"></i>{{ t.admin.scanner }}
+      </button>
+    </h2>
+    <div id="collapseScanner" class="accordion-collapse collapse" data-bs-parent="#adminAccordion">
+      <div class="accordion-body">
+        <p class="text-body-secondary">{{ t.admin.scanner_desc }}</p>
+
+        <h6>{{ t.admin.schedule }}</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr>
+              <td class="text-body-secondary" style="width:40%">{{ t.admin.schedule_days }}</td>
+              <td>
+                {% if cfg_schedule_days | length == 0 %}
+                  {{ t.admin.schedule_every_day }}
+                {% else %}
+                  {% for d in cfg_schedule_days %}{% if d == 1 %}{{ t.admin.day_mon }}{% elif d == 2 %}{{ t.admin.day_tue }}{% elif d == 3 %}{{ t.admin.day_wed }}{% elif d == 4 %}{{ t.admin.day_thu }}{% elif d == 5 %}{{ t.admin.day_fri }}{% elif d == 6 %}{{ t.admin.day_sat }}{% elif d == 7 %}{{ t.admin.day_sun }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-body-secondary">{{ t.admin.schedule_hours }}</td>
+              <td><code>{{ cfg_schedule_hours }}</code></td>
+            </tr>
+            <tr>
+              <td class="text-body-secondary">{{ t.admin.schedule_minutes }}</td>
+              <td><code>{{ cfg_schedule_minutes }}</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h6 class="mt-3">{{ t.admin.deletion_type }}</h6>
+        {% if cfg_delete_logical %}
+        <div class="alert alert-info py-2">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong>{{ t.admin.deletion_logical }}</strong> — {{ t.admin.deletion_logical_desc }}
+        </div>
+        {% else %}
+        <div class="alert alert-warning py-2">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          <strong>{{ t.admin.deletion_physical }}</strong> — {{ t.admin.deletion_physical_desc }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{# ── Flash message JS ── #}
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var flash = document.getElementById("flash-msg");
+  var text = document.getElementById("flash-text");
+  if (!flash || !text) return;
+
+  var messages = {
+    user_created: "{{ t.admin.success_user_created }}",
+    password_changed: "{{ t.admin.success_password_changed }}",
+    user_deleted: "{{ t.admin.success_user_deleted }}"
+  };
+  var errors = {
+    username_exists: "{{ t.admin.error_username_exists }}",
+    username_empty: "{{ t.admin.error_username_empty }}",
+    password_short: "{{ t.admin.error_password_short }}",
+    cannot_delete_self: "{{ t.admin.error_cannot_delete_self }}"
+  };
+
+  var msg = params.get("msg");
+  var err = params.get("error");
+
+  if (msg && messages[msg]) {
+    flash.classList.remove("d-none", "alert-danger");
+    flash.classList.add("alert-success");
+    text.textContent = messages[msg];
+  } else if (err && errors[err]) {
+    flash.classList.remove("d-none", "alert-success");
+    flash.classList.add("alert-danger");
+    text.textContent = errors[err];
+  }
+
+  // Clean URL
+  if (msg || err) {
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+})();
+</script>
+{% endblock %}
