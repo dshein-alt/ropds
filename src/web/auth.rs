@@ -4,8 +4,8 @@ use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use serde::Deserialize;
+use sha2::Sha256;
 
 use crate::state::AppState;
 use crate::web::i18n;
@@ -16,8 +16,7 @@ type HmacSha256 = Hmac<Sha256>;
 pub fn sign_session(user_id: i64, secret: &[u8], ttl_hours: u64) -> String {
     let expiry = chrono::Utc::now().timestamp() + (ttl_hours * 3600) as i64;
     let payload = format!("{user_id}:{expiry}");
-    let mut mac =
-        HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
     mac.update(payload.as_bytes());
     let sig = hex::encode(mac.finalize().into_bytes());
     format!("{payload}:{sig}")
@@ -40,8 +39,7 @@ pub fn verify_session(cookie_value: &str, secret: &[u8]) -> Option<i64> {
 
     // Verify HMAC
     let payload = format!("{}:{}", parts[0], parts[1]);
-    let mut mac =
-        HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
     mac.update(payload.as_bytes());
 
     let expected = hex::decode(sig_hex).ok()?;
@@ -177,9 +175,7 @@ pub async fn login_submit(
 
 /// GET /web/logout — clear session and redirect to login.
 pub async fn logout(jar: CookieJar) -> impl IntoResponse {
-    let cookie = Cookie::build(("session", ""))
-        .path("/web")
-        .http_only(true);
+    let cookie = Cookie::build(("session", "")).path("/web").http_only(true);
     (jar.remove(cookie), Redirect::to("/web/login"))
 }
 

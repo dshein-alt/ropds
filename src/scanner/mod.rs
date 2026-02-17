@@ -147,7 +147,10 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
         for id in &ids {
             delete_cover(covers_dir, *id);
         }
-        info!("Physically deleted {deleted} unavailable books, removed {} covers", ids.len());
+        info!(
+            "Physically deleted {deleted} unavailable books, removed {} covers",
+            ids.len()
+        );
     }
 
     // Step 4: Update counters
@@ -344,7 +347,8 @@ async fn process_zip(
         let meta = {
             let data = ze.data.clone();
             let ext = ze.extension.clone();
-            tokio::task::spawn_blocking(move || parse_book_bytes(&data, &ext))
+            let filename = ze.filename.clone();
+            tokio::task::spawn_blocking(move || parse_book_bytes(&data, &ext, &filename))
                 .await
                 .map_err(|e| ScanError::Internal(e.to_string()))?
         };
@@ -458,14 +462,37 @@ fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
             parsers::epub::parse(file).map_err(|e| ScanError::Parse(e.to_string()))
         }
         "pdf" => {
+            let fallback_title = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             let mut meta = BookMeta {
-                title: path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string(),
+                title: fallback_title.clone(),
                 ..Default::default()
             };
+
+            match crate::pdf::extract_metadata_from_path(path) {
+                Ok(pdf_meta) => {
+                    if let Some(title) = pdf_meta.title {
+                        meta.title = title;
+                    }
+                    if let Some(author) = pdf_meta.author {
+                        meta.authors = vec![author];
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to extract PDF metadata for {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+
+            if meta.title.trim().is_empty() {
+                meta.title = fallback_title;
+            }
 
             match crate::pdf::render_first_page_jpeg_from_path(path) {
                 Ok(cover) => {
@@ -494,7 +521,7 @@ fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
 }
 
 /// Parse book metadata from in-memory bytes.
-fn parse_book_bytes(data: &[u8], ext: &str) -> Result<BookMeta, ScanError> {
+fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMeta, ScanError> {
     match ext {
         "fb2" => {
             let reader = BufReader::new(Cursor::new(data));
@@ -505,7 +532,35 @@ fn parse_book_bytes(data: &[u8], ext: &str) -> Result<BookMeta, ScanError> {
             parsers::epub::parse(cursor).map_err(|e| ScanError::Parse(e.to_string()))
         }
         "pdf" => {
-            let mut meta = BookMeta::default();
+            let fallback_title = Path::new(filename)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            let mut meta = BookMeta {
+                title: fallback_title.clone(),
+                ..Default::default()
+            };
+
+            match crate::pdf::extract_metadata_from_bytes(data) {
+                Ok(pdf_meta) => {
+                    if let Some(title) = pdf_meta.title {
+                        meta.title = title;
+                    }
+                    if let Some(author) = pdf_meta.author {
+                        meta.authors = vec![author];
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to extract PDF metadata from archive bytes: {}", e);
+                }
+            }
+
+            if meta.title.trim().is_empty() {
+                meta.title = fallback_title;
+            }
+
             match crate::pdf::render_first_page_jpeg_from_bytes(data) {
                 Ok(cover) => {
                     meta.cover_data = Some(cover);
@@ -517,7 +572,14 @@ fn parse_book_bytes(data: &[u8], ext: &str) -> Result<BookMeta, ScanError> {
             }
             Ok(meta)
         }
-        _ => Ok(BookMeta::default()),
+        _ => Ok(BookMeta {
+            title: Path::new(filename)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            ..Default::default()
+        }),
     }
 }
 

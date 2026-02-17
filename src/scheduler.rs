@@ -10,12 +10,16 @@ use crate::scanner;
 pub fn validate_config(config: &ScannerConfig) -> Result<(), String> {
     for &m in &config.schedule_minutes {
         if m > 59 {
-            return Err(format!("scanner.schedule_minutes: {m} is out of range 0..=59"));
+            return Err(format!(
+                "scanner.schedule_minutes: {m} is out of range 0..=59"
+            ));
         }
     }
     for &h in &config.schedule_hours {
         if h > 23 {
-            return Err(format!("scanner.schedule_hours: {h} is out of range 0..=23"));
+            return Err(format!(
+                "scanner.schedule_hours: {h} is out of range 0..=23"
+            ));
         }
     }
     for &d in &config.schedule_day_of_week {
@@ -35,12 +39,10 @@ fn matches_schedule(config: &ScannerConfig) -> bool {
     let hour = now.hour();
     let dow = now.weekday().number_from_monday(); // 1=Mon..7=Sun
 
-    let minute_ok = config.schedule_minutes.is_empty()
-        || config.schedule_minutes.contains(&minute);
-    let hour_ok = config.schedule_hours.is_empty()
-        || config.schedule_hours.contains(&hour);
-    let dow_ok = config.schedule_day_of_week.is_empty()
-        || config.schedule_day_of_week.contains(&dow);
+    let minute_ok = config.schedule_minutes.is_empty() || config.schedule_minutes.contains(&minute);
+    let hour_ok = config.schedule_hours.is_empty() || config.schedule_hours.contains(&hour);
+    let dow_ok =
+        config.schedule_day_of_week.is_empty() || config.schedule_day_of_week.contains(&dow);
 
     minute_ok && hour_ok && dow_ok
 }

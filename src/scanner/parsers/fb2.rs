@@ -4,7 +4,7 @@ use base64::Engine;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
-use super::{strip_meta, BookMeta};
+use super::{BookMeta, strip_meta};
 
 /// Parse FB2 XML from any `BufRead` source and return extracted metadata.
 /// Tolerant of malformed XML: returns partial metadata on parse errors.

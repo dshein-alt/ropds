@@ -101,6 +101,11 @@ async fn main() {
             "`pdftoppm` is not available in PATH; PDF cover/thumbnail generation is disabled"
         );
     }
+    if !pdf::pdfinfo_available() {
+        tracing::warn!(
+            "`pdfinfo` is not available in PATH; PDF metadata extraction (title/author) is disabled"
+        );
+    }
 
     // Initialize database
     let pool = db::create_pool(&config.database).await.unwrap_or_else(|e| {
@@ -218,10 +223,9 @@ async fn main() {
 /// Create the admin user or update its password.
 /// Returns `Ok(true)` if a new user was created, `Ok(false)` if updated.
 async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, sqlx::Error> {
-    let existing: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
-            .fetch_optional(pool)
-            .await?;
+    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_optional(pool)
+        .await?;
 
     if let Some((id,)) = existing {
         sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
@@ -231,10 +235,12 @@ async fn set_admin_password(pool: &db::DbPool, password: &str) -> Result<bool, s
             .await?;
         Ok(false)
     } else {
-        sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES ('admin', ?, 1)")
-            .bind(password)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, is_superuser) VALUES ('admin', ?, 1)",
+        )
+        .bind(password)
+        .execute(pool)
+        .await?;
         Ok(true)
     }
 }

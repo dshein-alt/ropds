@@ -383,10 +383,7 @@ pub async fn count_by_author(
          JOIN book_authors ba ON ba.book_id = b.id \
          WHERE ba.author_id = ? AND b.avail > 0"
     };
-    let row: (i64,) = sqlx::query_as(sql)
-        .bind(author_id)
-        .fetch_one(pool)
-        .await?;
+    let row: (i64,) = sqlx::query_as(sql).bind(author_id).fetch_one(pool).await?;
     Ok(row.0)
 }
 
@@ -405,10 +402,7 @@ pub async fn count_by_genre(
          JOIN book_genres bg ON bg.book_id = b.id \
          WHERE bg.genre_id = ? AND b.avail > 0"
     };
-    let row: (i64,) = sqlx::query_as(sql)
-        .bind(genre_id)
-        .fetch_one(pool)
-        .await?;
+    let row: (i64,) = sqlx::query_as(sql).bind(genre_id).fetch_one(pool).await?;
     Ok(row.0)
 }
 
@@ -427,10 +421,7 @@ pub async fn count_by_series(
          JOIN book_series bs ON bs.book_id = b.id \
          WHERE bs.series_id = ? AND b.avail > 0"
     };
-    let row: (i64,) = sqlx::query_as(sql)
-        .bind(series_id)
-        .fetch_one(pool)
-        .await?;
+    let row: (i64,) = sqlx::query_as(sql).bind(series_id).fetch_one(pool).await?;
     Ok(row.0)
 }
 
@@ -445,10 +436,7 @@ pub async fn count_by_catalog(
     } else {
         "SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0"
     };
-    let row: (i64,) = sqlx::query_as(sql)
-        .bind(catalog_id)
-        .fetch_one(pool)
-        .await?;
+    let row: (i64,) = sqlx::query_as(sql).bind(catalog_id).fetch_one(pool).await?;
     Ok(row.0)
 }
 
