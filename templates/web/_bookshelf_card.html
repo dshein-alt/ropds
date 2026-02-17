@@ -1,0 +1,55 @@
+<div class="col">
+  <div class="card book-card h-100">
+    <div class="card-body p-2">
+      <div class="d-flex gap-2">
+
+        {% if show_covers %}
+        <div class="flex-shrink-0">
+          {% if item.cover %}
+          <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover-compact rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/">
+          {% else %}
+          <img src="/static/images/nocover.svg" alt="" class="book-cover-compact rounded">
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="flex-grow-1 min-width-0">
+          <div class="fw-semibold small text-truncate" title="{{ item.title }}">{{ item.title }}</div>
+
+          {% if item.authors | length > 0 %}
+          <div class="small text-body-secondary text-truncate">
+            {% for author in item.authors %}
+              <a href="/web/search/books?type=a&q={{ author.id }}" class="text-decoration-none text-body-secondary">{{ author.full_name }}</a>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="small text-body-secondary mt-1">
+            <span class="badge text-bg-secondary">{{ item.format }}</span>
+            {{ item.size | filesizeformat }}
+            {% if item.read_time and item.read_time != "" %}
+            · <time class="utc-time" datetime="{{ item.read_time }}">{{ item.read_time }}</time>
+            {% endif %}
+          </div>
+
+          <div class="mt-1">
+            <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm py-0 px-1">
+              <i class="bi bi-download"></i> {{ item.format }}
+            </a>
+            {% if item.show_zip %}
+            <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm py-0 px-1">zip</a>
+            {% endif %}
+            <form method="post" action="/web/bookshelf/toggle" class="d-inline">
+              <input type="hidden" name="book_id" value="{{ item.id }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="redirect" value="/web/bookshelf">
+              <button type="submit" class="btn btn-sm btn-warning py-0 px-1" title="{{ t.bookshelf.remove }}">
+                <i class="bi bi-star-fill"></i>
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

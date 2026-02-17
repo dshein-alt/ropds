@@ -1,6 +1,13 @@
 use crate::db::DbPool;
 use crate::db::models::Book;
 
+/// Bookshelf sort column.
+pub enum SortColumn {
+    Date,
+    Title,
+    Author,
+}
+
 /// Add or update a book on the user's bookshelf.
 /// Uses ON CONFLICT to update read_time on re-download.
 pub async fn upsert(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
@@ -15,25 +22,61 @@ pub async fn upsert(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sql
     Ok(())
 }
 
-/// Get books on user's bookshelf, ordered by most recently read.
+/// Get books on user's bookshelf with configurable sorting.
 pub async fn get_by_user(
     pool: &DbPool,
     user_id: i64,
+    sort: &SortColumn,
+    ascending: bool,
     limit: i32,
     offset: i32,
 ) -> Result<Vec<Book>, sqlx::Error> {
-    sqlx::query_as::<_, Book>(
-        "SELECT b.* FROM books b \
-         JOIN bookshelf bs ON bs.book_id = b.id \
-         WHERE bs.user_id = ? \
-         ORDER BY bs.read_time DESC \
-         LIMIT ? OFFSET ?",
-    )
-    .bind(user_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    let dir = if ascending { "ASC" } else { "DESC" };
+    let sql = match sort {
+        SortColumn::Date => format!(
+            "SELECT b.* FROM books b \
+             JOIN bookshelf bs ON bs.book_id = b.id \
+             WHERE bs.user_id = ? \
+             ORDER BY bs.read_time {dir} \
+             LIMIT ? OFFSET ?"
+        ),
+        SortColumn::Title => format!(
+            "SELECT b.* FROM books b \
+             JOIN bookshelf bs ON bs.book_id = b.id \
+             WHERE bs.user_id = ? \
+             ORDER BY b.title COLLATE NOCASE {dir} \
+             LIMIT ? OFFSET ?"
+        ),
+        SortColumn::Author => format!(
+            "SELECT b.* FROM books b \
+             JOIN bookshelf bs ON bs.book_id = b.id \
+             LEFT JOIN book_authors ba ON ba.book_id = b.id \
+             LEFT JOIN authors a ON a.id = ba.author_id \
+             WHERE bs.user_id = ? \
+             GROUP BY b.id \
+             ORDER BY COALESCE(MIN(a.full_name), '') COLLATE NOCASE {dir} \
+             LIMIT ? OFFSET ?"
+        ),
+    };
+    sqlx::query_as::<_, Book>(&sql)
+        .bind(user_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+}
+
+/// Get read_time values for a set of bookshelf entries.
+pub async fn get_read_times(
+    pool: &DbPool,
+    user_id: i64,
+) -> Result<std::collections::HashMap<i64, String>, sqlx::Error> {
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT book_id, read_time FROM bookshelf WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().collect())
 }
 
 /// Count books on user's bookshelf.

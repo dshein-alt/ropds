@@ -691,9 +691,13 @@ pub async fn bookshelf_feed(
     );
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-    let book_list = crate::db::queries::bookshelf::get_by_user(&state.db, user_id, max_items, offset)
-        .await
-        .unwrap_or_default();
+    let book_list = crate::db::queries::bookshelf::get_by_user(
+        &state.db, user_id,
+        &crate::db::queries::bookshelf::SortColumn::Date, false,
+        max_items, offset,
+    )
+    .await
+    .unwrap_or_default();
 
     // Pagination
     let has_next = book_list.len() as i32 >= max_items;

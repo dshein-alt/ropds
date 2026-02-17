@@ -55,6 +55,11 @@ main {
   flex-shrink: 0;
 }
 
+/* Utility: allow text-truncate inside flex items */
+.min-width-0 {
+  min-width: 0;
+}
+
 /* Book cards */
 .book-card {
   transition: box-shadow 0.15s ease;
@@ -74,6 +79,14 @@ main {
 .book-cover-sm {
   width: 60px;
   min-width: 60px;
+}
+
+.book-cover-compact {
+  width: 70px;
+  min-width: 70px;
+  height: auto;
+  object-fit: cover;
+  border-radius: 0.375rem;
 }
 
 /* Alphabet browse grid */

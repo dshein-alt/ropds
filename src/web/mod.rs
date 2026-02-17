@@ -47,6 +47,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route("/download/{book_id}/{zip_flag}", get(views::web_download))
         .route("/bookshelf", get(views::bookshelf_page))
+        .route("/bookshelf/cards", get(views::bookshelf_cards))
         .route("/bookshelf/toggle", post(views::bookshelf_toggle))
         .route("/bookshelf/clear", post(views::bookshelf_clear))
         .nest("/admin", admin_router)

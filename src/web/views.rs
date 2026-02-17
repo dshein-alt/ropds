@@ -32,6 +32,7 @@ pub struct BookView {
     pub genres: Vec<Genre>,
     pub series_list: Vec<SeriesEntry>,
     pub on_bookshelf: bool,
+    pub read_time: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -172,6 +173,7 @@ async fn enrich_book(
             })
             .collect(),
         on_bookshelf: shelf_ids.map_or(false, |s| s.contains(&book.id)),
+        read_time: String::new(),
     }
 }
 
@@ -800,12 +802,57 @@ pub async fn bookshelf_toggle(
     Redirect::to(&redirect).into_response()
 }
 
+// ── Bookshelf helpers ───────────────────────────────────────────────
+
+fn parse_bookshelf_sort(sort: &str, dir: &str) -> (bookshelf::SortColumn, bool) {
+    let col = match sort {
+        "title" => bookshelf::SortColumn::Title,
+        "author" => bookshelf::SortColumn::Author,
+        _ => bookshelf::SortColumn::Date,
+    };
+    let ascending = dir == "asc";
+    (col, ascending)
+}
+
+const BOOKSHELF_BATCH: i32 = 30;
+
+async fn fetch_bookshelf_views(
+    state: &AppState,
+    user_id: i64,
+    sort: &bookshelf::SortColumn,
+    ascending: bool,
+    limit: i32,
+    offset: i32,
+) -> Vec<BookView> {
+    let raw_books = bookshelf::get_by_user(&state.db, user_id, sort, ascending, limit, offset)
+        .await
+        .unwrap_or_default();
+    let read_times = bookshelf::get_read_times(&state.db, user_id)
+        .await
+        .unwrap_or_default();
+
+    let shelf_ids: std::collections::HashSet<i64> = raw_books.iter().map(|b| b.id).collect();
+    let hide_doubles = state.config.opds.hide_doubles;
+    let mut views = Vec::with_capacity(raw_books.len());
+    for book in raw_books {
+        let bid = book.id;
+        let mut v = enrich_book(state, book, hide_doubles, Some(&shelf_ids)).await;
+        if let Some(rt) = read_times.get(&bid) {
+            v.read_time = rt.clone();
+        }
+        views.push(v);
+    }
+    views
+}
+
 // ── Bookshelf page handler ──────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct BookshelfPageParams {
     #[serde(default)]
-    pub page: i32,
+    pub sort: String,
+    #[serde(default)]
+    pub dir: String,
 }
 
 pub async fn bookshelf_page(
@@ -824,32 +871,87 @@ pub async fn bookshelf_page(
         None => return Err(StatusCode::UNAUTHORIZED),
     };
 
-    let max_items = state.config.opds.max_items as i32;
-    let offset = params.page * max_items;
-    let hide_doubles = state.config.opds.hide_doubles;
+    let sort_key = if params.sort.is_empty() { "date" } else { &params.sort };
+    let dir_key = if params.dir.is_empty() { "desc" } else { &params.dir };
+    let (sort_col, ascending) = parse_bookshelf_sort(sort_key, dir_key);
 
-    let raw_books = crate::db::queries::bookshelf::get_by_user(&state.db, user_id, max_items, offset)
-        .await
-        .unwrap_or_default();
-    let total = crate::db::queries::bookshelf::count_by_user(&state.db, user_id)
+    let total = bookshelf::count_by_user(&state.db, user_id)
         .await
         .unwrap_or(0);
 
-    // All books on this page are on the shelf
-    let shelf_ids: std::collections::HashSet<i64> = raw_books.iter().map(|b| b.id).collect();
-    let mut book_views = Vec::with_capacity(raw_books.len());
-    for book in raw_books {
-        book_views.push(enrich_book(&state, book, hide_doubles, Some(&shelf_ids)).await);
-    }
+    let book_views = fetch_bookshelf_views(
+        &state, user_id, &sort_col, ascending, BOOKSHELF_BATCH, 0,
+    )
+    .await;
 
-    let pagination = Pagination::new(params.page, max_items, total);
+    let has_more = (book_views.len() as i64) < total;
 
     ctx.insert("books", &book_views);
-    ctx.insert("pagination", &pagination);
-    ctx.insert("pagination_qs", "");
     ctx.insert("current_path", "/web/bookshelf");
+    ctx.insert("sort", sort_key);
+    ctx.insert("dir", dir_key);
+    ctx.insert("has_more", &has_more);
+    ctx.insert("batch_size", &BOOKSHELF_BATCH);
 
     render(&state.tera, "web/bookshelf.html", &ctx)
+}
+
+// ── Bookshelf cards API (for infinite scroll) ───────────────────────
+
+#[derive(Deserialize)]
+pub struct BookshelfCardsParams {
+    #[serde(default)]
+    pub offset: i32,
+    #[serde(default)]
+    pub sort: String,
+    #[serde(default)]
+    pub dir: String,
+}
+
+pub async fn bookshelf_cards(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(params): Query<BookshelfCardsParams>,
+) -> Result<axum::Json<serde_json::Value>, StatusCode> {
+    let secret = state.config.server.session_secret.as_bytes();
+    let user_id = match jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+    {
+        Some(uid) => uid,
+        None => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    let sort_key = if params.sort.is_empty() { "date" } else { &params.sort };
+    let dir_key = if params.dir.is_empty() { "desc" } else { &params.dir };
+    let (sort_col, ascending) = parse_bookshelf_sort(sort_key, dir_key);
+
+    let total = bookshelf::count_by_user(&state.db, user_id)
+        .await
+        .unwrap_or(0);
+
+    let book_views = fetch_bookshelf_views(
+        &state, user_id, &sort_col, ascending, BOOKSHELF_BATCH, params.offset,
+    )
+    .await;
+
+    let loaded = params.offset as i64 + book_views.len() as i64;
+    let has_more = loaded < total;
+
+    // Render card fragments
+    let mut ctx = build_context(&state, &jar, "bookshelf").await;
+    ctx.insert("books", &book_views);
+    ctx.insert("current_path", "/web/bookshelf");
+
+    let html = state
+        .tera
+        .render("web/_bookshelf_cards.html", &ctx)
+        .unwrap_or_default();
+
+    Ok(axum::Json(serde_json::json!({
+        "html": html,
+        "has_more": has_more
+    })))
 }
 
 // ── Bookshelf clear handler ─────────────────────────────────────────

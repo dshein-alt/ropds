@@ -3,116 +3,55 @@
 {% block title %}{{ t.bookshelf.title }} — {{ app_title }}{% endblock %}
 
 {% block content %}
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="mb-0">{{ t.bookshelf.title }}</h4>
-    {% if books | length > 0 %}
-    <form method="post" action="/web/bookshelf/clear" id="clear-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="button" class="btn btn-outline-danger btn-sm" onclick="if(confirm('{{ t.bookshelf.confirm_clear }}')) document.getElementById('clear-form').submit();">
-        <i class="bi bi-trash me-1"></i>{{ t.bookshelf.clear_all }}
-      </button>
-    </form>
-    {% endif %}
+    <div class="d-flex align-items-center gap-2">
+      {# Sort controls #}
+      <div class="btn-group btn-group-sm" role="group">
+        <a href="/web/bookshelf?sort=date&dir={% if sort == 'date' and dir == 'desc' %}asc{% else %}desc{% endif %}"
+           class="btn {% if sort == 'date' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+          {{ t.bookshelf.sort_date }}
+          {% if sort == "date" %}<i class="bi bi-arrow-{% if dir == 'asc' %}up{% else %}down{% endif %} ms-1"></i>{% endif %}
+        </a>
+        <a href="/web/bookshelf?sort=title&dir={% if sort == 'title' and dir == 'asc' %}desc{% else %}asc{% endif %}"
+           class="btn {% if sort == 'title' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+          {{ t.bookshelf.sort_title }}
+          {% if sort == "title" %}<i class="bi bi-arrow-{% if dir == 'asc' %}up{% else %}down{% endif %} ms-1"></i>{% endif %}
+        </a>
+        <a href="/web/bookshelf?sort=author&dir={% if sort == 'author' and dir == 'asc' %}desc{% else %}asc{% endif %}"
+           class="btn {% if sort == 'author' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+          {{ t.bookshelf.sort_author }}
+          {% if sort == "author" %}<i class="bi bi-arrow-{% if dir == 'asc' %}up{% else %}down{% endif %} ms-1"></i>{% endif %}
+        </a>
+      </div>
+
+      {# Clear all #}
+      {% if books | length > 0 %}
+      <form method="post" action="/web/bookshelf/clear" id="clear-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="button" class="btn btn-outline-danger btn-sm" onclick="if(confirm('{{ t.bookshelf.confirm_clear }}')) document.getElementById('clear-form').submit();">
+          <i class="bi bi-trash me-1"></i>{{ t.bookshelf.clear_all }}
+        </button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 
   {% if books | length == 0 %}
     <p class="text-body-secondary">{{ t.bookshelf.empty }}</p>
   {% else %}
-    <div class="row g-3">
-    {% for item in books %}
-      <div class="col-12">
-        <div class="card book-card">
-          <div class="card-body">
-            <div class="d-flex gap-3">
-
-              {% if show_covers %}
-              <div class="flex-shrink-0">
-                {% if item.cover %}
-                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/">
-                {% else %}
-                <img src="/static/images/nocover.svg" alt="" class="book-cover rounded">
-                {% endif %}
-              </div>
-              {% endif %}
-
-              <div class="flex-grow-1 min-width-0">
-                <h5 class="card-title mb-1">{{ item.title }}</h5>
-
-                {% if item.authors | length > 0 %}
-                <div class="mb-1">
-                  <i class="bi bi-person text-body-secondary me-1"></i>
-                  {% for author in item.authors %}
-                    <a href="/web/search/books?type=a&q={{ author.id }}" class="text-decoration-none">{{ author.full_name }}</a>{% if not loop.last %}, {% endif %}
-                  {% endfor %}
-                </div>
-                {% endif %}
-
-                {% if item.genres | length > 0 %}
-                <div class="mb-1">
-                  <i class="bi bi-tags text-body-secondary me-1"></i>
-                  {% for genre in item.genres %}
-                    <a href="/web/search/books?type=g&q={{ genre.id }}" class="badge text-bg-light text-decoration-none">{{ genre.subsection }}</a>
-                  {% endfor %}
-                </div>
-                {% endif %}
-
-                {% if item.series_list | length > 0 %}
-                <div class="mb-1">
-                  <i class="bi bi-collection text-body-secondary me-1"></i>
-                  {% for s in item.series_list %}
-                    <a href="/web/search/books?type=s&q={{ s.id }}" class="text-decoration-none">{{ s.ser_name }}</a>{% if s.ser_no > 0 %} <span class="text-body-secondary">#{{ s.ser_no }}</span>{% endif %}{% if not loop.last %}, {% endif %}
-                  {% endfor %}
-                </div>
-                {% endif %}
-
-                <div class="small text-body-secondary mb-2">
-                  <span class="badge text-bg-secondary">{{ item.format }}</span>
-                  {% if item.doubles > 1 %}<span class="badge text-bg-info">{{ item.doubles }} formats</span>{% endif %}
-                  {{ item.size | filesizeformat }}
-                  {% if item.lang and item.lang != "un" %}· {{ item.lang }}{% endif %}
-                  {% if item.docdate and item.docdate != "" %}· {{ item.docdate }}{% endif %}
-                </div>
-
-                <div class="btn-group btn-group-sm">
-                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary">
-                    <i class="bi bi-download me-1"></i>{{ item.format }}
-                  </a>
-                  {% if item.show_zip %}
-                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary">{{ item.format }}+zip</a>
-                  {% endif %}
-                  {% if item.show_epub_convert %}
-                  <a href="/opds/convert/{{ item.id }}/epub/" class="btn btn-outline-success">epub</a>
-                  {% endif %}
-                  {% if item.show_mobi_convert %}
-                  <a href="/opds/convert/{{ item.id }}/mobi/" class="btn btn-outline-success">mobi</a>
-                  {% endif %}
-                </div>
-
-                <form method="post" action="/web/bookshelf/toggle" class="d-inline ms-2">
-                  <input type="hidden" name="book_id" value="{{ item.id }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <input type="hidden" name="redirect" value="/web/bookshelf">
-                  <button type="submit" class="btn btn-sm btn-warning" title="{{ t.bookshelf.remove }}">
-                    <i class="bi bi-star-fill"></i>
-                  </button>
-                </form>
-
-                {% if item.annotation and item.annotation != "" %}
-                <details class="mt-2">
-                  <summary class="small text-body-secondary">{{ t.book.annotation }}</summary>
-                  <p class="small mt-1">{{ item.annotation | truncate(length=600) }}</p>
-                </details>
-                {% endif %}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    {% endfor %}
+    <div id="bookshelf-grid" class="row row-cols-1 row-cols-md-2 g-3"
+         data-sort="{{ sort }}" data-dir="{{ dir }}"
+         data-offset="{{ books | length }}" data-has-more="{{ has_more }}"
+         data-batch="{{ batch_size }}">
+      {% include "web/_bookshelf_cards.html" %}
     </div>
-  {% endif %}
 
-  {% if pagination.total_pages > 1 %}
-  {% include "web/_pagination.html" %}
+    <div id="bookshelf-loader" class="text-center py-4 d-none">
+      <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+      <span class="ms-2 text-body-secondary small">{{ t.bookshelf.loading }}</span>
+    </div>
+
+    <div id="bookshelf-sentinel"></div>
   {% endif %}
 {% endblock %}

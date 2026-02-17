@@ -231,15 +231,73 @@
 })();
 
 // Convert UTC timestamps to local timezone
+function convertUtcTimes(root) {
+  (root || document).querySelectorAll("time.utc-time").forEach(function (el) {
+    var dt = new Date(el.getAttribute("datetime").replace(" ", "T"));
+    if (isNaN(dt)) return;
+    var pad = function (n) { return n < 10 ? "0" + n : n; };
+    el.textContent =
+      dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
+      " " + pad(dt.getHours()) + ":" + pad(dt.getMinutes()) + ":" + pad(dt.getSeconds());
+  });
+}
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll("time.utc-time").forEach(function (el) {
-      var dt = new Date(el.getAttribute("datetime").replace(" ", "T"));
-      if (isNaN(dt)) return;
-      var pad = function (n) { return n < 10 ? "0" + n : n; };
-      el.textContent =
-        dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
-        " " + pad(dt.getHours()) + ":" + pad(dt.getMinutes()) + ":" + pad(dt.getSeconds());
-    });
+    convertUtcTimes(document);
+  });
+})();
+
+// Bookshelf infinite scroll
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    var grid = document.getElementById("bookshelf-grid");
+    var sentinel = document.getElementById("bookshelf-sentinel");
+    var loader = document.getElementById("bookshelf-loader");
+    if (!grid || !sentinel) return;
+
+    var loading = false;
+    var hasMore = grid.dataset.hasMore === "true";
+    var offset = parseInt(grid.dataset.offset, 10) || 0;
+    var sort = grid.dataset.sort || "date";
+    var dir = grid.dataset.dir || "desc";
+
+    function loadMore() {
+      if (loading || !hasMore) return;
+      loading = true;
+      if (loader) loader.classList.remove("d-none");
+
+      var url = "/web/bookshelf/cards?offset=" + offset + "&sort=" + sort + "&dir=" + dir;
+      fetch(url, { credentials: "same-origin" })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.html) {
+            var tmp = document.createElement("div");
+            tmp.innerHTML = data.html;
+            while (tmp.firstElementChild) {
+              grid.appendChild(tmp.firstElementChild);
+            }
+            convertUtcTimes(grid);
+            offset += grid.querySelectorAll(".col").length - (offset);
+            // Recount: offset = total loaded cards
+            offset = grid.children.length;
+          }
+          hasMore = data.has_more;
+          loading = false;
+          if (loader) loader.classList.add("d-none");
+        })
+        .catch(function () {
+          loading = false;
+          if (loader) loader.classList.add("d-none");
+        });
+    }
+
+    if ("IntersectionObserver" in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMore();
+        }
+      }, { rootMargin: "200px" });
+      observer.observe(sentinel);
+    }
   });
 })();
