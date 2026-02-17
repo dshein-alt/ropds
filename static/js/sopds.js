@@ -103,6 +103,54 @@
   });
 })();
 
+// Admin: populate shared change-password modal
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".btn-pw-change").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var userId = this.getAttribute("data-user-id");
+        var username = this.getAttribute("data-username");
+        var form = document.getElementById("pwModalForm");
+        var title = document.getElementById("pwModalTitle");
+        if (form) form.action = "/web/admin/users/" + userId + "/password";
+        if (title) title.textContent = username;
+        var modal = new bootstrap.Modal(document.getElementById("pwModal"));
+        modal.show();
+      });
+    });
+    var pwModal = document.getElementById("pwModal");
+    if (pwModal) {
+      pwModal.addEventListener("hidden.bs.modal", function () {
+        var form = this.querySelector("form");
+        if (form) form.reset();
+        this.querySelectorAll(".is-invalid").forEach(function (el) { el.classList.remove("is-invalid"); });
+        this.querySelectorAll(".toggle-password i").forEach(function (el) { el.className = "bi bi-eye"; });
+        this.querySelectorAll("input[type='text'][data-target]").forEach(function () {});
+        var inputs = this.querySelectorAll("input[name='password'], input[data-confirm-for]");
+        inputs.forEach(function (el) { el.type = "password"; });
+      });
+    }
+  });
+})();
+
+// Admin: populate shared delete-confirmation modal
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".btn-del-user").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var userId = this.getAttribute("data-user-id");
+        var username = this.getAttribute("data-username");
+        var form = document.getElementById("delModalForm");
+        var name = document.getElementById("delModalUsername");
+        if (form) form.action = "/web/admin/users/" + userId + "/delete";
+        if (name) name.textContent = username;
+        var modal = new bootstrap.Modal(document.getElementById("delModal"));
+        modal.show();
+      });
+    });
+  });
+})();
+
 // Delete confirmation: require typing "delete"
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
@@ -119,6 +167,36 @@
         btn.disabled = true;
       });
     });
+  });
+})();
+
+// Flash messages from URL query params
+// Pages provide window._flashMessages = { msg_key: "text" } and window._flashErrors = { err_key: "text" }
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    var params = new URLSearchParams(window.location.search);
+    var flash = document.getElementById("flash-msg");
+    var text = document.getElementById("flash-text");
+    if (!flash || !text) return;
+
+    var messages = window._flashMessages || {};
+    var errors = window._flashErrors || {};
+    var msg = params.get("msg");
+    var err = params.get("error");
+
+    if (msg && messages[msg]) {
+      flash.classList.remove("d-none", "alert-danger");
+      flash.classList.add("alert-success");
+      text.textContent = messages[msg];
+    } else if (err && errors[err]) {
+      flash.classList.remove("d-none", "alert-success");
+      flash.classList.add("alert-danger");
+      text.textContent = errors[err];
+    }
+
+    if (msg || err) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   });
 })();
 
