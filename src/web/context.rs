@@ -1,11 +1,30 @@
 use axum_extra::extract::cookie::CookieJar;
+use hmac::{Hmac, Mac};
 use serde::Serialize;
+use sha2::Sha256;
 use tera::Context;
 
 use crate::db::models::Author;
 use crate::db::queries::{authors, books, counters};
 use crate::state::AppState;
 use crate::web::i18n;
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Generate a CSRF token tied to the session value.
+pub fn generate_csrf_token(session_value: &str, secret: &[u8]) -> String {
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
+    mac.update(b"csrf:");
+    mac.update(session_value.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Validate a submitted CSRF token against the session.
+pub fn validate_csrf(jar: &CookieJar, secret: &[u8], submitted: &str) -> bool {
+    jar.get("session")
+        .map(|c| generate_csrf_token(c.value(), secret) == submitted)
+        .unwrap_or(false)
+}
 
 #[derive(Debug, Serialize)]
 pub struct Stats {
@@ -54,18 +73,17 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("split_items", &state.config.opds.split_items);
     ctx.insert("auth_required", &state.config.opds.auth_required);
 
-    // Auth state for navbar (admin link / profile link)
+    // Auth state for navbar (admin link / profile link) + CSRF token
+    let secret = state.config.server.session_secret.as_bytes();
     let mut is_superuser: i32 = 0;
     let mut is_authenticated: i32 = 0;
-    if state.config.opds.auth_required {
-        let secret = state.config.server.session_secret.as_bytes();
-        if let Some(cookie) = jar.get("session") {
-            if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
-                is_authenticated = 1;
-                if crate::db::queries::users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
-                    is_superuser = 1;
-                }
+    if let Some(cookie) = jar.get("session") {
+        if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
+            is_authenticated = 1;
+            if crate::db::queries::users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
+                is_superuser = 1;
             }
+            ctx.insert("csrf_token", &generate_csrf_token(cookie.value(), secret));
         }
     }
     ctx.insert("is_superuser", &is_superuser);

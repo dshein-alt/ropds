@@ -53,90 +53,89 @@
                   {% if user.last_login %}<time class="utc-time" datetime="{{ user.last_login }}Z">{{ user.last_login }}</time>{% else %}{{ t.admin.never }}{% endif %}
                 </td>
                 <td class="text-end">
-                  <button type="button" class="btn btn-outline-primary btn-sm"
-                          data-bs-toggle="modal" data-bs-target="#pwModal{{ user.id }}"
+                  <button type="button" class="btn btn-outline-primary btn-sm btn-pw-change"
+                          data-user-id="{{ user.id }}" data-username="{{ user.username }}"
                           title="{{ t.admin.change_password }}">
                     <i class="bi bi-key"></i>
                   </button>
                   {% if user.id != current_user_id %}
-                  <button type="button" class="btn btn-outline-danger btn-sm"
-                          data-bs-toggle="modal" data-bs-target="#delModal{{ user.id }}"
+                  <button type="button" class="btn btn-outline-danger btn-sm btn-del-user"
+                          data-user-id="{{ user.id }}" data-username="{{ user.username }}"
                           title="{{ t.admin.delete_user }}">
                     <i class="bi bi-trash"></i>
                   </button>
                   {% endif %}
                 </td>
               </tr>
-
-              {# ── Change Password Modal ── #}
-              <div class="modal fade" id="pwModal{{ user.id }}" tabindex="-1">
-                <div class="modal-dialog">
-                  <div class="modal-content">
-                    <form method="post" action="/web/admin/users/{{ user.id }}/password">
-                      <div class="modal-header">
-                        <h5 class="modal-title">{{ t.admin.change_password }} — {{ user.username }}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                      </div>
-                      <div class="modal-body">
-                        <div class="mb-3">
-                          <label for="pw-{{ user.id }}" class="form-label">{{ t.admin.new_password }}</label>
-                          <div class="input-group">
-                            <input type="password" class="form-control" id="pw-{{ user.id }}" name="password" minlength="8" maxlength="32" required>
-                            <button class="btn btn-outline-secondary toggle-password" type="button" data-target="pw-{{ user.id }}" title="{{ t.admin.show_password }}">
-                              <i class="bi bi-eye"></i>
-                            </button>
-                          </div>
-                        </div>
-                        <div class="mb-3">
-                          <label for="pw-confirm-{{ user.id }}" class="form-label">{{ t.admin.confirm_password }}</label>
-                          <div class="input-group">
-                            <input type="password" class="form-control" id="pw-confirm-{{ user.id }}" data-confirm-for="pw-{{ user.id }}" minlength="8" maxlength="32" required>
-                            <button class="btn btn-outline-secondary toggle-password" type="button" data-target="pw-confirm-{{ user.id }}" title="{{ t.admin.show_password }}">
-                              <i class="bi bi-eye"></i>
-                            </button>
-                          </div>
-                          <div class="invalid-feedback">{{ t.admin.error_password_mismatch }}</div>
-                        </div>
-                      </div>
-                      <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
-                        <button type="submit" class="btn btn-primary">{{ t.admin.save }}</button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-
-              {% if user.id != current_user_id %}
-              {# ── Delete Confirmation Modal ── #}
-              <div class="modal fade" id="delModal{{ user.id }}" tabindex="-1">
-                <div class="modal-dialog">
-                  <div class="modal-content">
-                    <div class="modal-header">
-                      <h5 class="modal-title">{{ t.admin.delete_user }}</h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                      <p>{{ t.admin.confirm_delete }} <strong>{{ user.username }}</strong>?</p>
-                      <div class="mb-3">
-                        <label class="form-label">{{ t.admin.type_delete_to_confirm | safe }}</label>
-                        <input type="text" class="form-control delete-confirm-input" autocomplete="off">
-                      </div>
-                    </div>
-                    <div class="modal-footer">
-                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
-                      <form method="post" action="/web/admin/users/{{ user.id }}/delete" class="d-inline">
-                        <button type="submit" class="btn btn-danger delete-confirm-btn" disabled>{{ t.admin.delete }}</button>
-                      </form>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {% endif %}
-
               {% endfor %}
             </tbody>
           </table>
+        </div>
+
+        {# ── Change Password Modal (shared) ── #}
+        <div class="modal fade" id="pwModal" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <form method="post" action="" id="pwModalForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="modal-header">
+                  <h5 class="modal-title"><span id="pwModalTitle"></span></h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label for="pw-input" class="form-label">{{ t.admin.new_password }}</label>
+                    <div class="input-group">
+                      <input type="password" class="form-control" id="pw-input" name="password" minlength="8" maxlength="32" required>
+                      <button class="btn btn-outline-secondary toggle-password" type="button" data-target="pw-input" title="{{ t.admin.show_password }}">
+                        <i class="bi bi-eye"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="mb-3">
+                    <label for="pw-input-confirm" class="form-label">{{ t.admin.confirm_password }}</label>
+                    <div class="input-group">
+                      <input type="password" class="form-control" id="pw-input-confirm" data-confirm-for="pw-input" minlength="8" maxlength="32" required>
+                      <button class="btn btn-outline-secondary toggle-password" type="button" data-target="pw-input-confirm" title="{{ t.admin.show_password }}">
+                        <i class="bi bi-eye"></i>
+                      </button>
+                    </div>
+                    <div class="invalid-feedback">{{ t.admin.error_password_mismatch }}</div>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+                  <button type="submit" class="btn btn-primary">{{ t.admin.save }}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {# ── Delete Confirmation Modal (shared) ── #}
+        <div class="modal fade" id="delModal" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">{{ t.admin.delete_user }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <p>{{ t.admin.confirm_delete }} <strong><span id="delModalUsername"></span></strong>?</p>
+                <div class="mb-3">
+                  <label class="form-label">{{ t.admin.type_delete_to_confirm | safe }}</label>
+                  <input type="text" class="form-control delete-confirm-input" autocomplete="off">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+                <form method="post" action="" id="delModalForm" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="btn btn-danger delete-confirm-btn" disabled>{{ t.admin.delete }}</button>
+                </form>
+              </div>
+            </div>
+          </div>
         </div>
 
         {# ── Create User Modal ── #}
@@ -144,6 +143,7 @@
           <div class="modal-dialog">
             <div class="modal-content">
               <form method="post" action="/web/admin/users/create">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="modal-header">
                   <h5 class="modal-title">{{ t.admin.add_user }}</h5>
                   <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -306,43 +306,19 @@
 
 </div>
 
-{# ── Flash message JS ── #}
+{# ── Flash message config (logic in sopds.js) ── #}
 <script>
-(function() {
-  var params = new URLSearchParams(window.location.search);
-  var flash = document.getElementById("flash-msg");
-  var text = document.getElementById("flash-text");
-  if (!flash || !text) return;
-
-  var messages = {
-    user_created: "{{ t.admin.success_user_created }}",
-    password_changed: "{{ t.admin.success_password_changed }}",
-    user_deleted: "{{ t.admin.success_user_deleted }}"
-  };
-  var errors = {
-    username_exists: "{{ t.admin.error_username_exists }}",
-    username_empty: "{{ t.admin.error_username_empty }}",
-    password_short: "{{ t.admin.error_password_short }}",
-    cannot_delete_self: "{{ t.admin.error_cannot_delete_self }}"
-  };
-
-  var msg = params.get("msg");
-  var err = params.get("error");
-
-  if (msg && messages[msg]) {
-    flash.classList.remove("d-none", "alert-danger");
-    flash.classList.add("alert-success");
-    text.textContent = messages[msg];
-  } else if (err && errors[err]) {
-    flash.classList.remove("d-none", "alert-success");
-    flash.classList.add("alert-danger");
-    text.textContent = errors[err];
-  }
-
-  // Clean URL
-  if (msg || err) {
-    window.history.replaceState({}, "", window.location.pathname);
-  }
-})();
+window._flashMessages = {
+  user_created: "{{ t.admin.success_user_created }}",
+  password_changed: "{{ t.admin.success_password_changed }}",
+  user_deleted: "{{ t.admin.success_user_deleted }}"
+};
+window._flashErrors = {
+  username_exists: "{{ t.admin.error_username_exists }}",
+  username_empty: "{{ t.admin.error_username_empty }}",
+  password_short: "{{ t.admin.error_password_short }}",
+  cannot_delete_self: "{{ t.admin.error_cannot_delete_self }}",
+  db_error: "{{ t.admin.error_db }}"
+};
 </script>
 {% endblock %}

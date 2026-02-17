@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::db::queries::users;
 use crate::state::AppState;
 use crate::web::auth::verify_session;
-use crate::web::context::build_context;
+use crate::web::context::{build_context, validate_csrf};
 
 /// Middleware: require superuser for admin routes.
 pub async fn require_superuser(
@@ -42,6 +42,12 @@ fn get_session_user_id(jar: &CookieJar, secret: &[u8]) -> Option<i64> {
         .and_then(|c| verify_session(c.value(), secret))
 }
 
+/// Validate password length (8-32 characters).
+fn is_valid_password(password: &str) -> bool {
+    let len = password.chars().count();
+    (8..=32).contains(&len)
+}
+
 /// GET /web/admin — render admin panel.
 pub async fn admin_page(
     State(state): State<AppState>,
@@ -55,7 +61,13 @@ pub async fn admin_page(
 
     // Current user id (to prevent self-delete in template)
     let secret = state.config.server.session_secret.as_bytes();
-    let current_user_id = get_session_user_id(&jar, secret).unwrap_or(0);
+    let current_user_id = match get_session_user_id(&jar, secret) {
+        Some(id) => id,
+        None => {
+            tracing::warn!("admin_page reached without valid session — middleware misconfiguration?");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
     ctx.insert("current_user_id", &current_user_id);
 
     // Server config sections (read-only display)
@@ -102,19 +114,27 @@ pub struct CreateUserForm {
     pub password: String,
     #[serde(default)]
     pub is_superuser: Option<String>, // checkbox: present = "on", absent = None
+    #[serde(default)]
+    pub csrf_token: String,
 }
 
 /// POST /web/admin/users/create
 pub async fn create_user(
     State(state): State<AppState>,
+    jar: CookieJar,
     axum::Form(form): axum::Form<CreateUserForm>,
 ) -> impl IntoResponse {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
     // Validate
     let username = form.username.trim();
     if username.is_empty() {
         return Redirect::to("/web/admin?error=username_empty").into_response();
     }
-    if form.password.chars().count() < 8 || form.password.chars().count() > 32 {
+    if !is_valid_password(&form.password) {
         return Redirect::to("/web/admin?error=password_short").into_response();
     }
 
@@ -130,21 +150,40 @@ pub async fn create_user(
 /// POST /web/admin/users/:id/password
 pub async fn change_password(
     State(state): State<AppState>,
+    jar: CookieJar,
     Path(user_id): Path<i64>,
     axum::Form(form): axum::Form<ChangePasswordForm>,
 ) -> impl IntoResponse {
-    if form.password.chars().count() < 8 || form.password.chars().count() > 32 {
-        return Redirect::to("/web/admin?error=password_short");
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
+    if !is_valid_password(&form.password) {
+        return Redirect::to("/web/admin?error=password_short").into_response();
     }
 
     let hash = crate::password::hash(&form.password);
-    let _ = users::update_password(&state.db, user_id, &hash).await;
-    Redirect::to("/web/admin?msg=password_changed")
+    match users::update_password(&state.db, user_id, &hash).await {
+        Ok(_) => Redirect::to("/web/admin?msg=password_changed").into_response(),
+        Err(e) => {
+            tracing::error!("Failed to update password for user {user_id}: {e}");
+            Redirect::to("/web/admin?error=db_error").into_response()
+        }
+    }
 }
 
 #[derive(Deserialize)]
 pub struct ChangePasswordForm {
     pub password: String,
+    #[serde(default)]
+    pub csrf_token: String,
+}
+
+#[derive(Deserialize)]
+pub struct CsrfForm {
+    #[serde(default)]
+    pub csrf_token: String,
 }
 
 /// POST /web/admin/users/:id/delete
@@ -152,30 +191,45 @@ pub async fn delete_user(
     State(state): State<AppState>,
     jar: CookieJar,
     Path(user_id): Path<i64>,
+    axum::Form(form): axum::Form<CsrfForm>,
 ) -> impl IntoResponse {
-    // Prevent self-deletion
     let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
+    // Prevent self-deletion
     if let Some(current_id) = get_session_user_id(&jar, secret) {
         if current_id == user_id {
-            return Redirect::to("/web/admin?error=cannot_delete_self");
+            return Redirect::to("/web/admin?error=cannot_delete_self").into_response();
         }
     }
 
-    let _ = users::delete(&state.db, user_id).await;
-    Redirect::to("/web/admin?msg=user_deleted")
+    match users::delete(&state.db, user_id).await {
+        Ok(_) => Redirect::to("/web/admin?msg=user_deleted").into_response(),
+        Err(e) => {
+            tracing::error!("Failed to delete user {user_id}: {e}");
+            Redirect::to("/web/admin?error=db_error").into_response()
+        }
+    }
 }
 
 /// GET /web/profile — render profile page for authenticated users.
 pub async fn profile_page(
     State(state): State<AppState>,
     jar: CookieJar,
-) -> Result<Html<String>, StatusCode> {
+) -> Response {
+    let secret = state.config.server.session_secret.as_bytes();
+    if get_session_user_id(&jar, secret).is_none() {
+        return Redirect::to("/web/login").into_response();
+    }
+
     let ctx = build_context(&state, &jar, "profile").await;
     match state.tera.render("web/profile.html", &ctx) {
-        Ok(html) => Ok(Html(html)),
+        Ok(html) => Html(html).into_response(),
         Err(e) => {
             tracing::error!("Template error: {e}");
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }
@@ -187,18 +241,27 @@ pub async fn profile_change_password(
     axum::Form(form): axum::Form<ChangePasswordForm>,
 ) -> impl IntoResponse {
     let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
     let user_id = match get_session_user_id(&jar, secret) {
         Some(id) => id,
         None => return Redirect::to("/web/login").into_response(),
     };
 
-    if form.password.chars().count() < 8 || form.password.chars().count() > 32 {
+    if !is_valid_password(&form.password) {
         return Redirect::to("/web/profile?error=password_short").into_response();
     }
 
     let hash = crate::password::hash(&form.password);
-    let _ = users::update_password(&state.db, user_id, &hash).await;
-    Redirect::to("/web/profile?msg=password_changed").into_response()
+    match users::update_password(&state.db, user_id, &hash).await {
+        Ok(_) => Redirect::to("/web/profile?msg=password_changed").into_response(),
+        Err(e) => {
+            tracing::error!("Failed to update password for user {user_id}: {e}");
+            Redirect::to("/web/profile?error=db_error").into_response()
+        }
+    }
 }
 
 /// Format elapsed seconds as human-readable uptime using translations from context.
