@@ -14,15 +14,30 @@ pub async fn get_by_catalog(
     catalog_id: i64,
     limit: i32,
     offset: i32,
+    hide_doubles: bool,
 ) -> Result<Vec<Book>, sqlx::Error> {
-    sqlx::query_as::<_, Book>(
-        "SELECT * FROM books WHERE catalog_id = ? AND avail > 0 ORDER BY search_title LIMIT ? OFFSET ?",
-    )
-    .bind(catalog_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    if hide_doubles {
+        sqlx::query_as::<_, Book>(
+            "SELECT * FROM books WHERE catalog_id = ? AND avail > 0 \
+             AND id IN (SELECT MIN(id) FROM books WHERE catalog_id = ? AND avail > 0 GROUP BY search_title) \
+             ORDER BY search_title LIMIT ? OFFSET ?",
+        )
+        .bind(catalog_id)
+        .bind(catalog_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Book>(
+            "SELECT * FROM books WHERE catalog_id = ? AND avail > 0 ORDER BY search_title LIMIT ? OFFSET ?",
+        )
+        .bind(catalog_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    }
 }
 
 pub async fn get_by_author(
@@ -30,18 +45,37 @@ pub async fn get_by_author(
     author_id: i64,
     limit: i32,
     offset: i32,
+    hide_doubles: bool,
 ) -> Result<Vec<Book>, sqlx::Error> {
-    sqlx::query_as::<_, Book>(
-        "SELECT b.* FROM books b \
-         JOIN book_authors ba ON ba.book_id = b.id \
-         WHERE ba.author_id = ? AND b.avail > 0 \
-         ORDER BY b.search_title LIMIT ? OFFSET ?",
-    )
-    .bind(author_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    if hide_doubles {
+        sqlx::query_as::<_, Book>(
+            "SELECT b.* FROM books b \
+             JOIN book_authors ba ON ba.book_id = b.id \
+             WHERE ba.author_id = ? AND b.avail > 0 \
+             AND b.id IN (SELECT MIN(b2.id) FROM books b2 \
+               JOIN book_authors ba2 ON ba2.book_id = b2.id \
+               WHERE ba2.author_id = ? AND b2.avail > 0 GROUP BY b2.search_title) \
+             ORDER BY b.search_title LIMIT ? OFFSET ?",
+        )
+        .bind(author_id)
+        .bind(author_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Book>(
+            "SELECT b.* FROM books b \
+             JOIN book_authors ba ON ba.book_id = b.id \
+             WHERE ba.author_id = ? AND b.avail > 0 \
+             ORDER BY b.search_title LIMIT ? OFFSET ?",
+        )
+        .bind(author_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    }
 }
 
 pub async fn get_by_genre(
@@ -49,18 +83,37 @@ pub async fn get_by_genre(
     genre_id: i64,
     limit: i32,
     offset: i32,
+    hide_doubles: bool,
 ) -> Result<Vec<Book>, sqlx::Error> {
-    sqlx::query_as::<_, Book>(
-        "SELECT b.* FROM books b \
-         JOIN book_genres bg ON bg.book_id = b.id \
-         WHERE bg.genre_id = ? AND b.avail > 0 \
-         ORDER BY b.search_title LIMIT ? OFFSET ?",
-    )
-    .bind(genre_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    if hide_doubles {
+        sqlx::query_as::<_, Book>(
+            "SELECT b.* FROM books b \
+             JOIN book_genres bg ON bg.book_id = b.id \
+             WHERE bg.genre_id = ? AND b.avail > 0 \
+             AND b.id IN (SELECT MIN(b2.id) FROM books b2 \
+               JOIN book_genres bg2 ON bg2.book_id = b2.id \
+               WHERE bg2.genre_id = ? AND b2.avail > 0 GROUP BY b2.search_title) \
+             ORDER BY b.search_title LIMIT ? OFFSET ?",
+        )
+        .bind(genre_id)
+        .bind(genre_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Book>(
+            "SELECT b.* FROM books b \
+             JOIN book_genres bg ON bg.book_id = b.id \
+             WHERE bg.genre_id = ? AND b.avail > 0 \
+             ORDER BY b.search_title LIMIT ? OFFSET ?",
+        )
+        .bind(genre_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    }
 }
 
 pub async fn get_by_series(
@@ -68,18 +121,37 @@ pub async fn get_by_series(
     series_id: i64,
     limit: i32,
     offset: i32,
+    hide_doubles: bool,
 ) -> Result<Vec<Book>, sqlx::Error> {
-    sqlx::query_as::<_, Book>(
-        "SELECT b.* FROM books b \
-         JOIN book_series bs ON bs.book_id = b.id \
-         WHERE bs.series_id = ? AND b.avail > 0 \
-         ORDER BY bs.ser_no, b.search_title LIMIT ? OFFSET ?",
-    )
-    .bind(series_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    if hide_doubles {
+        sqlx::query_as::<_, Book>(
+            "SELECT b.* FROM books b \
+             JOIN book_series bs ON bs.book_id = b.id \
+             WHERE bs.series_id = ? AND b.avail > 0 \
+             AND b.id IN (SELECT MIN(b2.id) FROM books b2 \
+               JOIN book_series bs2 ON bs2.book_id = b2.id \
+               WHERE bs2.series_id = ? AND b2.avail > 0 GROUP BY b2.search_title) \
+             ORDER BY bs.ser_no, b.search_title LIMIT ? OFFSET ?",
+        )
+        .bind(series_id)
+        .bind(series_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Book>(
+            "SELECT b.* FROM books b \
+             JOIN book_series bs ON bs.book_id = b.id \
+             WHERE bs.series_id = ? AND b.avail > 0 \
+             ORDER BY bs.ser_no, b.search_title LIMIT ? OFFSET ?",
+        )
+        .bind(series_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    }
 }
 
 pub async fn search_by_title(
@@ -87,17 +159,65 @@ pub async fn search_by_title(
     term: &str,
     limit: i32,
     offset: i32,
+    hide_doubles: bool,
 ) -> Result<Vec<Book>, sqlx::Error> {
     let pattern = format!("%{term}%");
-    sqlx::query_as::<_, Book>(
-        "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
-         ORDER BY search_title LIMIT ? OFFSET ?",
-    )
-    .bind(&pattern)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    if hide_doubles {
+        sqlx::query_as::<_, Book>(
+            "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
+             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title) \
+             ORDER BY search_title LIMIT ? OFFSET ?",
+        )
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Book>(
+            "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
+             ORDER BY search_title LIMIT ? OFFSET ?",
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    }
+}
+
+pub async fn search_by_title_prefix(
+    pool: &DbPool,
+    prefix: &str,
+    limit: i32,
+    offset: i32,
+    hide_doubles: bool,
+) -> Result<Vec<Book>, sqlx::Error> {
+    let pattern = format!("{prefix}%");
+    if hide_doubles {
+        sqlx::query_as::<_, Book>(
+            "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
+             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title) \
+             ORDER BY search_title LIMIT ? OFFSET ?",
+        )
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Book>(
+            "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
+             ORDER BY search_title LIMIT ? OFFSET ?",
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+    }
 }
 
 pub async fn find_by_path_and_filename(
@@ -200,92 +320,130 @@ pub async fn get_random(pool: &DbPool) -> Result<Option<Book>, sqlx::Error> {
 }
 
 /// Count books matching a title search (contains).
-pub async fn count_by_title_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
+pub async fn count_by_title_search(
+    pool: &DbPool,
+    term: &str,
+    hide_doubles: bool,
+) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0")
-            .bind(&pattern)
-            .fetch_one(pool)
-            .await?;
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT search_title) FROM books WHERE search_title LIKE ? AND avail > 0"
+    } else {
+        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0"
+    };
+    let row: (i64,) = sqlx::query_as(sql).bind(&pattern).fetch_one(pool).await?;
     Ok(row.0)
 }
 
 /// Count books matching a title-starts-with search.
-pub async fn count_by_title_prefix(pool: &DbPool, prefix: &str) -> Result<i64, sqlx::Error> {
+pub async fn count_by_title_prefix(
+    pool: &DbPool,
+    prefix: &str,
+    hide_doubles: bool,
+) -> Result<i64, sqlx::Error> {
     let pattern = format!("{prefix}%");
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0")
-            .bind(&pattern)
-            .fetch_one(pool)
-            .await?;
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT search_title) FROM books WHERE search_title LIKE ? AND avail > 0"
+    } else {
+        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0"
+    };
+    let row: (i64,) = sqlx::query_as(sql).bind(&pattern).fetch_one(pool).await?;
     Ok(row.0)
 }
 
-/// Search books by title prefix (starts with).
-pub async fn search_by_title_prefix(
-    pool: &DbPool,
-    prefix: &str,
-    limit: i32,
-    offset: i32,
-) -> Result<Vec<Book>, sqlx::Error> {
-    let pattern = format!("{prefix}%");
-    sqlx::query_as::<_, Book>(
-        "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
-         ORDER BY search_title LIMIT ? OFFSET ?",
-    )
-    .bind(&pattern)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
-}
-
 /// Count books by author.
-pub async fn count_by_author(pool: &DbPool, author_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
+pub async fn count_by_author(
+    pool: &DbPool,
+    author_id: i64,
+    hide_doubles: bool,
+) -> Result<i64, sqlx::Error> {
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT b.search_title) FROM books b \
+         JOIN book_authors ba ON ba.book_id = b.id \
+         WHERE ba.author_id = ? AND b.avail > 0"
+    } else {
         "SELECT COUNT(*) FROM books b \
          JOIN book_authors ba ON ba.book_id = b.id \
-         WHERE ba.author_id = ? AND b.avail > 0",
-    )
-    .bind(author_id)
-    .fetch_one(pool)
-    .await?;
+         WHERE ba.author_id = ? AND b.avail > 0"
+    };
+    let row: (i64,) = sqlx::query_as(sql)
+        .bind(author_id)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 
 /// Count books by genre.
-pub async fn count_by_genre(pool: &DbPool, genre_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
+pub async fn count_by_genre(
+    pool: &DbPool,
+    genre_id: i64,
+    hide_doubles: bool,
+) -> Result<i64, sqlx::Error> {
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT b.search_title) FROM books b \
+         JOIN book_genres bg ON bg.book_id = b.id \
+         WHERE bg.genre_id = ? AND b.avail > 0"
+    } else {
         "SELECT COUNT(*) FROM books b \
          JOIN book_genres bg ON bg.book_id = b.id \
-         WHERE bg.genre_id = ? AND b.avail > 0",
-    )
-    .bind(genre_id)
-    .fetch_one(pool)
-    .await?;
+         WHERE bg.genre_id = ? AND b.avail > 0"
+    };
+    let row: (i64,) = sqlx::query_as(sql)
+        .bind(genre_id)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 
 /// Count books by series.
-pub async fn count_by_series(pool: &DbPool, series_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
+pub async fn count_by_series(
+    pool: &DbPool,
+    series_id: i64,
+    hide_doubles: bool,
+) -> Result<i64, sqlx::Error> {
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT b.search_title) FROM books b \
+         JOIN book_series bs ON bs.book_id = b.id \
+         WHERE bs.series_id = ? AND b.avail > 0"
+    } else {
         "SELECT COUNT(*) FROM books b \
          JOIN book_series bs ON bs.book_id = b.id \
-         WHERE bs.series_id = ? AND b.avail > 0",
-    )
-    .bind(series_id)
-    .fetch_one(pool)
-    .await?;
+         WHERE bs.series_id = ? AND b.avail > 0"
+    };
+    let row: (i64,) = sqlx::query_as(sql)
+        .bind(series_id)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 
 /// Count books in a catalog.
-pub async fn count_by_catalog(pool: &DbPool, catalog_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0")
-            .bind(catalog_id)
-            .fetch_one(pool)
-            .await?;
+pub async fn count_by_catalog(
+    pool: &DbPool,
+    catalog_id: i64,
+    hide_doubles: bool,
+) -> Result<i64, sqlx::Error> {
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT search_title) FROM books WHERE catalog_id = ? AND avail > 0"
+    } else {
+        "SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0"
+    };
+    let row: (i64,) = sqlx::query_as(sql)
+        .bind(catalog_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
+/// Count how many available books share the same search_title as the given book.
+pub async fn count_doubles(pool: &DbPool, book_id: i64) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM books \
+         WHERE search_title = (SELECT search_title FROM books WHERE id = ?) AND avail > 0",
+    )
+    .bind(book_id)
+    .fetch_one(pool)
+    .await?;
     Ok(row.0)
 }
 

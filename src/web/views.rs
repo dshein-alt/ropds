@@ -27,6 +27,7 @@ pub struct BookView {
     pub show_zip: bool,
     pub show_epub_convert: bool,
     pub show_mobi_convert: bool,
+    pub doubles: i64,
     pub authors: Vec<Author>,
     pub genres: Vec<Genre>,
     pub series_list: Vec<SeriesEntry>,
@@ -117,7 +118,7 @@ fn default_m() -> String {
 
 // ── Helper: enrich a Book into a BookView ───────────────────────────
 
-async fn enrich_book(state: &AppState, book: crate::db::models::Book) -> BookView {
+async fn enrich_book(state: &AppState, book: crate::db::models::Book, hide_doubles: bool) -> BookView {
     let book_authors = authors::get_for_book(&state.db, book.id)
         .await
         .unwrap_or_default();
@@ -127,6 +128,12 @@ async fn enrich_book(state: &AppState, book: crate::db::models::Book) -> BookVie
     let book_series = series::get_for_book(&state.db, book.id)
         .await
         .unwrap_or_default();
+
+    let doubles = if hide_doubles {
+        books::count_doubles(&state.db, book.id).await.unwrap_or(1)
+    } else {
+        1
+    };
 
     let is_nozip = book.format == "epub" || book.format == "mobi";
     let is_fb2 = book.format == "fb2";
@@ -145,6 +152,7 @@ async fn enrich_book(state: &AppState, book: crate::db::models::Book) -> BookVie
         show_zip: !is_nozip,
         show_epub_convert: is_fb2 && !state.config.converter.fb2_to_epub.is_empty(),
         show_mobi_convert: is_fb2 && !state.config.converter.fb2_to_mobi.is_empty(),
+        doubles,
         authors: book_authors,
         genres: book_genres,
         series_list: book_series
@@ -224,11 +232,12 @@ pub async fn catalogs(
             .unwrap_or_default()
     };
 
+    let hide_doubles = state.config.opds.hide_doubles;
     let (catalog_books, book_total) = if cat_id > 0 {
-        let bks = books::get_by_catalog(&state.db, cat_id, max_items, offset)
+        let bks = books::get_by_catalog(&state.db, cat_id, max_items, offset, hide_doubles)
             .await
             .unwrap_or_default();
-        let cnt = books::count_by_catalog(&state.db, cat_id)
+        let cnt = books::count_by_catalog(&state.db, cat_id, hide_doubles)
             .await
             .unwrap_or(0);
         (bks, cnt)
@@ -293,13 +302,14 @@ pub async fn search_books(
     let max_items = state.config.opds.max_items as i32;
     let offset = params.page * max_items;
 
+    let hide_doubles = state.config.opds.hide_doubles;
     let (raw_books, total) = match params.search_type.as_str() {
         "a" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_author(&state.db, id, max_items, offset)
+            let bks = books::get_by_author(&state.db, id, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default();
-            let cnt = books::count_by_author(&state.db, id).await.unwrap_or(0);
+            let cnt = books::count_by_author(&state.db, id, hide_doubles).await.unwrap_or(0);
             if let Ok(Some(author)) = authors::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &author.full_name);
             }
@@ -307,10 +317,10 @@ pub async fn search_books(
         }
         "s" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_series(&state.db, id, max_items, offset)
+            let bks = books::get_by_series(&state.db, id, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default();
-            let cnt = books::count_by_series(&state.db, id).await.unwrap_or(0);
+            let cnt = books::count_by_series(&state.db, id, hide_doubles).await.unwrap_or(0);
             if let Ok(Some(ser)) = series::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &ser.ser_name);
             }
@@ -318,10 +328,10 @@ pub async fn search_books(
         }
         "g" => {
             let id: i64 = params.q.parse().unwrap_or(0);
-            let bks = books::get_by_genre(&state.db, id, max_items, offset)
+            let bks = books::get_by_genre(&state.db, id, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default();
-            let cnt = books::count_by_genre(&state.db, id).await.unwrap_or(0);
+            let cnt = books::count_by_genre(&state.db, id, hide_doubles).await.unwrap_or(0);
             if let Ok(Some(genre)) = genres::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &genre.subsection);
             }
@@ -329,10 +339,10 @@ pub async fn search_books(
         }
         "b" => {
             let term = params.q.to_uppercase();
-            let bks = books::search_by_title_prefix(&state.db, &term, max_items, offset)
+            let bks = books::search_by_title_prefix(&state.db, &term, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default();
-            let cnt = books::count_by_title_prefix(&state.db, &term)
+            let cnt = books::count_by_title_prefix(&state.db, &term, hide_doubles)
                 .await
                 .unwrap_or(0);
             (bks, cnt)
@@ -350,10 +360,10 @@ pub async fn search_books(
         }
         _ => {
             let term = params.q.to_uppercase();
-            let bks = books::search_by_title(&state.db, &term, max_items, offset)
+            let bks = books::search_by_title(&state.db, &term, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default();
-            let cnt = books::count_by_title_search(&state.db, &term)
+            let cnt = books::count_by_title_search(&state.db, &term, hide_doubles)
                 .await
                 .unwrap_or(0);
             (bks, cnt)
@@ -362,7 +372,7 @@ pub async fn search_books(
 
     let mut book_views = Vec::with_capacity(raw_books.len());
     for book in raw_books {
-        book_views.push(enrich_book(&state, book).await);
+        book_views.push(enrich_book(&state, book, hide_doubles).await);
     }
 
     let pagination = Pagination::new(params.page, max_items, total);
@@ -538,9 +548,10 @@ pub async fn search_authors(
         .await
         .unwrap_or(0);
 
+    let hide_doubles = state.config.opds.hide_doubles;
     let mut enriched: Vec<serde_json::Value> = Vec::new();
     for author in &items {
-        let book_count = books::count_by_author(&state.db, author.id)
+        let book_count = books::count_by_author(&state.db, author.id, hide_doubles)
             .await
             .unwrap_or(0);
         enriched.push(serde_json::json!({
@@ -584,9 +595,10 @@ pub async fn search_series(
         .await
         .unwrap_or(0);
 
+    let hide_doubles = state.config.opds.hide_doubles;
     let mut enriched: Vec<serde_json::Value> = Vec::new();
     for ser in &items {
-        let book_count = books::count_by_series(&state.db, ser.id).await.unwrap_or(0);
+        let book_count = books::count_by_series(&state.db, ser.id, hide_doubles).await.unwrap_or(0);
         enriched.push(serde_json::json!({
             "id": ser.id,
             "ser_name": ser.ser_name,

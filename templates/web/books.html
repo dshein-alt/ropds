@@ -65,6 +65,7 @@
                 {# Metadata line #}
                 <div class="small text-body-secondary mb-2">
                   <span class="badge text-bg-secondary">{{ item.format }}</span>
+                  {% if item.doubles > 1 %}<span class="badge text-bg-info">{{ item.doubles }} formats</span>{% endif %}
                   {{ item.size | filesizeformat }}
                   {% if item.lang and item.lang != "un" %}· {{ item.lang }}{% endif %}
                   {% if item.docdate and item.docdate != "" %}· {{ item.docdate }}{% endif %}

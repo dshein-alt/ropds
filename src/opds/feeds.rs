@@ -112,7 +112,8 @@ pub async fn catalogs_feed(State(state): State<AppState>, path: Option<Path<(i64
 
     // Books in this catalog
     if cat_id > 0 {
-        let book_list = books::get_by_catalog(&state.db, cat_id, max_items, 0)
+        let hide_doubles = state.config.opds.hide_doubles;
+        let book_list = books::get_by_catalog(&state.db, cat_id, max_items, 0, hide_doubles)
             .await
             .unwrap_or_default();
         for book in &book_list {
@@ -328,7 +329,8 @@ pub async fn books_feed(State(state): State<AppState>, path: Option<Path<(i32,)>
 
             // TODO: alphabet drill-down like authors/series
             // For now, show first page of books matching the lang_code
-            let book_list = books::search_by_title(&state.db, "", max_items, 0)
+            let hide_doubles = state.config.opds.hide_doubles;
+            let book_list = books::search_by_title(&state.db, "", max_items, 0, hide_doubles)
                 .await
                 .unwrap_or_default();
             for book in &book_list {
@@ -417,32 +419,33 @@ pub async fn search_books_feed(
     );
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
+    let hide_doubles = state.config.opds.hide_doubles;
     let book_list = match search_type.as_str() {
         "a" => {
             // By author ID
             let author_id: i64 = terms.parse().unwrap_or(0);
-            books::get_by_author(&state.db, author_id, max_items, offset)
+            books::get_by_author(&state.db, author_id, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default()
         }
         "s" => {
             // By series ID
             let series_id: i64 = terms.parse().unwrap_or(0);
-            books::get_by_series(&state.db, series_id, max_items, offset)
+            books::get_by_series(&state.db, series_id, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default()
         }
         "g" => {
             // By genre ID
             let genre_id: i64 = terms.parse().unwrap_or(0);
-            books::get_by_genre(&state.db, genre_id, max_items, offset)
+            books::get_by_genre(&state.db, genre_id, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default()
         }
         _ => {
             // Title search: m=contains, b=begins, e=exact
             let search_term = terms.to_uppercase();
-            books::search_by_title(&state.db, &search_term, max_items, offset)
+            books::search_by_title(&state.db, &search_term, max_items, offset, hide_doubles)
                 .await
                 .unwrap_or_default()
         }

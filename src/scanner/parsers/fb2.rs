@@ -101,6 +101,7 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
                     if tag == "book-title"
                         && matches_path(&path, &["description", "title-info", "book-title"])
                     {
+                        // FIXME: it breaks book titel with double quotes: `"Great" book` => `Great" book`
                         meta.title = strip_meta(&text);
                     }
                     // <genre>
