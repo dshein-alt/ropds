@@ -7,10 +7,21 @@ use quick_xml::reader::Reader;
 use super::{strip_meta, BookMeta};
 
 /// Parse FB2 XML from any `BufRead` source and return extracted metadata.
-pub fn parse(reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
+/// Tolerant of malformed XML: returns partial metadata on parse errors.
+/// Reads all data into memory first, then extracts cover from raw bytes
+/// if the XML parser fails before reaching <binary> elements.
+pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
+    // Read all data upfront so we can fall back to raw byte search for covers
+    let mut raw_data = Vec::new();
+    if reader.read_to_end(&mut raw_data).is_err() {
+        return Ok(BookMeta::default());
+    }
+
     let mut meta = BookMeta::default();
-    let mut xml = Reader::from_reader(reader);
+    let mut xml = Reader::from_reader(std::io::Cursor::new(&raw_data));
     xml.config_mut().trim_text(true);
+    xml.config_mut().check_end_names = false;
+    xml.config_mut().check_comments = false;
 
     let mut buf = Vec::new();
     let mut path: Vec<String> = Vec::new();
@@ -28,7 +39,7 @@ pub fn parse(reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) => break,
-            Err(e) => return Err(e),
+            Err(_) => break, // Tolerate malformed XML, return partial metadata
 
             Ok(Event::Start(ref e)) => {
                 let local = local_name(e.name().as_ref());
@@ -144,7 +155,68 @@ pub fn parse(reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
         buf.clear();
     }
 
+    // Extract cover from raw bytes if XML parser didn't reach <binary> elements
+    if meta.cover_data.is_none() {
+        if let Some(ref wanted_id) = cover_ref {
+            if let Some((data, mime)) = extract_cover_from_bytes(&raw_data, wanted_id) {
+                meta.cover_data = Some(data);
+                meta.cover_type = mime;
+            }
+        }
+    }
+
     Ok(meta)
+}
+
+/// Extract cover image from raw FB2 bytes by searching for the matching <binary> element.
+/// Used as fallback when the XML parser fails before reaching binary elements.
+pub fn extract_cover_from_bytes(data: &[u8], cover_id: &str) -> Option<(Vec<u8>, String)> {
+    let text = String::from_utf8_lossy(data);
+
+    // Search for <binary id="cover_id" ...> (case-insensitive on id value)
+    let cover_id_lower = cover_id.to_lowercase();
+    let mut search_pos = 0;
+
+    while let Some(bin_start) = text[search_pos..].find("<binary ") {
+        let abs_start = search_pos + bin_start;
+        // Find the end of the opening tag
+        let tag_end = match text[abs_start..].find('>') {
+            Some(p) => abs_start + p,
+            None => { search_pos = abs_start + 1; continue; }
+        };
+
+        let tag = &text[abs_start..=tag_end];
+
+        // Check if this binary element has the matching id
+        let has_match = extract_attr_value(tag, "id")
+            .map(|id| id.to_lowercase() == cover_id_lower)
+            .unwrap_or(false);
+
+        if has_match {
+            // Find </binary> closing tag
+            let content_start = tag_end + 1;
+            if let Some(close_pos) = text[content_start..].find("</binary>") {
+                let b64_text = &text[content_start..content_start + close_pos];
+                let clean: String = b64_text.chars().filter(|c| !c.is_whitespace()).collect();
+                if let Ok(img_data) = base64::engine::general_purpose::STANDARD.decode(&clean) {
+                    let mime = guess_image_mime(&img_data);
+                    return Some((img_data, mime));
+                }
+            }
+            return None;
+        }
+
+        search_pos = tag_end + 1;
+    }
+    None
+}
+
+/// Extract an attribute value from an XML tag string like `<binary id="foo" content-type="bar">`.
+fn extract_attr_value<'a>(tag: &'a str, attr_name: &str) -> Option<&'a str> {
+    let pattern = format!("{}=\"", attr_name);
+    let start = tag.find(&pattern)? + pattern.len();
+    let end = tag[start..].find('"')? + start;
+    Some(&tag[start..end])
 }
 
 /// Handle attributes on an opening/empty tag.
@@ -190,6 +262,8 @@ fn handle_open_tag(
 pub fn extract_cover(reader: impl BufRead) -> Option<(Vec<u8>, String)> {
     let mut xml = Reader::from_reader(reader);
     xml.config_mut().trim_text(true);
+    xml.config_mut().check_end_names = false;
+    xml.config_mut().check_comments = false;
     let mut buf = Vec::new();
     let mut path: Vec<String> = Vec::new();
 
