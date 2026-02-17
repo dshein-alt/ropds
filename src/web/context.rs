@@ -77,17 +77,25 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     let secret = state.config.server.session_secret.as_bytes();
     let mut is_superuser: i32 = 0;
     let mut is_authenticated: i32 = 0;
+    let mut display_name = String::new();
+    let mut username = String::new();
     if let Some(cookie) = jar.get("session") {
         if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
             is_authenticated = 1;
-            if crate::db::queries::users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
-                is_superuser = 1;
+            if let Ok(Some(user)) = crate::db::queries::users::get_by_id(&state.db, user_id).await {
+                if user.is_superuser == 1 {
+                    is_superuser = 1;
+                }
+                display_name = user.display_name;
+                username = user.username;
             }
             ctx.insert("csrf_token", &generate_csrf_token(cookie.value(), secret));
         }
     }
     ctx.insert("is_superuser", &is_superuser);
     ctx.insert("is_authenticated", &is_authenticated);
+    ctx.insert("display_name", &display_name);
+    ctx.insert("username", &username);
 
     // Converter availability
     let fb2toepub = !state.config.converter.fb2_to_epub.is_empty();

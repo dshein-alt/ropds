@@ -12,12 +12,13 @@ pub struct UserView {
     pub created_at: String,
     pub last_login: String,
     pub password_change_required: i32,
+    pub display_name: String,
 }
 
 /// Get all users for admin panel listing (excludes password_hash).
 pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> {
     let users: Vec<UserView> = sqlx::query_as(
-        "SELECT id, username, is_superuser, created_at, last_login, password_change_required FROM users ORDER BY id"
+        "SELECT id, username, is_superuser, created_at, last_login, password_change_required, display_name FROM users ORDER BY id"
     )
     .fetch_all(pool)
     .await?;
@@ -27,7 +28,7 @@ pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> 
 /// Get a single user by ID.
 pub async fn get_by_id(pool: &DbPool, user_id: i64) -> Result<Option<User>, sqlx::Error> {
     let user: Option<User> = sqlx::query_as(
-        "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required FROM users WHERE id = ?"
+        "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required, display_name FROM users WHERE id = ?"
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -52,13 +53,15 @@ pub async fn create(
     username: &str,
     password_hash: &str,
     is_superuser: i32,
+    display_name: &str,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query(
-        "INSERT INTO users (username, password_hash, is_superuser, password_change_required) VALUES (?, ?, ?, 1)"
+        "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) VALUES (?, ?, ?, 1, ?)"
     )
     .bind(username)
     .bind(password_hash)
     .bind(is_superuser)
+    .bind(display_name)
     .execute(pool)
     .await?;
 
@@ -105,6 +108,31 @@ pub async fn update_last_login(pool: &DbPool, user_id: i64, timestamp: &str) -> 
     Ok(())
 }
 
+/// Update a user's display name.
+pub async fn update_display_name(
+    pool: &DbPool,
+    user_id: i64,
+    display_name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
+        .bind(display_name)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Get display name for a user. Returns empty string if not found.
+pub async fn get_display_name(pool: &DbPool, user_id: i64) -> Result<String, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT display_name FROM users WHERE id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(v,)| v).unwrap_or_default())
+}
+
 /// Check if user must change password before accessing the app.
 pub async fn password_change_required(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
     let row: Option<(i32,)> = sqlx::query_as(
@@ -133,30 +161,31 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_all_views() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "alice", "hash123", 0).await.unwrap();
+        let id = create(&pool, "alice", "hash123", 0, "Alice").await.unwrap();
         assert!(id > 0);
 
         let views = get_all_views(&pool).await.unwrap();
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].username, "alice");
         assert_eq!(views[0].is_superuser, 0);
+        assert_eq!(views[0].display_name, "Alice");
     }
 
     #[tokio::test]
     async fn test_create_duplicate_username() {
         let pool = create_test_pool().await;
-        create(&pool, "bob", "hash1", 0).await.unwrap();
-        let result = create(&pool, "bob", "hash2", 0).await;
+        create(&pool, "bob", "hash1", 0, "").await.unwrap();
+        let result = create(&pool, "bob", "hash2", 0, "").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_is_superuser() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "admin", "hash", 1).await.unwrap();
+        let id = create(&pool, "admin", "hash", 1, "Administrator").await.unwrap();
         assert!(is_superuser(&pool, id).await.unwrap());
 
-        let id2 = create(&pool, "user", "hash", 0).await.unwrap();
+        let id2 = create(&pool, "user", "hash", 0, "").await.unwrap();
         assert!(!is_superuser(&pool, id2).await.unwrap());
     }
 
@@ -169,7 +198,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_password() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "carol", "old_hash", 0).await.unwrap();
+        let id = create(&pool, "carol", "old_hash", 0, "").await.unwrap();
         update_password(&pool, id, "new_hash").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -180,7 +209,7 @@ mod tests {
     async fn test_update_password_hash_verify() {
         let pool = create_test_pool().await;
         let old_hash = crate::password::hash("old_password");
-        let id = create(&pool, "frank", &old_hash, 0).await.unwrap();
+        let id = create(&pool, "frank", &old_hash, 0, "").await.unwrap();
 
         // Verify old password works
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -199,7 +228,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "dave", "hash", 0).await.unwrap();
+        let id = create(&pool, "dave", "hash", 0, "").await.unwrap();
         delete(&pool, id).await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap();
@@ -209,7 +238,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_last_login() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "eve", "hash", 0).await.unwrap();
+        let id = create(&pool, "eve", "hash", 0, "").await.unwrap();
 
         update_last_login(&pool, id, "2026-01-15 10:30:00").await.unwrap();
         let views = get_all_views(&pool).await.unwrap();
@@ -219,7 +248,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_sets_password_change_required() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "newuser", "hash", 0).await.unwrap();
+        let id = create(&pool, "newuser", "hash", 0, "").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(user.password_change_required, 1);
@@ -229,7 +258,7 @@ mod tests {
     #[tokio::test]
     async fn test_clear_password_change_required() {
         let pool = create_test_pool().await;
-        let id = create(&pool, "testuser", "hash", 0).await.unwrap();
+        let id = create(&pool, "testuser", "hash", 0, "").await.unwrap();
         assert!(password_change_required(&pool, id).await.unwrap());
 
         clear_password_change_required(&pool, id).await.unwrap();
@@ -237,6 +266,31 @@ mod tests {
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(user.password_change_required, 0);
+    }
+
+    #[tokio::test]
+    async fn test_display_name() {
+        let pool = create_test_pool().await;
+        let id = create(&pool, "jane", "hash", 0, "Jane Doe").await.unwrap();
+
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(user.display_name, "Jane Doe");
+
+        let name = get_display_name(&pool, id).await.unwrap();
+        assert_eq!(name, "Jane Doe");
+
+        update_display_name(&pool, id, "J. Doe").await.unwrap();
+        let name = get_display_name(&pool, id).await.unwrap();
+        assert_eq!(name, "J. Doe");
+    }
+
+    #[tokio::test]
+    async fn test_display_name_default_empty() {
+        let pool = create_test_pool().await;
+        let id = create(&pool, "noname", "hash", 0, "").await.unwrap();
+
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(user.display_name, "");
     }
 
 }

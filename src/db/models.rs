@@ -86,6 +86,7 @@ pub struct User {
     pub created_at: String,
     pub last_login: String,
     pub password_change_required: i32,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, FromRow)]

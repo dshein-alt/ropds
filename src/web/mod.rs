@@ -38,6 +38,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/change-password", get(admin::change_password_page).post(admin::change_password_submit))
         .route("/profile", get(admin::profile_page))
         .route("/profile/password", post(admin::profile_change_password))
+        .route("/profile/display-name", post(admin::profile_update_display_name))
         .nest("/admin", admin_router)
         .layer(middleware::from_fn_with_state(
             state,

@@ -114,6 +114,8 @@ pub struct CreateUserForm {
     #[serde(default)]
     pub is_superuser: Option<String>, // checkbox: present = "on", absent = None
     #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
     pub csrf_token: String,
 }
 
@@ -139,8 +141,9 @@ pub async fn create_user(
 
     let is_super = if form.is_superuser.is_some() { 1 } else { 0 };
     let hash = crate::password::hash(&form.password);
+    let display_name = form.display_name.trim();
 
-    match users::create(&state.db, username, &hash, is_super).await {
+    match users::create(&state.db, username, &hash, is_super, display_name).await {
         Ok(_) => Redirect::to("/web/admin?msg=user_created").into_response(),
         Err(_) => Redirect::to("/web/admin?error=username_exists").into_response(),
     }
@@ -230,6 +233,38 @@ pub async fn profile_page(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct DisplayNameForm {
+    pub display_name: String,
+    #[serde(default)]
+    pub csrf_token: String,
+}
+
+/// POST /web/profile/display-name — update own display name.
+pub async fn profile_update_display_name(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<DisplayNameForm>,
+) -> impl IntoResponse {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
+    let user_id = match get_session_user_id(&jar, secret) {
+        Some(id) => id,
+        None => return Redirect::to("/web/login").into_response(),
+    };
+
+    let display_name = form.display_name.trim();
+    if let Err(e) = users::update_display_name(&state.db, user_id, display_name).await {
+        tracing::error!("Failed to update display name for user {user_id}: {e}");
+        return Redirect::to("/web/profile?error=db_error").into_response();
+    }
+
+    Redirect::to("/web/profile?msg=display_name_changed").into_response()
 }
 
 /// POST /web/profile/password — change own password.
