@@ -4,6 +4,7 @@ mod error;
 mod opds;
 mod pdf;
 mod scanner;
+mod scheduler;
 mod state;
 mod web;
 
@@ -74,6 +75,12 @@ async fn main() {
     let filter =
         EnvFilter::try_new(&config.server.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
+
+    // Validate scanner schedule config
+    if let Err(e) = scheduler::validate_config(&config.scanner) {
+        tracing::error!("Invalid scanner config: {e}");
+        std::process::exit(1);
+    }
 
     if !pdf::pdftoppm_available() {
         tracing::warn!(
@@ -152,6 +159,9 @@ async fn main() {
     tracing::info!("ropds v{}", env!("CARGO_PKG_VERSION"));
     tracing::info!("Library root: {}", config.library.root_path.display());
     tracing::info!("Listening on {addr}");
+
+    // Start background scan scheduler
+    tokio::spawn(scheduler::run(pool.clone(), config.clone()));
 
     let state = AppState::new(config, pool, tera, translations);
     let app = build_router(state);

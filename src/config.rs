@@ -69,14 +69,15 @@ pub struct OpdsConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScannerConfig {
-    #[serde(default = "default_schedule_zero")]
-    pub schedule_minutes: String,
+    /// Minutes to fire at (0..=59). Empty = every minute.
+    #[serde(default = "default_schedule_minutes")]
+    pub schedule_minutes: Vec<u32>,
+    /// Hours to fire at (0..=23). Empty = every hour.
     #[serde(default = "default_schedule_hours")]
-    pub schedule_hours: String,
-    #[serde(default = "default_schedule_star")]
-    pub schedule_day: String,
-    #[serde(default = "default_schedule_star")]
-    pub schedule_day_of_week: String,
+    pub schedule_hours: Vec<u32>,
+    /// Days of week to fire on (1=Mon..7=Sun, ISO). Empty = every day.
+    #[serde(default)]
+    pub schedule_day_of_week: Vec<u32>,
     #[serde(default = "default_true")]
     pub delete_logical: bool,
 }
@@ -189,16 +190,12 @@ fn default_covers_dir() -> PathBuf {
     PathBuf::from("covers")
 }
 
-fn default_schedule_zero() -> String {
-    "0".to_string()
+fn default_schedule_minutes() -> Vec<u32> {
+    vec![0]
 }
 
-fn default_schedule_hours() -> String {
-    "0,12".to_string()
-}
-
-fn default_schedule_star() -> String {
-    "*".to_string()
+fn default_schedule_hours() -> Vec<u32> {
+    vec![0, 12]
 }
 
 fn default_temp_dir() -> PathBuf {
@@ -267,10 +264,9 @@ hide_doubles = true
 cache_time = 300
 
 [scanner]
-schedule_minutes = "30"
-schedule_hours = "6"
-schedule_day = "1"
-schedule_day_of_week = "mon"
+schedule_minutes = [30]
+schedule_hours = [6]
+schedule_day_of_week = [1, 4]
 delete_logical = false
 
 [converter]
@@ -291,7 +287,7 @@ theme = "dark"
         assert_eq!(config.opds.title, "My Library");
         assert_eq!(config.opds.max_items, 50);
         assert!(!config.opds.auth_required);
-        assert_eq!(config.scanner.schedule_hours, "6");
+        assert_eq!(config.scanner.schedule_hours, vec![6]);
         assert_eq!(config.converter.fb2_to_epub, "/usr/bin/fb2epub");
         assert_eq!(config.web.language, "ru");
         assert_eq!(config.web.theme, "dark");
