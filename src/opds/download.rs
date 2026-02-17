@@ -1,20 +1,45 @@
 use std::io::{Cursor, Read, Write};
 
 use axum::extract::{Path, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use base64::Engine;
 
 use crate::db::models;
-use crate::db::queries::books;
+use crate::db::queries::{books, bookshelf};
 use crate::state::AppState;
 
 use super::xml;
+
+/// Extract user_id from Basic Auth header.
+/// Parses `Authorization: Basic <base64>`, decodes, splits on `:`,
+/// and looks up the username in the database.
+async fn get_user_id_from_basic_auth(
+    pool: &crate::db::DbPool,
+    headers: &HeaderMap,
+) -> Option<i64> {
+    let auth = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
+    let encoded = auth.strip_prefix("Basic ")?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let credentials = String::from_utf8(decoded).ok()?;
+    let (username, _password) = credentials.split_once(':')?;
+
+    let result: Result<Option<(i64,)>, _> =
+        sqlx::query_as("SELECT id FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_optional(pool)
+            .await;
+    result.ok().flatten().map(|(id,)| id)
+}
 
 /// GET /opds/download/:book_id/:zip_flag/
 ///
 /// zip_flag: 0 = original file, 1 = wrapped in ZIP
 pub async fn download(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((book_id, zip_flag)): Path<(i64, i32)>,
 ) -> Response {
     let book = match books::get_by_id(&state.db, book_id).await {
@@ -33,6 +58,11 @@ pub async fn download(
             return (StatusCode::NOT_FOUND, "File not found").into_response();
         }
     };
+
+    // Fire-and-forget bookshelf tracking
+    if let Some(user_id) = get_user_id_from_basic_auth(&state.db, &headers).await {
+        let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
+    }
 
     let filename = &book.filename;
     let mime = xml::mime_for_format(&book.format);
@@ -53,7 +83,7 @@ pub async fn download(
 }
 
 /// Read a book file from disk. Handles both plain files and files inside ZIP archives.
-fn read_book_file(
+pub fn read_book_file(
     root: &std::path::Path,
     book_path: &str,
     filename: &str,
@@ -90,7 +120,7 @@ fn read_book_file(
 }
 
 /// Wrap file bytes into a new ZIP archive in memory.
-fn wrap_in_zip(filename: &str, data: &[u8]) -> Result<Vec<u8>, zip::result::ZipError> {
+pub fn wrap_in_zip(filename: &str, data: &[u8]) -> Result<Vec<u8>, zip::result::ZipError> {
     let buf = Cursor::new(Vec::new());
     let mut zip_writer = zip::ZipWriter::new(buf);
     let options = zip::write::SimpleFileOptions::default()
@@ -102,7 +132,7 @@ fn wrap_in_zip(filename: &str, data: &[u8]) -> Result<Vec<u8>, zip::result::ZipE
 }
 
 /// Build an HTTP response for a file download.
-fn file_response(data: &[u8], filename: &str, mime: &str) -> Response {
+pub fn file_response(data: &[u8], filename: &str, mime: &str) -> Response {
     let content_disposition = format!("attachment; filename=\"{filename}\"");
     (
         StatusCode::OK,
