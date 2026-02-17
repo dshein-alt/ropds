@@ -54,6 +54,20 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("split_items", &state.config.opds.split_items);
     ctx.insert("auth_required", &state.config.opds.auth_required);
 
+    // Superuser flag for navbar admin link
+    let mut is_superuser: i32 = 0;
+    if state.config.opds.auth_required {
+        let secret = state.config.server.session_secret.as_bytes();
+        if let Some(cookie) = jar.get("session") {
+            if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
+                if crate::db::queries::users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
+                    is_superuser = 1;
+                }
+            }
+        }
+    }
+    ctx.insert("is_superuser", &is_superuser);
+
     // Converter availability
     let fb2toepub = !state.config.converter.fb2_to_epub.is_empty();
     let fb2tomobi = !state.config.converter.fb2_to_mobi.is_empty();
