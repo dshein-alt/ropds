@@ -59,6 +59,7 @@ pub async fn admin_page(
     ctx.insert("current_user_id", &current_user_id);
 
     // Server config sections (read-only display)
+    ctx.insert("cfg_uptime", &format_uptime(state.started_at.elapsed().as_secs(), &ctx));
     ctx.insert("cfg_host", &state.config.server.host);
     ctx.insert("cfg_port", &state.config.server.port);
     ctx.insert("cfg_log_level", &state.config.server.log_level);
@@ -198,4 +199,32 @@ pub async fn profile_change_password(
     let hash = crate::password::hash(&form.password);
     let _ = users::update_password(&state.db, user_id, &hash).await;
     Redirect::to("/web/profile?msg=password_changed").into_response()
+}
+
+/// Format elapsed seconds as human-readable uptime using translations from context.
+fn format_uptime(total_secs: u64, ctx: &tera::Context) -> String {
+    let days = total_secs / 86400;
+    let hours = (total_secs % 86400) / 3600;
+    let minutes = (total_secs % 3600) / 60;
+
+    // Extract translation keys from context (t.admin.uptime_days, etc.)
+    let t = ctx.get("t").and_then(|v| v.as_object());
+    let admin = t.and_then(|t| t.get("admin")).and_then(|v| v.as_object());
+    let label = |key: &str, fallback: &str| -> String {
+        admin
+            .and_then(|a| a.get(key))
+            .and_then(|v| v.as_str())
+            .unwrap_or(fallback)
+            .to_string()
+    };
+
+    let mut parts = Vec::new();
+    if days > 0 {
+        parts.push(format!("{days} {}", label("uptime_days", "d")));
+    }
+    if hours > 0 {
+        parts.push(format!("{hours} {}", label("uptime_hours", "h")));
+    }
+    parts.push(format!("{minutes} {}", label("uptime_minutes", "min")));
+    parts.join(" ")
 }

@@ -203,6 +203,12 @@
       <div class="accordion-body">
         <p class="text-body-secondary">{{ t.admin.config_desc }}</p>
 
+        <table class="table table-sm mb-3">
+          <tbody>
+            <tr><td class="text-body-secondary" style="width:40%">{{ t.admin.uptime }}</td><td>{{ cfg_uptime }}</td></tr>
+          </tbody>
+        </table>
+
         {# Server #}
         <h6 class="mt-3">{{ t.admin.section_server }}</h6>
         <table class="table table-sm">

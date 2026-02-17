@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::config::Config;
 use crate::db::DbPool;
@@ -10,6 +11,7 @@ pub struct AppState {
     pub db: DbPool,
     pub tera: Arc<tera::Tera>,
     pub translations: Arc<Translations>,
+    pub started_at: Instant,
 }
 
 impl AppState {
@@ -19,6 +21,7 @@ impl AppState {
             db,
             tera: Arc::new(tera),
             translations: Arc::new(translations),
+            started_at: Instant::now(),
         }
     }
 }
