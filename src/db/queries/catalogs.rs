@@ -62,3 +62,44 @@ pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
         .await?;
     Ok(row.0)
 }
+
+/// Count child catalogs for a given parent.
+pub async fn count_children(pool: &DbPool, parent_id: i64) -> Result<i64, sqlx::Error> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM catalogs WHERE parent_id = ?")
+            .bind(parent_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+/// Count root catalogs (parent_id IS NULL).
+pub async fn count_root(pool: &DbPool) -> Result<i64, sqlx::Error> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM catalogs WHERE parent_id IS NULL")
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+/// Delete catalogs that have no live books and no child catalogs.
+/// Repeats until no more empty catalogs are found (prunes leaf-up).
+pub async fn delete_empty(pool: &DbPool) -> Result<u64, sqlx::Error> {
+    let mut total = 0u64;
+    loop {
+        let result = sqlx::query(
+            "DELETE FROM catalogs WHERE id NOT IN \
+             (SELECT DISTINCT catalog_id FROM books WHERE avail > 0) \
+             AND id NOT IN \
+             (SELECT DISTINCT parent_id FROM catalogs WHERE parent_id IS NOT NULL)",
+        )
+        .execute(pool)
+        .await?;
+        let deleted = result.rows_affected();
+        if deleted == 0 {
+            break;
+        }
+        total += deleted;
+    }
+    Ok(total)
+}

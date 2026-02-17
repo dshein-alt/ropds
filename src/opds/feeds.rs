@@ -68,18 +68,25 @@ pub async fn root_feed(State(state): State<AppState>) -> Response {
 /// GET /opds/catalogs/
 /// GET /opds/catalogs/:cat_id/
 /// GET /opds/catalogs/:cat_id/:page/
-pub async fn catalogs_feed(State(state): State<AppState>, path: Option<Path<(i64,)>>) -> Response {
-    let cat_id = path.map(|Path((id,))| id).unwrap_or(0);
+pub async fn catalogs_feed(
+    State(state): State<AppState>,
+    path: Option<Path<CatalogsParams>>,
+) -> Response {
+    let (cat_id, page) = match path {
+        Some(Path(p)) => (p.cat_id, p.page.unwrap_or(1).max(1)),
+        None => (0, 1),
+    };
     let max_items = state.config.opds.max_items as i32;
+    let offset = (page - 1) * max_items;
 
     let mut fb = FeedBuilder::new();
     let self_href = if cat_id == 0 {
         "/opds/catalogs/".to_string()
     } else {
-        format!("/opds/catalogs/{cat_id}/")
+        format!("/opds/catalogs/{cat_id}/{page}/")
     };
     let _ = fb.begin_feed(
-        &format!("tag:catalogs:{cat_id}"),
+        &format!("tag:catalogs:{cat_id}:{page}"),
         "Catalogs",
         "",
         DEFAULT_UPDATED,
@@ -88,34 +95,53 @@ pub async fn catalogs_feed(State(state): State<AppState>, path: Option<Path<(i64
     );
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-    // Child catalogs
-    let cats = if cat_id == 0 {
-        catalogs::get_root_catalogs(&state.db)
-            .await
-            .unwrap_or_default()
-    } else {
-        catalogs::get_children(&state.db, cat_id)
-            .await
-            .unwrap_or_default()
-    };
+    // Child catalogs (only on page 1 — subcatalogs are not paginated)
+    if page == 1 {
+        let cats = if cat_id == 0 {
+            catalogs::get_root_catalogs(&state.db)
+                .await
+                .unwrap_or_default()
+        } else {
+            catalogs::get_children(&state.db, cat_id)
+                .await
+                .unwrap_or_default()
+        };
 
-    for cat in &cats {
-        let href = format!("/opds/catalogs/{}/", cat.id);
-        let _ = fb.write_nav_entry(
-            &format!("c:{}", cat.id),
-            &cat.cat_name,
-            &href,
-            "",
-            DEFAULT_UPDATED,
-        );
+        for cat in &cats {
+            let href = format!("/opds/catalogs/{}/", cat.id);
+            let _ = fb.write_nav_entry(
+                &format!("c:{}", cat.id),
+                &cat.cat_name,
+                &href,
+                "",
+                DEFAULT_UPDATED,
+            );
+        }
     }
 
-    // Books in this catalog
+    // Books in this catalog (paginated)
     if cat_id > 0 {
         let hide_doubles = state.config.opds.hide_doubles;
-        let book_list = books::get_by_catalog(&state.db, cat_id, max_items, 0, hide_doubles)
-            .await
-            .unwrap_or_default();
+        let book_list =
+            books::get_by_catalog(&state.db, cat_id, max_items, offset, hide_doubles)
+                .await
+                .unwrap_or_default();
+
+        // Pagination links
+        let has_next = book_list.len() as i32 >= max_items;
+        let has_prev = page > 1;
+        let prev_href = if has_prev {
+            Some(format!("/opds/catalogs/{cat_id}/{}/", page - 1))
+        } else {
+            None
+        };
+        let next_href = if has_next {
+            Some(format!("/opds/catalogs/{cat_id}/{}/", page + 1))
+        } else {
+            None
+        };
+        let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
+
         for book in &book_list {
             write_book_entry(&mut fb, &state, book).await;
         }
@@ -656,6 +682,12 @@ pub async fn opensearch(_state: State<AppState>) -> Response {
 pub struct AuthorsParams {
     pub lang_code: i32,
     pub prefix: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct CatalogsParams {
+    pub cat_id: i64,
+    pub page: Option<i32>,
 }
 
 #[derive(serde::Deserialize)]

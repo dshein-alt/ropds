@@ -153,7 +153,13 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
         );
     }
 
-    // Step 4: Update counters
+    // Step 4: Remove empty catalogs (left after book deletion)
+    let cats_deleted = catalogs::delete_empty(pool).await?;
+    if cats_deleted > 0 {
+        info!("Removed {cats_deleted} empty catalogs");
+    }
+
+    // Step 5: Update counters
     counters::update_all(pool).await?;
 
     info!(
