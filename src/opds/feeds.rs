@@ -23,7 +23,7 @@ fn error_response(status: StatusCode, msg: &str) -> Response {
 }
 
 /// GET /opds/ — Root navigation feed.
-pub async fn root_feed(State(state): State<AppState>) -> Response {
+pub async fn root_feed(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
     let title = &state.config.opds.title;
     let subtitle = &state.config.opds.subtitle;
 
@@ -57,6 +57,16 @@ pub async fn root_feed(State(state): State<AppState>) -> Response {
     ];
     for (id, title, href, content) in &entries {
         let _ = fb.write_nav_entry(id, title, href, content, DEFAULT_UPDATED);
+    }
+
+    if state.config.opds.auth_required {
+        if let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, &headers).await {
+            let count = crate::db::queries::bookshelf::count_by_user(&state.db, user_id)
+                .await
+                .unwrap_or(0);
+            let content = format!("Books read: {count}");
+            let _ = fb.write_nav_entry("m:6", "Book shelf", "/opds/bookshelf/", &content, DEFAULT_UPDATED);
+        }
     }
 
     match fb.finish() {
@@ -122,10 +132,9 @@ pub async fn catalogs_feed(
     // Books in this catalog (paginated)
     if cat_id > 0 {
         let hide_doubles = state.config.opds.hide_doubles;
-        let book_list =
-            books::get_by_catalog(&state.db, cat_id, max_items, offset, hide_doubles)
-                .await
-                .unwrap_or_default();
+        let book_list = books::get_by_catalog(&state.db, cat_id, max_items, offset, hide_doubles)
+            .await
+            .unwrap_or_default();
 
         // Pagination links
         let has_next = book_list.len() as i32 >= max_items;
@@ -646,6 +655,63 @@ pub async fn search_series_feed(
             "",
             DEFAULT_UPDATED,
         );
+    }
+
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
+    }
+}
+
+/// GET /opds/bookshelf/
+/// GET /opds/bookshelf/:page/
+pub async fn bookshelf_feed(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    path: Option<Path<(i32,)>>,
+) -> Response {
+    let user_id = match super::auth::get_user_id_from_headers(&state.db, &headers).await {
+        Some(uid) => uid,
+        None => return error_response(StatusCode::UNAUTHORIZED, "Authentication required"),
+    };
+
+    let max_items = state.config.opds.max_items as i32;
+    let page = path.map(|Path((p,))| p).unwrap_or(1).max(1);
+    let offset = (page - 1) * max_items;
+
+    let mut fb = FeedBuilder::new();
+    let self_href = format!("/opds/bookshelf/{page}/");
+    let _ = fb.begin_feed(
+        &format!("tag:bookshelf:{page}"),
+        "Book shelf",
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+
+    let book_list = crate::db::queries::bookshelf::get_by_user(&state.db, user_id, max_items, offset)
+        .await
+        .unwrap_or_default();
+
+    // Pagination
+    let has_next = book_list.len() as i32 >= max_items;
+    let has_prev = page > 1;
+    let prev_href = if has_prev {
+        Some(format!("/opds/bookshelf/{}/", page - 1))
+    } else {
+        None
+    };
+    let next_href = if has_next {
+        Some(format!("/opds/bookshelf/{}/", page + 1))
+    } else {
+        None
+    };
+    let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
+
+    for book in &book_list {
+        write_book_entry(&mut fb, &state, book).await;
     }
 
     match fb.finish() {

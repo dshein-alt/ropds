@@ -65,6 +65,9 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/search/series/{search_type}/{terms}/{page}/",
             get(feeds::search_series_feed),
         )
+        // Bookshelf
+        .route("/bookshelf/", get(feeds::bookshelf_feed))
+        .route("/bookshelf/{page}/", get(feeds::bookshelf_feed))
         // Download
         .route("/download/{book_id}/{zip_flag}/", get(download::download))
         // Auth middleware
