@@ -103,12 +103,3 @@ pub async fn update_last_login(pool: &DbPool, user_id: i64, timestamp: &str) -> 
         .await?;
     Ok(())
 }
-
-/// Clear last_login (set to empty string) for a user.
-pub async fn clear_last_login(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET last_login = '' WHERE id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
