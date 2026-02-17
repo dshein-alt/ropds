@@ -458,6 +458,11 @@ pub async fn upload_cover(
     jar: CookieJar,
     axum::extract::Path(token): axum::extract::Path<String>,
 ) -> Response {
+    // Guard: feature must be enabled
+    if !state.config.upload.allow_upload {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     // Validate token format (hex chars only, reasonable length)
     if !token.chars().all(|c| c.is_ascii_hexdigit()) || token.len() > 64 {
         return StatusCode::NOT_FOUND.into_response();
