@@ -48,6 +48,22 @@ fn is_valid_password(password: &str) -> bool {
     (8..=32).contains(&len)
 }
 
+/// Validate book title: non-empty, max 256 chars, no control characters.
+/// Returns the trimmed title on success, or an error message.
+fn validate_book_title(title: &str) -> Result<String, &'static str> {
+    let trimmed = title.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("title_empty");
+    }
+    if trimmed.chars().count() > 256 {
+        return Err("title_too_long");
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err("title_invalid");
+    }
+    Ok(trimmed)
+}
+
 /// GET /web/admin — render admin panel.
 pub async fn admin_page(
     State(state): State<AppState>,
