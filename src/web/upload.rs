@@ -345,8 +345,14 @@ pub async fn upload_file(
     jar: CookieJar,
     mut multipart: axum::extract::Multipart,
 ) -> Response {
-    // 0. Clean up stale uploads (older than 1 hour)
-    cleanup_stale_uploads(&state.config.upload.upload_path, 3600);
+    // 0. Clean up stale uploads (older than 1 hour) in a blocking task
+    let upload_path = state.config.upload.upload_path.clone();
+    tokio::task::spawn(async move {
+        let _ = tokio::task::spawn_blocking(move || {
+            cleanup_stale_uploads(&upload_path, 3600);
+        })
+        .await;
+    });
 
     // 1. Permission check
     let user_id = match check_upload_permission(&state, &jar).await {
@@ -713,8 +719,10 @@ pub async fn publish(
         }
     };
 
-    // 10. Update counters (fire-and-forget)
-    let _ = crate::db::queries::counters::update_all(&state.db).await;
+    // 10. Update counters (non-critical, log on failure)
+    if let Err(e) = crate::db::queries::counters::update_all(&state.db).await {
+        tracing::warn!("Failed to update counters after publish: {e}");
+    }
 
     // 11. Clean up temp files
     let _ = std::fs::remove_file(&upload_state.temp_path);

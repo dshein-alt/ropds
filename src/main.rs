@@ -169,6 +169,21 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        // Also check that root_path (library destination) is writable
+        let root_test = config.library.root_path.join(".ropds_write_test");
+        match std::fs::File::create(&root_test) {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&root_test);
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Upload enabled but root_path '{}' is not writable: {e}",
+                    config.library.root_path.display()
+                );
+                std::process::exit(1);
+            }
+        }
+
         tracing::info!(
             "Upload enabled, upload_path: {}",
             config.upload.upload_path.display()

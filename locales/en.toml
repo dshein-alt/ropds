@@ -183,6 +183,7 @@ loading = "Loading..."
 [upload]
 title = "Upload Book"
 select_file = "Select a file or drag and drop"
+browse = "Browse"
 supported_formats = "Supported formats"
 max_size = "Maximum file size"
 upload_btn = "Upload"
