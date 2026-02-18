@@ -1,0 +1,20 @@
+# Build artifacts
+target/
+
+# IDE
+.idea/
+.vscode/
+
+# Environment
+.venv/
+
+# Runtime data
+config.toml
+ropds.*
+devel/
+
+# Misc
+*.log
+*.swp
+*.jpg
+docs/*
