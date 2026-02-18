@@ -428,7 +428,7 @@ pub async fn upload_file(
     })
     .await;
 
-    let meta = match meta_result {
+    let mut meta = match meta_result {
         Ok(Ok(m)) => m,
         Ok(Err(e)) => {
             tracing::warn!("Failed to parse uploaded book: {e}");
@@ -441,6 +441,15 @@ pub async fn upload_file(
             return json_error(StatusCode::BAD_REQUEST, "error_parse");
         }
     };
+
+    // If the parser used the temp filename as fallback title, replace with original name
+    if meta.title.starts_with("upload_") {
+        meta.title = std::path::Path::new(&book_filename)
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+    }
 
     // 9. Save cover to temp if present
     let cover_path = if let Some(ref cover_data) = meta.cover_data {
