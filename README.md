@@ -1,0 +1,179 @@
+# ROPDS
+
+**Rust OPDS Server** — a fast, lightweight personal e-book library server with OPDS catalog and web interface.
+
+> Inspired by [SimpleOPDS](https://github.com/mitshel/sopds).
+> Built from scratch in Rust as a modern, self-hosted alternative.
+
+[Русская версия](README_RU.md)
+
+## Why ROPDS?
+
+The goal is simple: **a personal library server you can set up once and forget about.** Easy to deploy on a home server or VPS for yourself, family, and friends.
+
+- **Fast & resource-friendly** — written in Rust with production-grade async libraries (Axum, Tokio, SQLx)
+- **Single binary** — no runtime dependencies, no containers required
+- **Zero-config database** — SQLite by default, just point it at your book collection
+- **OPDS 1.2 compatible** — works with any OPDS reader (KOReader, Moon+ Reader, Librera, etc.)
+- **Clean web UI** — browse, search, and download books from any browser
+
+This project is also an **educational pet-project** exploring modern Rust ecosystem and heavy use of **competitive LLM coding agents** throughout development.
+
+## Features
+
+**Library Management**
+- Automatic background scanning with configurable schedule
+- Parallel scanning with Rayon thread pools
+- Supports books inside ZIP archives and INPX index files
+- Metadata extraction for FB2 and EPUB (title, authors, genres, series, covers, annotations)
+- Optional PDF/DjVu cover generation via external tools (`pdftoppm`, `ddjvu`)
+
+**OPDS Catalog**
+- Full OPDS 1.2 Atom feeds with pagination
+- Browse by authors, series, genres, catalogs, or title prefix
+- OpenSearch support
+- Cover thumbnails and full-size images
+- HTTP Basic Auth (can be disabled)
+
+**Search**
+- Full-text search across book titles, authors, and series — from both OPDS and web UI
+- Alphabetical prefix browsing with configurable split threshold for large collections
+- OpenSearch descriptor for OPDS client integration
+
+**Bookshelf**
+- Personal reading list per user with one-click add/remove
+- Books are automatically added to the bookshelf on download
+- Sort by date added, title, or author — ascending or descending
+- Infinite scroll for seamless browsing
+
+**Book Upload**
+- Upload books directly through the web interface (FB2, EPUB, PDF, and other supported formats)
+- Metadata is auto-extracted on upload with immediate editing — adjust title, authors, and genres before saving
+- Per-user upload permissions controlled by the admin
+
+**Genres**
+- Hierarchical genre system with sections and subcategories
+- Per-language genre translations stored in the database
+- Admin UI for creating sections, adding genres, and managing translations
+- Flexible tagging — assign multiple genres per book, edit anytime
+
+**User Management**
+- Multi-user support with built-in admin panel
+- Create and delete users, reset passwords, toggle upload permissions
+- Users manage their own profile: display name and password
+- Forced password change on first login when set by admin
+
+**Web Interface**
+- Responsive Bootstrap 5 UI with light/dark theme
+- Browse by catalogs, authors, series, or genres with breadcrumb navigation
+- Inline book metadata editing for admins (title, authors, genres)
+- Cover preview with full-size overlay on click
+
+**Internationalization**
+- Ships with **English** and **Russian** locales out of the box
+- Locale files are simple TOML — adding a new language is as easy as copying `en.toml` and translating the strings
+- Genre names support per-language translations stored in the database
+- Per-user language preference saved in cookie
+
+**Security**
+- Argon2 password hashing
+- HMAC-SHA256 signed session cookies
+- Configurable session lifetime
+- Per-user upload permissions
+- Superuser role for admin access
+
+## Quick Start
+
+### 1. Build
+
+```bash
+cargo build --release
+```
+
+### 2. Configure
+
+```bash
+cp config.toml.example config.toml
+```
+
+Edit `config.toml` — at minimum set `library.root_path` to your book collection:
+
+```toml
+[library]
+root_path = "/path/to/books"
+
+[database]
+url = "sqlite://ropds.db?mode=rwc"
+```
+
+### 3. Create admin user
+
+```bash
+./target/release/ropds --set-admin <password>
+```
+
+### 4. Run
+
+```bash
+./target/release/ropds
+```
+
+The server starts at `http://localhost:8081`. Open `/web` for the web UI or point your OPDS reader at `/opds`.
+
+### One-shot scan
+
+To scan the library once without starting the server:
+
+```bash
+./target/release/ropds --scan
+```
+
+## Configuration
+
+All settings live in `config.toml`. See [config.toml.example](config.toml.example) for a fully commented reference.
+
+| Section | Key highlights |
+|---|---|
+| `[server]` | Bind address, port, log level, session secret & TTL |
+| `[library]` | Book root path, covers directory, file extensions, ZIP/INPX support |
+| `[database]` | Connection URL — `sqlite://`, `postgres://`, or `mysql://` |
+| `[opds]` | Catalog title, pagination, auth, cover display |
+| `[scanner]` | Cron-style schedule, parallel workers, integrity checks |
+| `[web]` | Default language (`en`, `ru`), default theme (`light`, `dark`) |
+| `[upload]` | Enable/disable uploads, staging directory, size limit |
+
+## Supported Formats
+
+| Format | Metadata | Covers |
+|---|---|---|
+| FB2 | Full (title, authors, genres, series, annotation, language) | Embedded |
+| EPUB | Full (OPF metadata) | Embedded |
+| PDF | Title, author (via `pdfinfo`) | First page (via `pdftoppm`) |
+| DjVu | Filename only | First page (via `ddjvu`) |
+| MOBI, DOC, DOCX | Filename only | — |
+
+Books inside **ZIP archives** are scanned transparently. **INPX** index files are supported as an alternative to scanning individual archives.
+
+## Database
+
+SQLite is the default and recommended choice — no setup needed. PostgreSQL and MySQL are also supported via the `[database].url` setting.
+
+Migrations run automatically on startup.
+
+## Tech Stack
+
+| | |
+|---|---|
+| Language | Rust (edition 2024) |
+| Web framework | Axum 0.8 |
+| Async runtime | Tokio |
+| Database | SQLx (SQLite / PostgreSQL / MySQL) |
+| Templates | Tera |
+| UI framework | Bootstrap 5 + Bootstrap Icons |
+| Password hashing | Argon2 |
+| XML parsing | quick-xml |
+| Parallelism | Rayon + DashMap |
+
+## License
+
+Dual-licensed under [MIT](LICENSE) or [Apache-2.0](LICENSE), at your option.
