@@ -276,6 +276,16 @@
             <tr><td class="text-body-secondary">covers_dir</td><td><code>{{ cfg_covers_dir }}</code></td></tr>
           </tbody>
         </table>
+
+        {# Upload #}
+        <h6 class="mt-3">{{ t.admin.section_upload }}</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr><td class="text-body-secondary" style="width:40%">allow_upload</td><td>{% if cfg_upload_allow_upload %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
+            <tr><td class="text-body-secondary">upload_path</td><td><code>{{ cfg_upload_path }}</code></td></tr>
+            <tr><td class="text-body-secondary">max_upload_size_mb</td><td><code>{{ cfg_upload_max_size_mb }}</code></td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

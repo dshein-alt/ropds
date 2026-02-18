@@ -100,6 +100,17 @@ pub async fn admin_page(
     ctx.insert("cfg_hide_doubles", &state.config.opds.hide_doubles);
     ctx.insert("cfg_covers_dir", &state.config.opds.covers_dir.display().to_string());
 
+    // Upload config
+    ctx.insert("cfg_upload_allow_upload", &state.config.upload.allow_upload);
+    ctx.insert(
+        "cfg_upload_path",
+        &state.config.upload.upload_path.display().to_string(),
+    );
+    ctx.insert(
+        "cfg_upload_max_size_mb",
+        &state.config.upload.max_upload_size_mb,
+    );
+
     // Scanner config
     ctx.insert("cfg_schedule_minutes", &state.config.scanner.schedule_minutes);
     ctx.insert("cfg_schedule_hours", &state.config.scanner.schedule_hours);
