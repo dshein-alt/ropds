@@ -4,8 +4,11 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+use chrono::Utc;
+use dashmap::DashMap;
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
@@ -15,6 +18,10 @@ use crate::db::models;
 use crate::db::queries::{authors, books, catalogs, counters, genres, series};
 
 use parsers::{BookMeta, detect_lang_code, normalise_author_name};
+
+// ---------------------------------------------------------------------------
+// Global state
+// ---------------------------------------------------------------------------
 
 /// Global scan lock — prevents overlapping scans.
 static SCAN_LOCK: AtomicBool = AtomicBool::new(false);
@@ -38,19 +45,47 @@ pub fn store_scan_result(result: ScanResult) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Result / stats types
+// ---------------------------------------------------------------------------
+
 /// Outcome of a completed scan (stats or error message).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanResult {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stats: Option<ScanStats>,
+    pub stats: Option<ScanStatsSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
-/// Statistics collected during a scan run.
-#[derive(Debug, Default, Clone, serde::Serialize)]
+/// Thread-safe statistics collected during a scan run.
+#[derive(Debug, Default)]
 pub struct ScanStats {
+    pub books_added: AtomicU64,
+    pub books_skipped: AtomicU64,
+    pub books_deleted: AtomicU64,
+    pub archives_scanned: AtomicU64,
+    pub archives_skipped: AtomicU64,
+    pub errors: AtomicU64,
+}
+
+impl ScanStats {
+    pub fn snapshot(&self) -> ScanStatsSnapshot {
+        ScanStatsSnapshot {
+            books_added: self.books_added.load(Ordering::Relaxed),
+            books_skipped: self.books_skipped.load(Ordering::Relaxed),
+            books_deleted: self.books_deleted.load(Ordering::Relaxed),
+            archives_scanned: self.archives_scanned.load(Ordering::Relaxed),
+            archives_skipped: self.archives_skipped.load(Ordering::Relaxed),
+            errors: self.errors.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// Snapshot of scan statistics (plain `u64` fields for serialization / cloning).
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct ScanStatsSnapshot {
     pub books_added: u64,
     pub books_skipped: u64,
     pub books_deleted: u64,
@@ -59,8 +94,12 @@ pub struct ScanStats {
     pub errors: u64,
 }
 
+// ---------------------------------------------------------------------------
+// run_scan — public entry point
+// ---------------------------------------------------------------------------
+
 /// Run a full scan of the library directory.
-pub async fn run_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError> {
+pub async fn run_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, ScanError> {
     // Acquire scan lock
     if SCAN_LOCK
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -77,7 +116,31 @@ pub async fn run_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanE
     result
 }
 
-async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError> {
+// ---------------------------------------------------------------------------
+// ScanContext — shared state for (parallel) scan workers
+// ---------------------------------------------------------------------------
+
+struct ScanContext {
+    pool: DbPool,
+    root: PathBuf,
+    covers_dir: PathBuf,
+    extensions: HashSet<String>,
+    stats: Arc<ScanStats>,
+    // Config flags
+    skip_unchanged: bool,
+    test_zip: bool,
+    test_files: bool,
+    // Caches (reduces DB round-trips under parallelism)
+    catalog_cache: DashMap<String, i64>,
+    author_cache: DashMap<String, i64>,
+    series_cache: DashMap<String, i64>,
+}
+
+// ---------------------------------------------------------------------------
+// do_scan — internal scan logic
+// ---------------------------------------------------------------------------
+
+async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, ScanError> {
     let root = &config.library.root_path;
     let covers_dir = &config.opds.covers_dir;
     let extensions: HashSet<String> = config
@@ -88,10 +151,11 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
         .collect();
     let scan_zip = config.library.scan_zip;
     let inpx_enable = config.library.inpx_enable;
+    let workers_num = config.scanner.workers_num;
 
     info!("Starting library scan: {}", root.display());
 
-    let mut stats = ScanStats::default();
+    let stats = Arc::new(ScanStats::default());
 
     // Step 1: Mark all available books as unverified (avail=1)
     let marked = books::set_avail_all(pool, models::AVAIL_UNVERIFIED).await?;
@@ -100,7 +164,6 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
     // Step 2: Walk filesystem
     let root_path = root.clone();
     let extensions_clone = extensions.clone();
-    // Use spawn_blocking for the filesystem walk to avoid blocking Tokio
     let walk_result = tokio::task::spawn_blocking(move || {
         collect_entries(&root_path, &extensions_clone, scan_zip, inpx_enable)
     })
@@ -110,69 +173,66 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
     let entries = walk_result?;
     info!("Found {} entries to process", entries.len());
 
-    for entry in entries {
-        match entry {
-            ScanEntry::File {
-                path,
-                rel_path,
-                filename,
-                extension,
-                size,
-            } => {
-                match process_file(
-                    pool, root, &path, &rel_path, &filename, &extension, size, &mut stats,
-                    covers_dir,
-                )
-                .await
-                {
-                    Ok(()) => {}
-                    Err(e) => {
-                        debug!("Error processing {}: {e}", path.display());
-                        stats.errors += 1;
-                    }
-                }
-            }
-            ScanEntry::Zip { path, rel_path } => {
-                match process_zip(
-                    pool,
-                    root,
-                    &path,
-                    &rel_path,
-                    &extensions,
-                    &mut stats,
-                    covers_dir,
-                )
-                .await
-                {
-                    Ok(()) => {}
-                    Err(e) => {
-                        debug!("Error processing ZIP {}: {e}", path.display());
-                        stats.errors += 1;
-                    }
-                }
-            }
-            ScanEntry::Inpx { path, rel_path } => {
-                match process_inpx(pool, &path, &rel_path, &mut stats, covers_dir).await {
-                    Ok(()) => {}
-                    Err(e) => {
-                        debug!("Error processing INPX {}: {e}", path.display());
-                        stats.errors += 1;
-                    }
-                }
-            }
+    let ctx = ScanContext {
+        pool: pool.clone(),
+        root: root.clone(),
+        covers_dir: covers_dir.clone(),
+        extensions,
+        stats: Arc::clone(&stats),
+        skip_unchanged: config.scanner.skip_unchanged,
+        test_zip: config.scanner.test_zip,
+        test_files: config.scanner.test_files,
+        catalog_cache: DashMap::new(),
+        author_cache: DashMap::new(),
+        series_cache: DashMap::new(),
+    };
+
+    if workers_num <= 1 {
+        // Sequential processing (default)
+        for entry in entries {
+            process_entry(&ctx, entry).await;
         }
+    } else {
+        // Parallel processing with rayon
+        let groups = partition_by_toplevel(&ctx.root, entries);
+        info!(
+            "Parallel scan: {} groups across {} workers",
+            groups.len(),
+            workers_num
+        );
+        let handle = tokio::runtime::Handle::current();
+        let ctx = Arc::new(ctx);
+        tokio::task::spawn_blocking(move || {
+            let thread_pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers_num)
+                .build()
+                .expect("failed to build rayon thread pool");
+            thread_pool.install(|| {
+                use rayon::prelude::*;
+                groups.into_par_iter().for_each(|group| {
+                    let ctx = &ctx;
+                    handle.block_on(async {
+                        for entry in group {
+                            process_entry(ctx, entry).await;
+                        }
+                    });
+                });
+            });
+        })
+        .await
+        .map_err(|e| ScanError::Internal(e.to_string()))?;
     }
 
     // Step 3: Handle books not found during scan (avail <= 1)
     if config.scanner.delete_logical {
         let deleted = books::logical_delete_unavailable(pool).await?;
-        stats.books_deleted = deleted;
+        stats.books_deleted.store(deleted, Ordering::Relaxed);
         info!("Logically deleted {deleted} unavailable books");
     } else {
         // Get IDs before deletion so we can remove cover files
         let ids = books::get_unavailable_ids(pool).await?;
         let deleted = books::physical_delete_unavailable(pool).await?;
-        stats.books_deleted = deleted;
+        stats.books_deleted.store(deleted, Ordering::Relaxed);
         // Remove cover files from disk
         for id in &ids {
             delete_cover(covers_dir, *id);
@@ -192,20 +252,24 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStats, ScanError>
     // Step 5: Update counters
     counters::update_all(pool).await?;
 
+    let snap = stats.snapshot();
     info!(
         "Scan complete: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",
-        stats.books_added,
-        stats.books_skipped,
-        stats.books_deleted,
-        stats.archives_scanned,
-        stats.archives_skipped,
-        stats.errors
+        snap.books_added,
+        snap.books_skipped,
+        snap.books_deleted,
+        snap.archives_scanned,
+        snap.archives_skipped,
+        snap.errors
     );
 
-    Ok(stats)
+    Ok(snap)
 }
 
-/// Entries discovered during filesystem walk.
+// ---------------------------------------------------------------------------
+// ScanEntry — entries discovered during filesystem walk
+// ---------------------------------------------------------------------------
+
 enum ScanEntry {
     File {
         path: PathBuf,
@@ -217,12 +281,46 @@ enum ScanEntry {
     Zip {
         path: PathBuf,
         rel_path: String,
+        mtime: String,
     },
     Inpx {
         path: PathBuf,
         rel_path: String,
+        mtime: String,
     },
 }
+
+impl ScanEntry {
+    /// First path component relative to root (for parallel grouping).
+    fn toplevel_key(&self, root: &Path) -> String {
+        let p = match self {
+            ScanEntry::File { path, .. } => path.as_path(),
+            ScanEntry::Zip { path, .. } => path.as_path(),
+            ScanEntry::Inpx { path, .. } => path.as_path(),
+        };
+        let rel = p.strip_prefix(root).unwrap_or(p);
+        rel.components()
+            .next()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+}
+
+/// Get file modification time as RFC 3339 string.
+fn file_mtime(path: &Path) -> String {
+    fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(|t| {
+            let dt: chrono::DateTime<Utc> = t.into();
+            dt.to_rfc3339()
+        })
+        .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem walk
+// ---------------------------------------------------------------------------
 
 /// Walk the filesystem and collect all entries to process.
 fn collect_entries(
@@ -244,9 +342,11 @@ fn collect_entries(
                             inpx_dirs.insert(parent.to_path_buf());
                         }
                         let rel = rel_path(root, entry.path());
+                        let mtime = file_mtime(entry.path());
                         entries.push(ScanEntry::Inpx {
                             path: entry.path().to_path_buf(),
                             rel_path: rel,
+                            mtime,
                         });
                     }
                 }
@@ -272,9 +372,11 @@ fn collect_entries(
 
         if ext == "zip" && scan_zip {
             let rel = rel_path(root, entry.path().parent().unwrap_or(entry.path()));
+            let mtime = file_mtime(entry.path());
             entries.push(ScanEntry::Zip {
                 path: entry.path().to_path_buf(),
                 rel_path: rel,
+                mtime,
             });
         } else if extensions.contains(&ext) {
             let filename = entry.file_name().to_string_lossy().to_string();
@@ -293,22 +395,72 @@ fn collect_entries(
     Ok(entries)
 }
 
+/// Partition entries into groups by top-level directory for parallel processing.
+fn partition_by_toplevel(root: &Path, entries: Vec<ScanEntry>) -> Vec<Vec<ScanEntry>> {
+    let mut map: std::collections::HashMap<String, Vec<ScanEntry>> =
+        std::collections::HashMap::new();
+    for entry in entries {
+        let key = entry.toplevel_key(root);
+        map.entry(key).or_default().push(entry);
+    }
+    map.into_values().collect()
+}
+
+// ---------------------------------------------------------------------------
+// Entry processing
+// ---------------------------------------------------------------------------
+
+/// Dispatch a single scan entry to the appropriate handler.
+async fn process_entry(ctx: &ScanContext, entry: ScanEntry) {
+    match entry {
+        ScanEntry::File {
+            path,
+            rel_path,
+            filename,
+            extension,
+            size,
+        } => {
+            if let Err(e) = process_file(ctx, &path, &rel_path, &filename, &extension, size).await {
+                debug!("Error processing {}: {e}", path.display());
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        ScanEntry::Zip {
+            path,
+            rel_path,
+            mtime,
+        } => {
+            if let Err(e) = process_zip(ctx, &path, &rel_path, &mtime).await {
+                debug!("Error processing ZIP {}: {e}", path.display());
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        ScanEntry::Inpx {
+            path,
+            rel_path,
+            mtime,
+        } => {
+            if let Err(e) = process_inpx(ctx, &path, &rel_path, &mtime).await {
+                debug!("Error processing INPX {}: {e}", path.display());
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
 /// Process a single book file on disk.
 async fn process_file(
-    pool: &DbPool,
-    _root: &Path,
+    ctx: &ScanContext,
     path: &Path,
     rel_path: &str,
     filename: &str,
     extension: &str,
     size: i64,
-    stats: &mut ScanStats,
-    covers_dir: &Path,
 ) -> Result<(), ScanError> {
     // Check if already in DB
-    if let Some(_existing) = books::find_by_path_and_filename(pool, rel_path, filename).await? {
-        books::set_avail(pool, _existing.id, models::AVAIL_CONFIRMED).await?;
-        stats.books_skipped += 1;
+    if let Some(existing) = books::find_by_path_and_filename(&ctx.pool, rel_path, filename).await? {
+        books::set_avail(&ctx.pool, existing.id, models::AVAIL_CONFIRMED).await?;
+        ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
         return Ok(());
     }
 
@@ -322,11 +474,11 @@ async fn process_file(
     .map_err(|e| ScanError::Internal(e.to_string()))??;
 
     // Ensure catalog exists
-    let catalog_id = ensure_catalog(pool, rel_path, models::CAT_NORMAL).await?;
+    let catalog_id = cached_ensure_catalog(ctx, rel_path, models::CAT_NORMAL).await?;
 
     // Insert book and link metadata
-    insert_book_with_meta(
-        pool,
+    ctx_insert_book_with_meta(
+        ctx,
         catalog_id,
         filename,
         rel_path,
@@ -334,23 +486,19 @@ async fn process_file(
         size,
         models::CAT_NORMAL,
         &meta,
-        covers_dir,
     )
     .await?;
 
-    stats.books_added += 1;
+    ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
     Ok(())
 }
 
 /// Process a ZIP archive containing book files.
 async fn process_zip(
-    pool: &DbPool,
-    _root: &Path,
+    ctx: &ScanContext,
     zip_path: &Path,
     rel_dir: &str,
-    extensions: &HashSet<String>,
-    stats: &mut ScanStats,
-    covers_dir: &Path,
+    mtime: &str,
 ) -> Result<(), ScanError> {
     let zip_filename = zip_path
         .file_name()
@@ -364,29 +512,45 @@ async fn process_zip(
     };
 
     let zip_size = fs::metadata(zip_path)?.len() as i64;
-    if try_skip_zip_archive(pool, &rel_zip, zip_size).await? {
-        stats.archives_skipped += 1;
+    if try_skip_zip_archive(&ctx.pool, &rel_zip, zip_size, ctx.skip_unchanged, mtime).await? {
+        ctx.stats.archives_skipped.fetch_add(1, Ordering::Relaxed);
         return Ok(());
     }
 
-    let catalog_id = ensure_archive_catalog(pool, &rel_zip, models::CAT_ZIP, zip_size).await?;
+    // Validate ZIP integrity if enabled
+    if ctx.test_zip {
+        let zip_path_buf = zip_path.to_path_buf();
+        let valid = tokio::task::spawn_blocking(move || validate_zip_integrity(&zip_path_buf))
+            .await
+            .map_err(|e| ScanError::Internal(e.to_string()))??;
+        if !valid {
+            warn!("ZIP integrity check failed: {}", zip_path.display());
+            ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
+    }
+
+    let catalog_id =
+        ensure_archive_catalog(&ctx.pool, &rel_zip, models::CAT_ZIP, zip_size, mtime).await?;
 
     // Read ZIP contents in a blocking task
     let zip_path_buf = zip_path.to_path_buf();
-    let extensions_clone = extensions.clone();
+    let extensions_clone = ctx.extensions.clone();
+    let test_files = ctx.test_files;
 
-    let zip_entries =
-        tokio::task::spawn_blocking(move || read_zip_entries(&zip_path_buf, &extensions_clone))
-            .await
-            .map_err(|e| ScanError::Internal(e.to_string()))??;
+    let zip_entries = tokio::task::spawn_blocking(move || {
+        read_zip_entries(&zip_path_buf, &extensions_clone, test_files)
+    })
+    .await
+    .map_err(|e| ScanError::Internal(e.to_string()))??;
 
     for ze in zip_entries {
         // Check if already in DB
         if let Some(existing) =
-            books::find_by_path_and_filename(pool, &rel_zip, &ze.filename).await?
+            books::find_by_path_and_filename(&ctx.pool, &rel_zip, &ze.filename).await?
         {
-            books::set_avail(pool, existing.id, models::AVAIL_CONFIRMED).await?;
-            stats.books_skipped += 1;
+            books::set_avail(&ctx.pool, existing.id, models::AVAIL_CONFIRMED).await?;
+            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
             continue;
         }
 
@@ -404,13 +568,13 @@ async fn process_zip(
             Ok(m) => m,
             Err(e) => {
                 debug!("Failed to parse {} in {}: {e}", ze.filename, zip_filename);
-                stats.errors += 1;
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
         };
 
-        insert_book_with_meta(
-            pool,
+        ctx_insert_book_with_meta(
+            ctx,
             catalog_id,
             &ze.filename,
             &rel_zip,
@@ -418,24 +582,22 @@ async fn process_zip(
             ze.size,
             models::CAT_ZIP,
             &meta,
-            covers_dir,
         )
         .await?;
 
-        stats.books_added += 1;
+        ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
     }
 
-    stats.archives_scanned += 1;
+    ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
     Ok(())
 }
 
 /// Process an INPX index file.
 async fn process_inpx(
-    pool: &DbPool,
+    ctx: &ScanContext,
     inpx_path: &Path,
     rel_path: &str,
-    stats: &mut ScanStats,
-    covers_dir: &Path,
+    mtime: &str,
 ) -> Result<(), ScanError> {
     let inpx_size = fs::metadata(inpx_path)?.len() as i64;
     let inpx_dir = Path::new(rel_path)
@@ -444,12 +606,21 @@ async fn process_inpx(
         .to_string_lossy()
         .to_string();
 
-    if try_skip_inpx_archive(pool, rel_path, &inpx_dir, inpx_size).await? {
-        stats.archives_skipped += 1;
+    if try_skip_inpx_archive(
+        &ctx.pool,
+        rel_path,
+        &inpx_dir,
+        inpx_size,
+        ctx.skip_unchanged,
+        mtime,
+    )
+    .await?
+    {
+        ctx.stats.archives_skipped.fetch_add(1, Ordering::Relaxed);
         return Ok(());
     }
 
-    ensure_archive_catalog(pool, rel_path, models::CAT_INPX, inpx_size).await?;
+    ensure_archive_catalog(&ctx.pool, rel_path, models::CAT_INPX, inpx_size, mtime).await?;
 
     let inpx_path_buf = inpx_path.to_path_buf();
     let records = tokio::task::spawn_blocking(move || {
@@ -472,17 +643,17 @@ async fn process_inpx(
 
         // Check if already in DB
         if let Some(existing) =
-            books::find_by_path_and_filename(pool, &book_path, &record.filename).await?
+            books::find_by_path_and_filename(&ctx.pool, &book_path, &record.filename).await?
         {
-            books::set_avail(pool, existing.id, models::AVAIL_CONFIRMED).await?;
-            stats.books_skipped += 1;
+            books::set_avail(&ctx.pool, existing.id, models::AVAIL_CONFIRMED).await?;
+            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
             continue;
         }
 
-        let catalog_id = ensure_catalog(pool, &book_path, models::CAT_INPX).await?;
+        let catalog_id = cached_ensure_catalog(ctx, &book_path, models::CAT_INPX).await?;
 
-        insert_book_with_meta(
-            pool,
+        ctx_insert_book_with_meta(
+            ctx,
             catalog_id,
             &record.filename,
             &book_path,
@@ -490,16 +661,19 @@ async fn process_inpx(
             record.size,
             models::CAT_INPX,
             &record.meta,
-            covers_dir,
         )
         .await?;
 
-        stats.books_added += 1;
+        ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
     }
 
-    stats.archives_scanned += 1;
+    ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Book parsing
+// ---------------------------------------------------------------------------
 
 /// Parse a book file from disk by extension.
 pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
@@ -681,6 +855,10 @@ pub fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMe
     }
 }
 
+// ---------------------------------------------------------------------------
+// ZIP reading / validation
+// ---------------------------------------------------------------------------
+
 struct ZipBookEntry {
     filename: String,
     extension: String,
@@ -689,9 +867,12 @@ struct ZipBookEntry {
 }
 
 /// Read all matching book files from a ZIP archive.
+/// When `test_files` is enabled, entries whose extracted size does not match
+/// the declared size are skipped.
 fn read_zip_entries(
     path: &Path,
     extensions: &HashSet<String>,
+    test_files: bool,
 ) -> Result<Vec<ZipBookEntry>, ScanError> {
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
@@ -717,7 +898,7 @@ fn read_zip_entries(
             continue;
         }
 
-        let size = entry.size() as i64;
+        let declared_size = entry.size();
         let filename = Path::new(&name)
             .file_name()
             .unwrap_or_default()
@@ -730,16 +911,50 @@ fn read_zip_entries(
             continue;
         }
 
+        if test_files && data.len() as u64 != declared_size {
+            warn!(
+                "Size mismatch for {} in {}: expected {}, got {}",
+                name,
+                path.display(),
+                declared_size,
+                data.len()
+            );
+            continue;
+        }
+
         entries.push(ZipBookEntry {
             filename,
             extension: ext,
-            size,
+            size: declared_size as i64,
             data,
         });
     }
 
     Ok(entries)
 }
+
+/// Validate ZIP archive integrity by reading every entry (triggers CRC check).
+/// Returns `false` if any entry is corrupt.
+fn validate_zip_integrity(path: &Path) -> Result<bool, ScanError> {
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut archive = zip::ZipArchive::new(reader)?;
+    for i in 0..archive.len() {
+        let mut entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => return Ok(false),
+        };
+        let mut buf = Vec::new();
+        if std::io::Read::read_to_end(&mut entry, &mut buf).is_err() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// Catalog / author / series helpers (public API — used by upload, admin)
+// ---------------------------------------------------------------------------
 
 /// Ensure a catalog row exists for the given path, creating it if needed.
 pub async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<i64, ScanError> {
@@ -764,7 +979,7 @@ pub async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<
         .to_string_lossy()
         .to_string();
 
-    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, 0).await?;
+    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, 0, "").await?;
     Ok(id)
 }
 
@@ -774,10 +989,11 @@ async fn ensure_archive_catalog(
     path: &str,
     cat_type: i32,
     cat_size: i64,
+    cat_mtime: &str,
 ) -> Result<i64, ScanError> {
     if let Some(cat) = catalogs::find_by_path(pool, path).await? {
-        if cat.cat_type != cat_type || cat.cat_size != cat_size {
-            catalogs::update_archive_meta(pool, cat.id, cat_type, cat_size).await?;
+        if cat.cat_type != cat_type || cat.cat_size != cat_size || cat.cat_mtime != cat_mtime {
+            catalogs::update_archive_meta(pool, cat.id, cat_type, cat_size, cat_mtime).await?;
         }
         return Ok(cat.id);
     }
@@ -798,45 +1014,167 @@ async fn ensure_archive_catalog(
         .to_string_lossy()
         .to_string();
 
-    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, cat_size).await?;
+    let id = catalogs::insert(
+        pool, parent_id, path, &cat_name, cat_type, cat_size, cat_mtime,
+    )
+    .await?;
     Ok(id)
 }
 
-/// Try to skip scanning an unchanged ZIP archive.
-async fn try_skip_zip_archive(
-    pool: &DbPool,
-    rel_zip: &str,
-    zip_size: i64,
-) -> Result<bool, ScanError> {
-    let Some(cat) = catalogs::find_by_path(pool, rel_zip).await? else {
-        return Ok(false);
-    };
-    if cat.cat_type != models::CAT_ZIP || cat.cat_size != zip_size {
-        return Ok(false);
+/// Find or create an author by name.
+pub async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError> {
+    if let Some(a) = authors::find_by_name(pool, full_name).await? {
+        return Ok(a.id);
     }
-    let updated = books::set_avail_by_path(pool, rel_zip, models::AVAIL_CONFIRMED).await?;
-    Ok(updated > 0)
+    let search = full_name.to_uppercase();
+    let lang_code = detect_lang_code(full_name);
+    let id = authors::insert(pool, full_name, &search, lang_code).await?;
+    Ok(id)
 }
 
-/// Try to skip scanning an unchanged INPX archive.
-async fn try_skip_inpx_archive(
-    pool: &DbPool,
-    rel_inpx: &str,
-    inpx_dir: &str,
-    inpx_size: i64,
-) -> Result<bool, ScanError> {
-    let Some(cat) = catalogs::find_by_path(pool, rel_inpx).await? else {
-        return Ok(false);
-    };
-    if cat.cat_type != models::CAT_INPX || cat.cat_size != inpx_size {
-        return Ok(false);
+/// Find or create a series by name.
+pub async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> {
+    if let Some(s) = series::find_by_name(pool, ser_name).await? {
+        return Ok(s.id);
     }
-    let updated = books::set_avail_for_inpx_dir(pool, inpx_dir, models::AVAIL_CONFIRMED).await?;
-    Ok(updated > 0)
+    let search = ser_name.to_uppercase();
+    let lang_code = detect_lang_code(ser_name);
+    let id = series::insert(pool, ser_name, &search, lang_code).await?;
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------
+// Cache-aware helpers (scanner-internal, uses DashMap to reduce DB round-trips)
+// ---------------------------------------------------------------------------
+
+async fn cached_ensure_catalog(
+    ctx: &ScanContext,
+    path: &str,
+    cat_type: i32,
+) -> Result<i64, ScanError> {
+    if let Some(id) = ctx.catalog_cache.get(path) {
+        return Ok(*id);
+    }
+    let id = ensure_catalog(&ctx.pool, path, cat_type).await?;
+    ctx.catalog_cache.insert(path.to_string(), id);
+    Ok(id)
+}
+
+async fn cached_ensure_author(ctx: &ScanContext, full_name: &str) -> Result<i64, ScanError> {
+    if let Some(id) = ctx.author_cache.get(full_name) {
+        return Ok(*id);
+    }
+    let id = ensure_author(&ctx.pool, full_name).await?;
+    ctx.author_cache.insert(full_name.to_string(), id);
+    Ok(id)
+}
+
+async fn cached_ensure_series(ctx: &ScanContext, ser_name: &str) -> Result<i64, ScanError> {
+    if let Some(id) = ctx.series_cache.get(ser_name) {
+        return Ok(*id);
+    }
+    let id = ensure_series(&ctx.pool, ser_name).await?;
+    ctx.series_cache.insert(ser_name.to_string(), id);
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------
+// Book insertion (public + cache-aware scanner-internal)
+// ---------------------------------------------------------------------------
+
+/// Insert a book record and link authors, genres, series (scanner-internal,
+/// uses DashMap-cached ensure functions).
+async fn ctx_insert_book_with_meta(
+    ctx: &ScanContext,
+    catalog_id: i64,
+    filename: &str,
+    path: &str,
+    format: &str,
+    size: i64,
+    cat_type: i32,
+    meta: &BookMeta,
+) -> Result<i64, ScanError> {
+    let title = if meta.title.is_empty() {
+        Path::new(filename)
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
+    } else {
+        meta.title.clone()
+    };
+    let search_title = title.to_uppercase();
+    let lang = &meta.lang;
+    let lang_code = detect_lang_code(&title);
+    let has_cover = if meta.cover_data.is_some() { 1 } else { 0 };
+
+    // Strip high Unicode from annotation (MySQL 3-byte UTF8 compat)
+    let annotation: String = meta
+        .annotation
+        .chars()
+        .filter(|c| (*c as u32) < 0x10000)
+        .collect();
+
+    let book_id = books::insert(
+        &ctx.pool,
+        catalog_id,
+        filename,
+        path,
+        format,
+        &title,
+        &search_title,
+        &annotation,
+        &meta.docdate,
+        lang,
+        lang_code,
+        size,
+        cat_type,
+        has_cover,
+        &meta.cover_type,
+    )
+    .await?;
+
+    // Save cover to disk
+    if let Some(ref cover_data) = meta.cover_data {
+        if let Err(e) = save_cover(&ctx.covers_dir, book_id, cover_data, &meta.cover_type) {
+            warn!("Failed to save cover for book {book_id}: {e}");
+        }
+    }
+
+    // Link authors
+    if meta.authors.is_empty() {
+        let author_id = cached_ensure_author(ctx, "Unknown").await?;
+        authors::link_book(&ctx.pool, book_id, author_id).await?;
+    } else {
+        for author_name in &meta.authors {
+            let name = normalise_author_name(author_name);
+            if name.is_empty() {
+                continue;
+            }
+            let author_id = cached_ensure_author(ctx, &name).await?;
+            authors::link_book(&ctx.pool, book_id, author_id).await?;
+        }
+    }
+
+    // Link genres
+    for genre_code in &meta.genres {
+        genres::link_book_by_code(&ctx.pool, book_id, genre_code).await?;
+    }
+
+    // Link series
+    if let Some(ref ser_title) = meta.series_title {
+        if !ser_title.is_empty() {
+            let series_id = cached_ensure_series(ctx, ser_title).await?;
+            series::link_book(&ctx.pool, book_id, series_id, meta.series_index).await?;
+        }
+    }
+
+    Ok(book_id)
 }
 
 /// Insert a book record and link authors, genres, series.
 /// Saves cover image to `covers_dir` if present.
+/// (Public API — used by upload handler.)
 pub async fn insert_book_with_meta(
     pool: &DbPool,
     catalog_id: i64,
@@ -927,27 +1265,60 @@ pub async fn insert_book_with_meta(
     Ok(book_id)
 }
 
-/// Find or create an author by name.
-pub async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError> {
-    if let Some(a) = authors::find_by_name(pool, full_name).await? {
-        return Ok(a.id);
+// ---------------------------------------------------------------------------
+// Skip-unchanged logic
+// ---------------------------------------------------------------------------
+
+/// Try to skip scanning an unchanged ZIP archive.
+/// With `skip_unchanged` enabled, also checks mtime (backward-compatible with
+/// empty mtime in old DB records).
+async fn try_skip_zip_archive(
+    pool: &DbPool,
+    rel_zip: &str,
+    zip_size: i64,
+    skip_unchanged: bool,
+    mtime: &str,
+) -> Result<bool, ScanError> {
+    let Some(cat) = catalogs::find_by_path(pool, rel_zip).await? else {
+        return Ok(false);
+    };
+    if cat.cat_type != models::CAT_ZIP || cat.cat_size != zip_size {
+        return Ok(false);
     }
-    let search = full_name.to_uppercase();
-    let lang_code = detect_lang_code(full_name);
-    let id = authors::insert(pool, full_name, &search, lang_code).await?;
-    Ok(id)
+    // When skip_unchanged is enabled, also compare mtime (skip this check if
+    // either side is empty for backward compatibility with pre-mtime records).
+    if skip_unchanged && !mtime.is_empty() && !cat.cat_mtime.is_empty() && cat.cat_mtime != mtime {
+        return Ok(false);
+    }
+    let updated = books::set_avail_by_path(pool, rel_zip, models::AVAIL_CONFIRMED).await?;
+    Ok(updated > 0)
 }
 
-/// Find or create a series by name.
-pub async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> {
-    if let Some(s) = series::find_by_name(pool, ser_name).await? {
-        return Ok(s.id);
+/// Try to skip scanning an unchanged INPX archive.
+async fn try_skip_inpx_archive(
+    pool: &DbPool,
+    rel_inpx: &str,
+    inpx_dir: &str,
+    inpx_size: i64,
+    skip_unchanged: bool,
+    mtime: &str,
+) -> Result<bool, ScanError> {
+    let Some(cat) = catalogs::find_by_path(pool, rel_inpx).await? else {
+        return Ok(false);
+    };
+    if cat.cat_type != models::CAT_INPX || cat.cat_size != inpx_size {
+        return Ok(false);
     }
-    let search = ser_name.to_uppercase();
-    let lang_code = detect_lang_code(ser_name);
-    let id = series::insert(pool, ser_name, &search, lang_code).await?;
-    Ok(id)
+    if skip_unchanged && !mtime.is_empty() && !cat.cat_mtime.is_empty() && cat.cat_mtime != mtime {
+        return Ok(false);
+    }
+    let updated = books::set_avail_for_inpx_dir(pool, inpx_dir, models::AVAIL_CONFIRMED).await?;
+    Ok(updated > 0)
 }
+
+// ---------------------------------------------------------------------------
+// Covers & utilities
+// ---------------------------------------------------------------------------
 
 /// Save cover image bytes to disk as `{covers_dir}/{book_id}.{ext}`.
 pub fn save_cover(
@@ -987,6 +1358,10 @@ fn rel_path(root: &Path, path: &Path) -> String {
         .to_string_lossy()
         .to_string()
 }
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {

@@ -60,16 +60,20 @@ pub async fn insert(
     search_ser: &str,
     lang_code: i32,
 ) -> Result<i64, sqlx::Error> {
-    let result =
-        sqlx::query("INSERT INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)")
-            .bind(ser_name)
-            .bind(search_ser)
-            .bind(lang_code)
-            .execute(pool)
-            .await?;
+    let result = sqlx::query(
+        "INSERT OR IGNORE INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)",
+    )
+    .bind(ser_name)
+    .bind(search_ser)
+    .bind(lang_code)
+    .execute(pool)
+    .await?;
     if let Some(id) = result.last_insert_id() {
-        return Ok(id);
+        if id > 0 {
+            return Ok(id);
+        }
     }
+    // Fallback: query back by name (INSERT OR IGNORE returns 0 on conflict)
     let row: (i64,) = sqlx::query_as("SELECT id FROM series WHERE ser_name = ?")
         .bind(ser_name)
         .fetch_one(pool)

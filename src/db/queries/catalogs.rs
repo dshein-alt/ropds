@@ -36,21 +36,26 @@ pub async fn insert(
     cat_name: &str,
     cat_type: i32,
     cat_size: i64,
+    cat_mtime: &str,
 ) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
-        "INSERT INTO catalogs (parent_id, path, cat_name, cat_type, cat_size) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO catalogs (parent_id, path, cat_name, cat_type, cat_size, cat_mtime) \
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(parent_id)
     .bind(path)
     .bind(cat_name)
     .bind(cat_type)
     .bind(cat_size)
+    .bind(cat_mtime)
     .execute(pool)
     .await?;
     if let Some(id) = result.last_insert_id() {
-        return Ok(id);
+        if id > 0 {
+            return Ok(id);
+        }
     }
-    // Fallback: query back by path
+    // Fallback: query back by path (INSERT OR IGNORE returns 0 on conflict)
     let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = ?")
         .bind(path)
         .fetch_one(pool)
@@ -63,10 +68,12 @@ pub async fn update_archive_meta(
     id: i64,
     cat_type: i32,
     cat_size: i64,
+    cat_mtime: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE catalogs SET cat_type = ?, cat_size = ? WHERE id = ?")
+    sqlx::query("UPDATE catalogs SET cat_type = ?, cat_size = ?, cat_mtime = ? WHERE id = ?")
         .bind(cat_type)
         .bind(cat_size)
+        .bind(cat_mtime)
         .bind(id)
         .execute(pool)
         .await?;

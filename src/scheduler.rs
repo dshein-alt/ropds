@@ -136,6 +136,10 @@ mod tests {
             schedule_hours: hours,
             schedule_day_of_week: dow,
             delete_logical: true,
+            skip_unchanged: false,
+            test_zip: false,
+            test_files: false,
+            workers_num: 1,
         }
     }
 

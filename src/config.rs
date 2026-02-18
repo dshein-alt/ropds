@@ -84,6 +84,18 @@ pub struct ScannerConfig {
     pub schedule_day_of_week: Vec<u32>,
     #[serde(default = "default_true")]
     pub delete_logical: bool,
+    /// Compare mtime+size to skip unchanged archives (default: false — size-only check).
+    #[serde(default)]
+    pub skip_unchanged: bool,
+    /// Validate ZIP CRC integrity before processing (default: false).
+    #[serde(default)]
+    pub test_zip: bool,
+    /// Verify each file extracts cleanly from archives (default: false).
+    #[serde(default)]
+    pub test_files: bool,
+    /// Parallel scan threads (default: 1 = sequential).
+    #[serde(default = "default_workers_num")]
+    pub workers_num: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -209,6 +221,10 @@ fn default_max_upload_size_mb() -> u64 {
     100
 }
 
+fn default_workers_num() -> usize {
+    1
+}
+
 fn default_language() -> String {
     "en".to_string()
 }
@@ -274,6 +290,10 @@ schedule_minutes = [30]
 schedule_hours = [6]
 schedule_day_of_week = [1, 4]
 delete_logical = false
+skip_unchanged = true
+test_zip = true
+test_files = true
+workers_num = 4
 
 [web]
 language = "ru"
@@ -289,6 +309,10 @@ theme = "dark"
         assert_eq!(config.opds.max_items, 50);
         assert!(!config.opds.auth_required);
         assert_eq!(config.scanner.schedule_hours, vec![6]);
+        assert!(config.scanner.skip_unchanged);
+        assert!(config.scanner.test_zip);
+        assert!(config.scanner.test_files);
+        assert_eq!(config.scanner.workers_num, 4);
         assert_eq!(config.web.language, "ru");
         assert_eq!(config.web.theme, "dark");
     }

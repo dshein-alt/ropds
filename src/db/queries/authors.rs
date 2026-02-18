@@ -61,7 +61,7 @@ pub async fn insert(
     lang_code: i32,
 ) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
-        "INSERT INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?)",
     )
     .bind(full_name)
     .bind(search_full_name)
@@ -69,8 +69,11 @@ pub async fn insert(
     .execute(pool)
     .await?;
     if let Some(id) = result.last_insert_id() {
-        return Ok(id);
+        if id > 0 {
+            return Ok(id);
+        }
     }
+    // Fallback: query back by name (INSERT OR IGNORE returns 0 on conflict)
     let row: (i64,) = sqlx::query_as("SELECT id FROM authors WHERE full_name = ?")
         .bind(full_name)
         .fetch_one(pool)

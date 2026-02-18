@@ -31,6 +31,10 @@ schedule_minutes = [0]
 schedule_hours = [0, 12]
 schedule_day_of_week = []
 delete_logical = false
+skip_unchanged = true       # Compare mtime+size to skip unchanged archives
+test_zip = false            # Validate ZIP CRC integrity before processing
+test_files = false          # Verify each file extracts cleanly from archives
+workers_num = 1             # Parallel scan threads (1 = sequential)
 
 [web]
 language = "en"

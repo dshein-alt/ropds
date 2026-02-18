@@ -8,6 +8,7 @@ pub struct Catalog {
     pub cat_name: String,
     pub cat_type: i32,
     pub cat_size: i64,
+    pub cat_mtime: String,
 }
 
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
