@@ -138,6 +138,14 @@
         </div>
         <div class="modal-body">
 
+          {# ── Title Editor ─── #}
+          <h6><i class="bi bi-type me-1"></i>{{ t.book.edit_title }}</h6>
+          <div class="mb-3">
+            <input type="text" id="edit-book-title" class="form-control"
+                   maxlength="256" placeholder="{{ t.book.title_placeholder }}">
+            <div id="edit-title-error" class="invalid-feedback"></div>
+          </div>
+
           {# ── Genre Editor ─── #}
           <h6><i class="bi bi-tags me-1"></i>{{ t.book.edit_genres }}</h6>
           <div id="edit-genre-sections" class="accordion accordion-flush border rounded mb-2" style="max-height: 300px; overflow-y: auto;"></div>
@@ -205,6 +213,11 @@
       // Set modal title
       var titleEl = card.querySelector(".card-title");
       document.getElementById("edit-modal-title").textContent = titleEl ? titleEl.textContent : "";
+
+      // Pre-fill title input
+      var titleInput = document.getElementById("edit-book-title");
+      titleInput.value = titleEl ? titleEl.textContent.trim() : "";
+      titleInput.classList.remove("is-invalid");
 
       // Build genre selector
       var genreContainer = document.getElementById("edit-genre-sections");
@@ -277,6 +290,17 @@
       }
     });
 
+    function validateTitle(value) {
+      var trimmed = value.trim();
+      if (!trimmed) return false;
+      if ([...trimmed].length > 256) return false;
+      for (var i = 0; i < trimmed.length; i++) {
+        var code = trimmed.charCodeAt(i);
+        if (code < 32 && code !== 9 && code !== 10 && code !== 13) return false;
+      }
+      return true;
+    }
+
     // Save
     document.getElementById("edit-save-btn").addEventListener("click", async function() {
       var saveBtn = this;
@@ -285,6 +309,37 @@
       document.getElementById("edit-save-spinner").classList.remove("d-none");
 
       try {
+        // Save title (if changed)
+        var titleInput = document.getElementById("edit-book-title");
+        var newTitle = titleInput.value.trim();
+        var originalTitle = document.getElementById("edit-modal-title").textContent.trim();
+        if (newTitle !== originalTitle) {
+          if (!validateTitle(newTitle)) {
+            titleInput.classList.add("is-invalid");
+            throw new Error("invalid title");
+          }
+          var titleResp = await fetch("/web/admin/book-title", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ book_id: editBookId, title: newTitle, csrf_token: csrfToken })
+          });
+          var titleData = await titleResp.json();
+          if (!titleData.ok) {
+            titleInput.classList.add("is-invalid");
+            throw new Error("title save failed");
+          }
+          // Update DOM — card title
+          var cardEl = document.querySelector('.btn-edit-book[data-book-id="' + editBookId + '"]');
+          if (cardEl) {
+            var bookCard = cardEl.closest(".col-12");
+            var cardTitle = bookCard.querySelector(".card-title");
+            if (cardTitle) cardTitle.textContent = titleData.title;
+          }
+          // Update modal header
+          document.getElementById("edit-modal-title").textContent = titleData.title;
+        }
+
         // Save genres
         var genreIds = GenreSelector.getSelected(document.getElementById("edit-genre-sections"));
         var genreResp = await fetch("/web/admin/book-genres", {
