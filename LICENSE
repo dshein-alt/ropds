@@ -1,12 +1,7 @@
-Rust Implementation License
-===========================
+ROPDS License
+=============
 
-Scope
------
-This license file applies only to the Rust implementation of this project
-(all files under `rust/`).
-
-The Rust implementation is dual-licensed under either:
+This project is dual-licensed under either:
 
 - MIT License
 - Apache License, Version 2.0
@@ -15,13 +10,10 @@ at your option.
 
 SPDX license expression: MIT OR Apache-2.0
 
-Non-Rust parts of this repository keep their existing licensing terms
-(see the legacy `License` file).
-
 -------------------------------------------------------------------------------
 MIT License
 
-Copyright (c) SOPDS contributors
+Copyright (c) ROPDS contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

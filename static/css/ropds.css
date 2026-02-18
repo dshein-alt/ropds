@@ -1,13 +1,13 @@
 /* ropds — modern clean theme */
 
 :root {
-  --sopds-accent: #4a90d9;
-  --sopds-accent-hover: #3a7bc8;
+  --ropds-accent: #4a90d9;
+  --ropds-accent-hover: #3a7bc8;
 }
 
 [data-bs-theme="dark"] {
-  --sopds-accent: #6ba3e0;
-  --sopds-accent-hover: #8ab8ea;
+  --ropds-accent: #6ba3e0;
+  --ropds-accent-hover: #8ab8ea;
 }
 
 body {
@@ -167,7 +167,7 @@ footer {
 
 /* Search dropdown */
 .search-type-group .btn-check:checked + .btn {
-  background-color: var(--sopds-accent);
-  border-color: var(--sopds-accent);
+  background-color: var(--ropds-accent);
+  border-color: var(--ropds-accent);
   color: #fff;
 }

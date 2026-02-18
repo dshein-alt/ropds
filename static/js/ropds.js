@@ -1,6 +1,6 @@
 // Theme toggle (persists in localStorage)
 (function () {
-  const THEME_KEY = "sopds-theme";
+  const THEME_KEY = "ropds-theme";
 
   function getPreferred() {
     const saved = localStorage.getItem(THEME_KEY);

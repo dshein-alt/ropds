@@ -186,11 +186,11 @@ fn default_zip_codepage() -> String {
 }
 
 fn default_db_url() -> String {
-    "sqlite://sopds.db".to_string()
+    "sqlite://ropds.db".to_string()
 }
 
 fn default_opds_title() -> String {
-    "SimpleOPDS".to_string()
+    "ROPDS".to_string()
 }
 
 fn default_max_items() -> u32 {
@@ -252,7 +252,7 @@ root_path = "/books"
         assert_eq!(config.server.port, 8081);
         assert_eq!(config.library.covers_path, PathBuf::from("covers"));
         assert_eq!(config.library.root_path, PathBuf::from("/books"));
-        assert_eq!(config.database.url, "sqlite://sopds.db");
+        assert_eq!(config.database.url, "sqlite://ropds.db");
         assert_eq!(config.opds.max_items, 30);
         assert!(config.opds.auth_required);
         assert_eq!(config.web.language, "en");

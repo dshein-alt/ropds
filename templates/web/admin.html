@@ -403,7 +403,7 @@
 
 </div>
 
-{# ── Flash message config (logic in sopds.js) ── #}
+{# ── Flash message config (logic in ropds.js) ── #}
 <script>
 window._flashMessages = {
   user_created: "{{ t.admin.success_user_created }}",
@@ -421,7 +421,7 @@ window._flashErrors = {
   scan_already_running: "{{ t.admin.error_scan_already_running }}"
 };
 
-// Capture params NOW (before sopds.js replaceState strips them on DOMContentLoaded)
+// Capture params NOW (before ropds.js replaceState strips them on DOMContentLoaded)
 var _scanJustStarted = new URLSearchParams(window.location.search).get('msg') === 'scan_started';
 var _serverSaysScanning = {{ is_scanning }};
 

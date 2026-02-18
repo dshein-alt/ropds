@@ -10,7 +10,7 @@ target/
 
 # Runtime data
 config.toml
-ropds.*
+ropds.db*
 devel/
 
 # Misc
