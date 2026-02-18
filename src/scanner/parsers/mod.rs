@@ -20,16 +20,28 @@ pub struct BookMeta {
 }
 
 /// Strip leading/trailing whitespace and common punctuation from metadata strings.
-/// Mirrors the Python `strip_symbols` constant.
+/// Always strips: & ` - . ; # \ and whitespace.
+/// Strips enclosing quote pairs: '' "" «» (only when they wrap the entire string).
 pub fn strip_meta(s: &str) -> String {
-    s.trim_matches(|c: char| {
-        c.is_whitespace()
-            || matches!(
-                c,
-                '»' | '«' | '\'' | '"' | '&' | '-' | '.' | '#' | '\\' | '`' | ';'
-            )
-    })
-    .to_string()
+    let trimmed = s.trim_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '&' | '`' | '-' | '.' | ';' | '#' | '\\')
+    });
+
+    // Strip matching quote pairs that enclose the whole string
+    let trimmed = strip_matching_pair(trimmed, '\'', '\'');
+    let trimmed = strip_matching_pair(&trimmed, '"', '"');
+    let trimmed = strip_matching_pair(&trimmed, '\u{00AB}', '\u{00BB}'); // « »
+
+    trimmed.to_string()
+}
+
+/// Strip a matching open/close pair if they enclose the entire string.
+fn strip_matching_pair(s: &str, open: char, close: char) -> &str {
+    if s.starts_with(open) && s.ends_with(close) && s.len() > open.len_utf8() {
+        &s[open.len_utf8()..s.len() - close.len_utf8()]
+    } else {
+        s
+    }
 }
 
 /// Determine the `lang_code` for a string by inspecting its first character.

@@ -4,7 +4,7 @@ use base64::Engine;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
-use super::{BookMeta, strip_meta};
+use super::{strip_meta, BookMeta};
 
 /// Parse FB2 XML from any `BufRead` source and return extracted metadata.
 /// Tolerant of malformed XML: returns partial metadata on parse errors.
@@ -101,7 +101,6 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
                     if tag == "book-title"
                         && matches_path(&path, &["description", "title-info", "book-title"])
                     {
-                        // FIXME: it breaks book titel with double quotes: `"Great" book` => `Great" book`
                         meta.title = strip_meta(&text);
                     }
                     // <genre>
