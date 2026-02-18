@@ -65,13 +65,13 @@ pub fn read_book_file(
     filename: &str,
     cat_type: i32,
 ) -> Result<Vec<u8>, std::io::Error> {
-    match cat_type {
-        models::CAT_NORMAL => {
+    match models::CatType::try_from(cat_type) {
+        Ok(models::CatType::Normal) => {
             // Plain file on disk
             let full_path = root.join(book_path).join(filename);
             std::fs::read(&full_path)
         }
-        models::CAT_ZIP | models::CAT_INPX | models::CAT_INP => {
+        Ok(models::CatType::Zip) | Ok(models::CatType::Inpx) | Ok(models::CatType::Inp) => {
             // File inside a ZIP archive
             // book_path is the relative path to the ZIP file
             let zip_path = root.join(book_path);
@@ -88,7 +88,7 @@ pub fn read_book_file(
             entry.read_to_end(&mut data)?;
             Ok(data)
         }
-        _ => Err(std::io::Error::new(
+        Err(_) => Err(std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("Unknown cat_type: {cat_type}"),
         )),

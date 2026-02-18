@@ -165,12 +165,12 @@ fn read_book_file(
     cat_type: i32,
 ) -> Result<Vec<u8>, std::io::Error> {
     use std::io::Read;
-    match cat_type {
-        models::CAT_NORMAL => {
+    match models::CatType::try_from(cat_type) {
+        Ok(models::CatType::Normal) => {
             let full_path = root.join(book_path).join(filename);
             std::fs::read(&full_path)
         }
-        models::CAT_ZIP | models::CAT_INPX | models::CAT_INP => {
+        Ok(models::CatType::Zip) | Ok(models::CatType::Inpx) | Ok(models::CatType::Inp) => {
             let zip_path = root.join(book_path);
             let file = std::fs::File::open(&zip_path)?;
             let reader = BufReader::new(file);
@@ -183,7 +183,7 @@ fn read_book_file(
             entry.read_to_end(&mut data)?;
             Ok(data)
         }
-        _ => Err(std::io::Error::new(
+        Err(_) => Err(std::io::Error::new(
             std::io::ErrorKind::Other,
             "Unknown cat_type",
         )),

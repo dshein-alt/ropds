@@ -56,28 +56,6 @@ pub struct Series {
     pub lang_code: i32,
 }
 
-#[derive(Debug, Clone, FromRow)]
-pub struct BookAuthor {
-    pub id: i64,
-    pub book_id: i64,
-    pub author_id: i64,
-}
-
-#[derive(Debug, Clone, FromRow)]
-pub struct BookGenre {
-    pub id: i64,
-    pub book_id: i64,
-    pub genre_id: i64,
-}
-
-#[derive(Debug, Clone, FromRow)]
-pub struct BookSeries {
-    pub id: i64,
-    pub book_id: i64,
-    pub series_id: i64,
-    pub ser_no: i32,
-}
-
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct User {
     pub id: i64,
@@ -91,14 +69,6 @@ pub struct User {
     pub allow_upload: i32,
 }
 
-#[derive(Debug, Clone, FromRow)]
-pub struct Bookshelf {
-    pub id: i64,
-    pub user_id: i64,
-    pub book_id: i64,
-    pub read_time: String,
-}
-
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Counter {
     pub name: String,
@@ -106,26 +76,60 @@ pub struct Counter {
     pub updated_at: String,
 }
 
-// Constants for cat_type values
-pub const CAT_NORMAL: i32 = 0;
-pub const CAT_ZIP: i32 = 1;
-pub const CAT_INPX: i32 = 2;
-pub const CAT_INP: i32 = 3;
+/// Catalog type stored in `catalogs.cat_type` and `books.cat_type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum CatType {
+    Normal = 0,
+    Zip = 1,
+    Inpx = 2,
+    Inp = 3,
+}
 
-// Constants for avail values
-pub const AVAIL_DELETED: i32 = 0;
-pub const AVAIL_UNVERIFIED: i32 = 1;
-pub const AVAIL_CONFIRMED: i32 = 2;
+impl From<CatType> for i32 {
+    fn from(value: CatType) -> Self {
+        value as i32
+    }
+}
 
-// Constants for lang_code values
-pub const LANG_CYRILLIC: i32 = 1;
-pub const LANG_LATIN: i32 = 2;
-pub const LANG_DIGIT: i32 = 3;
-pub const LANG_OTHER: i32 = 9;
+impl TryFrom<i32> for CatType {
+    type Error = ();
 
-// Counter name constants
-pub const COUNTER_ALL_BOOKS: &str = "allbooks";
-pub const COUNTER_ALL_CATALOGS: &str = "allcatalogs";
-pub const COUNTER_ALL_AUTHORS: &str = "allauthors";
-pub const COUNTER_ALL_GENRES: &str = "allgenres";
-pub const COUNTER_ALL_SERIES: &str = "allseries";
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Zip),
+            2 => Ok(Self::Inpx),
+            3 => Ok(Self::Inp),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Availability status stored in `books.avail`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum AvailStatus {
+    Deleted = 0,
+    Unverified = 1,
+    Confirmed = 2,
+}
+
+impl From<AvailStatus> for i32 {
+    fn from(value: AvailStatus) -> Self {
+        value as i32
+    }
+}
+
+impl TryFrom<i32> for AvailStatus {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Deleted),
+            1 => Ok(Self::Unverified),
+            2 => Ok(Self::Confirmed),
+            _ => Err(()),
+        }
+    }
+}
