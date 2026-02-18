@@ -359,3 +359,99 @@ function convertUtcTimes(root) {
     }
   });
 })();
+
+// Genre selector utility (shared by upload page and book detail editor)
+window.GenreSelector = (function () {
+  var cachedSections = null;
+
+  function fetchGenres() {
+    if (cachedSections) return Promise.resolve(cachedSections);
+    return fetch("/web/api/genres", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        cachedSections = data.sections;
+        return cachedSections;
+      });
+  }
+
+  // Build accordion with checkboxes inside `container`.
+  // `selectedIds` is an array of genre IDs to pre-check.
+  // `selectedCodes` is an array of genre codes to pre-check (for upload flow).
+  // `onChangeCallback(selectedIds)` is called on every toggle.
+  function build(container, sections, opts) {
+    opts = opts || {};
+    var selectedIdSet = new Set((opts.selectedIds || []).map(Number));
+    var selectedCodeSet = new Set(opts.selectedCodes || []);
+    var onChange = opts.onChange || function () {};
+
+    container.innerHTML = "";
+    var index = 0;
+
+    Object.keys(sections).forEach(function (sectionName) {
+      var genres = sections[sectionName];
+      var sectionId = "gsec-" + (index++);
+      var count = genres.filter(function (g) {
+        return selectedIdSet.has(g.id) || selectedCodeSet.has(g.code);
+      }).length;
+
+      var item = document.createElement("div");
+      item.className = "accordion-item";
+      item.innerHTML =
+        '<h2 class="accordion-header">' +
+        '<button class="accordion-button collapsed py-2 px-3 small" type="button" ' +
+        'data-bs-toggle="collapse" data-bs-target="#' + sectionId + '">' +
+        escHtml(sectionName) +
+        ' <span class="badge bg-primary ms-2 gsec-count">' + count + '</span>' +
+        '</button></h2>' +
+        '<div id="' + sectionId + '" class="accordion-collapse collapse">' +
+        '<div class="accordion-body py-2 px-3">' +
+        genres.map(function (g) {
+          var checked = (selectedIdSet.has(g.id) || selectedCodeSet.has(g.code)) ? " checked" : "";
+          return '<div class="form-check">' +
+            '<input class="form-check-input genre-cb" type="checkbox" value="' + g.id + '" data-code="' + g.code + '" id="gcb-' + g.id + '"' + checked + '>' +
+            '<label class="form-check-label small" for="gcb-' + g.id + '">' + escHtml(g.subsection) + '</label>' +
+            '</div>';
+        }).join("") +
+        '</div></div>';
+      container.appendChild(item);
+    });
+
+    container.addEventListener("change", function (e) {
+      if (!e.target.classList.contains("genre-cb")) return;
+      var body = e.target.closest(".accordion-body");
+      var header = body.parentElement.previousElementSibling;
+      var badge = header.querySelector(".gsec-count");
+      badge.textContent = body.querySelectorAll(".genre-cb:checked").length;
+      onChange(getSelected(container));
+    });
+  }
+
+  function getSelected(container) {
+    var ids = [];
+    container.querySelectorAll(".genre-cb:checked").forEach(function (cb) {
+      ids.push(parseInt(cb.value, 10));
+    });
+    return ids;
+  }
+
+  function getCodes(container) {
+    var codes = [];
+    container.querySelectorAll(".genre-cb:checked").forEach(function (cb) {
+      codes.push(cb.dataset.code);
+    });
+    return codes;
+  }
+
+  function escHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  return {
+    fetchGenres: fetchGenres,
+    build: build,
+    getSelected: getSelected,
+    getCodes: getCodes
+  };
+})();
