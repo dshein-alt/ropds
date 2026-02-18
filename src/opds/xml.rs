@@ -225,21 +225,21 @@ impl FeedBuilder {
         Ok(())
     }
 
-    /// Write an <author> element.
-    pub fn write_author(&mut self, name: &str) -> Result<(), quick_xml::Error> {
+    /// Write an <author> element from a typed model.
+    pub fn write_author_obj(&mut self, author: &Author) -> Result<(), quick_xml::Error> {
         self.writer
             .write_event(Event::Start(BytesStart::new("author")))?;
-        self.write_text_element("name", name)?;
+        self.write_text_element("name", &author.name)?;
         self.writer
             .write_event(Event::End(BytesEnd::new("author")))?;
         Ok(())
     }
 
-    /// Write a <category> element.
-    pub fn write_category(&mut self, term: &str, label: &str) -> Result<(), quick_xml::Error> {
+    /// Write a <category> element from a typed model.
+    pub fn write_category_obj(&mut self, category: &Category) -> Result<(), quick_xml::Error> {
         let mut el = BytesStart::new("category");
-        el.push_attribute(("term", term));
-        el.push_attribute(("label", label));
+        el.push_attribute(("term", category.term.as_str()));
+        el.push_attribute(("label", category.label.as_str()));
         self.writer.write_event(Event::Empty(el))?;
         Ok(())
     }
@@ -265,12 +265,23 @@ impl FeedBuilder {
         link_type: &str,
         title: Option<&str>,
     ) -> Result<(), quick_xml::Error> {
+        let link = Link {
+            href: href.to_string(),
+            rel: rel.to_string(),
+            link_type: link_type.to_string(),
+            title: title.map(str::to_string),
+        };
+        self.write_link_obj(&link)
+    }
+
+    /// Write a <link> element from a typed model.
+    pub fn write_link_obj(&mut self, link: &Link) -> Result<(), quick_xml::Error> {
         let mut el = BytesStart::new("link");
-        el.push_attribute(("href", href));
-        el.push_attribute(("rel", rel));
-        el.push_attribute(("type", link_type));
-        if let Some(t) = title {
-            el.push_attribute(("title", t));
+        el.push_attribute(("href", link.href.as_str()));
+        el.push_attribute(("rel", link.rel.as_str()));
+        el.push_attribute(("type", link.link_type.as_str()));
+        if let Some(t) = &link.title {
+            el.push_attribute(("title", t.as_str()));
         }
         self.writer.write_event(Event::Empty(el))?;
         Ok(())

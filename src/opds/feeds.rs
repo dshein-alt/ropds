@@ -812,12 +812,13 @@ async fn write_book_entry(fb: &mut FeedBuilder, state: &AppState, book: &crate::
 
     // Download link (alternate)
     let dl_href = format!("/opds/download/{}/0/", book.id);
-    let _ = fb.write_link(
-        &dl_href,
-        "alternate",
-        xml::mime_for_format(&book.format),
-        None,
-    );
+    let alternate_link = xml::Link {
+        href: dl_href,
+        rel: "alternate".to_string(),
+        link_type: xml::mime_for_format(&book.format).to_string(),
+        title: None,
+    };
+    let _ = fb.write_link_obj(&alternate_link);
 
     // Acquisition links
     let _ = fb.write_acquisition_links(book.id, &book.format, book.cover != 0);
@@ -842,21 +843,30 @@ async fn write_book_entry(fb: &mut FeedBuilder, state: &AppState, book: &crate::
     // Authors
     if let Ok(book_authors) = authors::get_for_book(&state.db, book.id).await {
         for author in &book_authors {
-            let _ = fb.write_author(&author.full_name);
+            let author_elem = xml::Author {
+                name: author.full_name.clone(),
+            };
+            let _ = fb.write_author_obj(&author_elem);
+
             let author_href = format!("/opds/search/books/a/{}/", author.id);
-            let _ = fb.write_link(
-                &author_href,
-                "related",
-                xml::ACQ_TYPE,
-                Some(&format!("All books by {}", author.full_name)),
-            );
+            let related_link = xml::Link {
+                href: author_href,
+                rel: "related".to_string(),
+                link_type: xml::ACQ_TYPE.to_string(),
+                title: Some(format!("All books by {}", author.full_name)),
+            };
+            let _ = fb.write_link_obj(&related_link);
         }
     }
 
     // Genres
     if let Ok(book_genres) = genres::get_for_book(&state.db, book.id).await {
         for genre in &book_genres {
-            let _ = fb.write_category(&genre.code, &genre.subsection);
+            let category = xml::Category {
+                term: genre.code.clone(),
+                label: genre.subsection.clone(),
+            };
+            let _ = fb.write_category_obj(&category);
         }
     }
 
