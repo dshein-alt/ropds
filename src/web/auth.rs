@@ -78,21 +78,16 @@ pub async fn session_auth_layer(
     match user_id {
         Some(uid) => {
             // Allow these paths even when password change is required
-            if path == "/change-password"
-                || path == "/profile/password"
-                || path == "/logout"
-            {
+            if path == "/change-password" || path == "/profile/password" || path == "/logout" {
                 return next.run(request).await;
             }
 
             // Check if user must change password before accessing the app.
             // Fail closed: DB errors are treated as "change required" to avoid
             // bypassing enforcement when the check cannot be trusted.
-            let must_change = crate::db::queries::users::password_change_required(
-                &state.db, uid,
-            )
-            .await
-            .unwrap_or(true);
+            let must_change = crate::db::queries::users::password_change_required(&state.db, uid)
+                .await
+                .unwrap_or(true);
 
             if must_change {
                 let original_path = format!("/web{path}");

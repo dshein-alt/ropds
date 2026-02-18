@@ -65,7 +65,13 @@ pub async fn root_feed(State(state): State<AppState>, headers: axum::http::Heade
                 .await
                 .unwrap_or(0);
             let content = format!("Books read: {count}");
-            let _ = fb.write_nav_entry("m:6", "Book shelf", "/opds/bookshelf/", &content, DEFAULT_UPDATED);
+            let _ = fb.write_nav_entry(
+                "m:6",
+                "Book shelf",
+                "/opds/bookshelf/",
+                &content,
+                DEFAULT_UPDATED,
+            );
         }
     }
 
@@ -692,9 +698,12 @@ pub async fn bookshelf_feed(
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
     let book_list = crate::db::queries::bookshelf::get_by_user(
-        &state.db, user_id,
-        &crate::db::queries::bookshelf::SortColumn::Date, false,
-        max_items, offset,
+        &state.db,
+        user_id,
+        &crate::db::queries::bookshelf::SortColumn::Date,
+        false,
+        max_items,
+        offset,
     )
     .await
     .unwrap_or_default();

@@ -134,9 +134,7 @@ async fn main() {
     // Validate upload configuration
     if config.upload.allow_upload {
         if config.upload.upload_path.as_os_str().is_empty() {
-            tracing::error!(
-                "Upload enabled but 'upload_path' is not set in [upload] config"
-            );
+            tracing::error!("Upload enabled but 'upload_path' is not set in [upload] config");
             std::process::exit(1);
         }
 

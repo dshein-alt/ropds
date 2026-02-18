@@ -80,14 +80,19 @@ pub async fn admin_page(
     let current_user_id = match get_session_user_id(&jar, secret) {
         Some(id) => id,
         None => {
-            tracing::warn!("admin_page reached without valid session — middleware misconfiguration?");
+            tracing::warn!(
+                "admin_page reached without valid session — middleware misconfiguration?"
+            );
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
     ctx.insert("current_user_id", &current_user_id);
 
     // Server config sections (read-only display)
-    ctx.insert("cfg_uptime", &format_uptime(state.started_at.elapsed().as_secs(), &ctx));
+    ctx.insert(
+        "cfg_uptime",
+        &format_uptime(state.started_at.elapsed().as_secs(), &ctx),
+    );
     ctx.insert("cfg_host", &state.config.server.host);
     ctx.insert("cfg_port", &state.config.server.port);
     ctx.insert("cfg_log_level", &state.config.server.log_level);
@@ -100,8 +105,14 @@ pub async fn admin_page(
         &state.djvu_preview_tool_available,
     );
 
-    ctx.insert("cfg_root_path", &state.config.library.root_path.display().to_string());
-    ctx.insert("cfg_book_extensions", &state.config.library.book_extensions.join(", "));
+    ctx.insert(
+        "cfg_root_path",
+        &state.config.library.root_path.display().to_string(),
+    );
+    ctx.insert(
+        "cfg_book_extensions",
+        &state.config.library.book_extensions.join(", "),
+    );
     ctx.insert("cfg_scan_zip", &state.config.library.scan_zip);
     ctx.insert("cfg_zip_codepage", &state.config.library.zip_codepage);
     ctx.insert("cfg_inpx_enable", &state.config.library.inpx_enable);
@@ -114,7 +125,10 @@ pub async fn admin_page(
     ctx.insert("cfg_show_covers", &state.config.opds.show_covers);
     ctx.insert("cfg_alphabet_menu", &state.config.opds.alphabet_menu);
     ctx.insert("cfg_hide_doubles", &state.config.opds.hide_doubles);
-    ctx.insert("cfg_covers_dir", &state.config.opds.covers_dir.display().to_string());
+    ctx.insert(
+        "cfg_covers_dir",
+        &state.config.opds.covers_dir.display().to_string(),
+    );
 
     // Upload config
     ctx.insert("cfg_upload_allow_upload", &state.config.upload.allow_upload);
@@ -128,9 +142,15 @@ pub async fn admin_page(
     );
 
     // Scanner config
-    ctx.insert("cfg_schedule_minutes", &state.config.scanner.schedule_minutes);
+    ctx.insert(
+        "cfg_schedule_minutes",
+        &state.config.scanner.schedule_minutes,
+    );
     ctx.insert("cfg_schedule_hours", &state.config.scanner.schedule_hours);
-    ctx.insert("cfg_schedule_days", &state.config.scanner.schedule_day_of_week);
+    ctx.insert(
+        "cfg_schedule_days",
+        &state.config.scanner.schedule_day_of_week,
+    );
     ctx.insert("cfg_delete_logical", &state.config.scanner.delete_logical);
     ctx.insert("is_scanning", &crate::scanner::is_scanning());
 
@@ -272,7 +292,10 @@ pub async fn toggle_upload(
     }
 
     // Prevent toggling superuser upload permission (they always have it)
-    if users::is_superuser(&state.db, user_id).await.unwrap_or(false) {
+    if users::is_superuser(&state.db, user_id)
+        .await
+        .unwrap_or(false)
+    {
         return Redirect::to("/web/admin").into_response();
     }
 
@@ -287,10 +310,7 @@ pub async fn toggle_upload(
 }
 
 /// GET /web/profile — render profile page for authenticated users.
-pub async fn profile_page(
-    State(state): State<AppState>,
-    jar: CookieJar,
-) -> Response {
+pub async fn profile_page(State(state): State<AppState>, jar: CookieJar) -> Response {
     let secret = state.config.server.session_secret.as_bytes();
     if get_session_user_id(&jar, secret).is_none() {
         return Redirect::to("/web/login").into_response();
@@ -445,8 +465,12 @@ pub async fn update_book_genres(
             .into_response();
     }
 
-    match crate::db::queries::genres::set_book_genres(&state.db, payload.book_id, &payload.genre_ids)
-        .await
+    match crate::db::queries::genres::set_book_genres(
+        &state.db,
+        payload.book_id,
+        &payload.genre_ids,
+    )
+    .await
     {
         Ok(()) => {
             let updated = crate::db::queries::genres::get_for_book(&state.db, payload.book_id)
@@ -545,10 +569,9 @@ pub async fn update_book_authors(
     match crate::db::queries::authors::set_book_authors(&state.db, payload.book_id, &all_ids).await
     {
         Ok(()) => {
-            let updated =
-                crate::db::queries::authors::get_for_book(&state.db, payload.book_id)
-                    .await
-                    .unwrap_or_default();
+            let updated = crate::db::queries::authors::get_for_book(&state.db, payload.book_id)
+                .await
+                .unwrap_or_default();
             axum::Json(serde_json::json!({
                 "ok": true,
                 "authors": updated,
@@ -664,19 +687,24 @@ pub async fn change_password_submit(
         .unwrap_or_default();
 
     if !is_valid_password(&form.password) {
-        return Redirect::to(&format!("/web/change-password?error=password_short{next_param}")).into_response();
+        return Redirect::to(&format!(
+            "/web/change-password?error=password_short{next_param}"
+        ))
+        .into_response();
     }
 
     let hash = crate::password::hash(&form.password);
     if let Err(e) = users::update_password(&state.db, user_id, &hash).await {
         tracing::error!("Failed to update password for user {user_id}: {e}");
-        return Redirect::to(&format!("/web/change-password?error=db_error{next_param}")).into_response();
+        return Redirect::to(&format!("/web/change-password?error=db_error{next_param}"))
+            .into_response();
     }
 
     // Clear the forced password change flag
     if let Err(e) = users::clear_password_change_required(&state.db, user_id).await {
         tracing::error!("Failed to clear password_change_required for user {user_id}: {e}");
-        return Redirect::to(&format!("/web/change-password?error=db_error{next_param}")).into_response();
+        return Redirect::to(&format!("/web/change-password?error=db_error{next_param}"))
+            .into_response();
     }
 
     // Redirect to original destination or home
@@ -716,7 +744,10 @@ pub async fn scan_now(
             Ok(ref stats) => {
                 tracing::info!(
                     "Manual scan finished: {} added, {} skipped, {} deleted, {} errors",
-                    stats.books_added, stats.books_skipped, stats.books_deleted, stats.errors,
+                    stats.books_added,
+                    stats.books_skipped,
+                    stats.books_deleted,
+                    stats.errors,
                 );
                 crate::scanner::store_scan_result(crate::scanner::ScanResult {
                     ok: true,

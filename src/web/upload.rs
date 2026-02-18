@@ -76,8 +76,7 @@ fn generate_token(secret: &[u8]) -> String {
     let count = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
 
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret).expect("HMAC can take key of any size");
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC can take key of any size");
     mac.update(b"upload-token:");
     mac.update(&ts.to_le_bytes());
     mac.update(&count.to_le_bytes());
@@ -168,8 +167,7 @@ struct UploadState {
 /// Reads each `upload_*.json` state file; if `created_at` is older than the
 /// threshold, deletes the state file plus its associated book and cover files.
 fn cleanup_stale_uploads(temp_dir: &std::path::Path, max_age_secs: u64) {
-    let cutoff = chrono::Utc::now()
-        - chrono::Duration::seconds(max_age_secs as i64);
+    let cutoff = chrono::Utc::now() - chrono::Duration::seconds(max_age_secs as i64);
 
     let entries = match std::fs::read_dir(temp_dir) {
         Ok(e) => e,
@@ -320,7 +318,10 @@ pub async fn upload_page(State(state): State<AppState>, jar: CookieJar) -> Respo
         accepted_str.push_str(",.zip");
     }
     ctx.insert("accepted_extensions", &accepted_str);
-    ctx.insert("max_upload_size_mb", &state.config.upload.max_upload_size_mb);
+    ctx.insert(
+        "max_upload_size_mb",
+        &state.config.upload.max_upload_size_mb,
+    );
 
     match state.tera.render("web/upload.html", &ctx) {
         Ok(html) => Html(html).into_response(),

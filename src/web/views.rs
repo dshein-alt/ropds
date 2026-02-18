@@ -755,10 +755,7 @@ pub async fn web_download(
 
 // ── Genres JSON API ────────────────────────────────────────────────
 
-pub async fn genres_json(
-    State(state): State<AppState>,
-    jar: CookieJar,
-) -> Response {
+pub async fn genres_json(State(state): State<AppState>, jar: CookieJar) -> Response {
     let secret = state.config.server.session_secret.as_bytes();
     if jar
         .get("session")
@@ -992,7 +989,12 @@ pub async fn bookshelf_cards(
         .unwrap_or(0);
 
     let book_views = fetch_bookshelf_views(
-        &state, user_id, &sort_col, ascending, BOOKSHELF_BATCH, params.offset,
+        &state,
+        user_id,
+        &sort_col,
+        ascending,
+        BOOKSHELF_BATCH,
+        params.offset,
     )
     .await;
 

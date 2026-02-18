@@ -90,13 +90,12 @@ pub async fn count_by_user(pool: &DbPool, user_id: i64) -> Result<i64, sqlx::Err
 
 /// Check if a specific book is on the user's bookshelf.
 pub async fn is_on_shelf(pool: &DbPool, user_id: i64, book_id: i64) -> Result<bool, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM bookshelf WHERE user_id = ? AND book_id = ?",
-    )
-    .bind(user_id)
-    .bind(book_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM bookshelf WHERE user_id = ? AND book_id = ?")
+            .bind(user_id)
+            .bind(book_id)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0 > 0)
 }
 
@@ -105,11 +104,10 @@ pub async fn get_book_ids_for_user(
     pool: &DbPool,
     user_id: i64,
 ) -> Result<std::collections::HashSet<i64>, sqlx::Error> {
-    let rows: Vec<(i64,)> =
-        sqlx::query_as("SELECT book_id FROM bookshelf WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(i64,)> = sqlx::query_as("SELECT book_id FROM bookshelf WHERE user_id = ?")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 

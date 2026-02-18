@@ -205,7 +205,6 @@ fn default_session_ttl_hours() -> u64 {
     24
 }
 
-
 fn default_max_upload_size_mb() -> u64 {
     100
 }

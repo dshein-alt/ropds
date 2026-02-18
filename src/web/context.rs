@@ -100,8 +100,8 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("username", &username);
 
     // Upload permission: global config AND (admin OR user has allow_upload)
-    let can_upload = state.config.upload.allow_upload
-        && (is_superuser == 1 || user_allow_upload == 1);
+    let can_upload =
+        state.config.upload.allow_upload && (is_superuser == 1 || user_allow_upload == 1);
     ctx.insert("can_upload", &can_upload);
 
     // Stats from counters table

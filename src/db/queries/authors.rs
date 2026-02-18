@@ -140,12 +140,10 @@ pub async fn set_book_authors(
 
 /// Delete an author if they have no remaining book links.
 pub async fn delete_if_orphaned(pool: &DbPool, author_id: i64) -> Result<(), sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM book_authors WHERE author_id = ?",
-    )
-    .bind(author_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM book_authors WHERE author_id = ?")
+        .bind(author_id)
+        .fetch_one(pool)
+        .await?;
     if row.0 == 0 {
         sqlx::query("DELETE FROM authors WHERE id = ?")
             .bind(author_id)

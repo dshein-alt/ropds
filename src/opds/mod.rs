@@ -29,9 +29,7 @@ async fn opds_logging(request: Request, next: Next) -> Response {
 
     let elapsed = start.elapsed();
     let status = response.status().as_u16();
-    tracing::info!(
-        "{addr} {method} {uri} {status} {elapsed:.1?}",
-    );
+    tracing::info!("{addr} {method} {uri} {status} {elapsed:.1?}",);
 
     response
 }
