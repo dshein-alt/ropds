@@ -9,6 +9,16 @@ use super::xml::{self, FeedBuilder};
 
 const DEFAULT_UPDATED: &str = "2024-01-01T00:00:00Z";
 
+/// Extract primary language from Accept-Language header, fallback to config default.
+fn detect_opds_lang(headers: &axum::http::HeaderMap, config: &crate::config::Config) -> String {
+    if let Some(accept_lang) = headers.get("accept-language").and_then(|v| v.to_str().ok()) {
+        let primary = accept_lang.split(',').next().unwrap_or("en");
+        let lang = primary.split(&['-', ';'][..]).next().unwrap_or("en");
+        return lang.to_lowercase();
+    }
+    config.web.language.clone()
+}
+
 fn atom_response(body: Vec<u8>) -> Response {
     (
         StatusCode::OK,
@@ -86,8 +96,10 @@ pub async fn root_feed(State(state): State<AppState>, headers: axum::http::Heade
 /// GET /opds/catalogs/:cat_id/:page/
 pub async fn catalogs_feed(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     path: Option<Path<CatalogsParams>>,
 ) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config);
     let (cat_id, page) = match path {
         Some(Path(p)) => (p.cat_id, p.page.unwrap_or(1).max(1)),
         None => (0, 1),
@@ -158,7 +170,7 @@ pub async fn catalogs_feed(
         let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
         for book in &book_list {
-            write_book_entry(&mut fb, &state, book).await;
+            write_book_entry(&mut fb, &state, book, &lang).await;
         }
     }
 
@@ -293,7 +305,12 @@ pub async fn series_feed(
 
 /// GET /opds/genres/ — Genre sections.
 /// GET /opds/genres/:section/ — Genres in section.
-pub async fn genres_feed(State(state): State<AppState>, path: Option<Path<(String,)>>) -> Response {
+pub async fn genres_feed(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    path: Option<Path<(String,)>>,
+) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config);
     let mut fb = FeedBuilder::new();
 
     match path {
@@ -309,17 +326,29 @@ pub async fn genres_feed(State(state): State<AppState>, path: Option<Path<(Strin
             );
             let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            let sections = genres::get_sections(&state.db).await.unwrap_or_default();
-            for (i, section) in sections.iter().enumerate() {
-                let href = format!("/opds/genres/{}/", urlencoding::encode(section));
-                let _ = fb.write_nav_entry(&format!("gs:{i}"), section, &href, "", DEFAULT_UPDATED);
+            let sections = genres::get_sections(&state.db, &lang)
+                .await
+                .unwrap_or_default();
+            for (i, (code, name)) in sections.iter().enumerate() {
+                let href = format!("/opds/genres/{}/", urlencoding::encode(code));
+                let _ = fb.write_nav_entry(&format!("gs:{i}"), name, &href, "", DEFAULT_UPDATED);
             }
         }
-        Some(Path((section,))) => {
-            let self_href = format!("/opds/genres/{}/", urlencoding::encode(&section));
+        Some(Path((section_code,))) => {
+            let self_href = format!("/opds/genres/{}/", urlencoding::encode(&section_code));
+
+            let genre_list = genres::get_by_section(&state.db, &section_code, &lang)
+                .await
+                .unwrap_or_default();
+
+            let section_title = genre_list
+                .first()
+                .map(|g| g.section.clone())
+                .unwrap_or_else(|| section_code.clone());
+
             let _ = fb.begin_feed(
-                &format!("tag:genres:{section}"),
-                &section,
+                &format!("tag:genres:{section_code}"),
+                &section_title,
                 "",
                 DEFAULT_UPDATED,
                 &self_href,
@@ -327,9 +356,6 @@ pub async fn genres_feed(State(state): State<AppState>, path: Option<Path<(Strin
             );
             let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            let genre_list = genres::get_by_section(&state.db, &section)
-                .await
-                .unwrap_or_default();
             for genre in &genre_list {
                 let href = format!("/opds/search/books/g/{}/", genre.id);
                 let _ = fb.write_nav_entry(
@@ -351,7 +377,12 @@ pub async fn genres_feed(State(state): State<AppState>, path: Option<Path<(Strin
 
 /// GET /opds/books/ — Language selection for books by title.
 /// GET /opds/books/:lang_code/
-pub async fn books_feed(State(state): State<AppState>, path: Option<Path<(i32,)>>) -> Response {
+pub async fn books_feed(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    path: Option<Path<(i32,)>>,
+) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config);
     match path {
         None => lang_selection_feed("Books", "/opds/books/").await,
         Some(Path((lang_code,))) => {
@@ -375,7 +406,7 @@ pub async fn books_feed(State(state): State<AppState>, path: Option<Path<(i32,)>
                 .await
                 .unwrap_or_default();
             for book in &book_list {
-                write_book_entry(&mut fb, &state, book).await;
+                write_book_entry(&mut fb, &state, book, &lang).await;
             }
 
             match fb.finish() {
@@ -435,8 +466,10 @@ pub async fn search_types_feed(
 /// Search types: b=begins, m=contains, e=exact, a=by author id, s=by series id, g=by genre id
 pub async fn search_books_feed(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Path(params): Path<SearchBooksParams>,
 ) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config);
     let max_items = state.config.opds.max_items as i32;
     let page = params.page.unwrap_or(1).max(1);
     let offset = (page - 1) * max_items;
@@ -518,7 +551,7 @@ pub async fn search_books_feed(
     let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
     for book in &book_list {
-        write_book_entry(&mut fb, &state, book).await;
+        write_book_entry(&mut fb, &state, book, &lang).await;
     }
 
     match fb.finish() {
@@ -676,6 +709,7 @@ pub async fn bookshelf_feed(
     headers: axum::http::HeaderMap,
     path: Option<Path<(i32,)>>,
 ) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config);
     let user_id = match super::auth::get_user_id_from_headers(&state.db, &headers).await {
         Some(uid) => uid,
         None => return error_response(StatusCode::UNAUTHORIZED, "Authentication required"),
@@ -724,7 +758,7 @@ pub async fn bookshelf_feed(
     let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
     for book in &book_list {
-        write_book_entry(&mut fb, &state, book).await;
+        write_book_entry(&mut fb, &state, book, &lang).await;
     }
 
     match fb.finish() {
@@ -807,7 +841,12 @@ async fn lang_selection_feed(title: &str, base_href: &str) -> Response {
 }
 
 /// Write a book acquisition entry.
-async fn write_book_entry(fb: &mut FeedBuilder, state: &AppState, book: &crate::db::models::Book) {
+async fn write_book_entry(
+    fb: &mut FeedBuilder,
+    state: &AppState,
+    book: &crate::db::models::Book,
+    lang: &str,
+) {
     let _ = fb.begin_entry(&format!("b:{}", book.id), &book.title, &book.reg_date);
 
     // Download link (alternate)
@@ -860,7 +899,7 @@ async fn write_book_entry(fb: &mut FeedBuilder, state: &AppState, book: &crate::
     }
 
     // Genres
-    if let Ok(book_genres) = genres::get_for_book(&state.db, book.id).await {
+    if let Ok(book_genres) = genres::get_for_book(&state.db, book.id, lang).await {
         for genre in &book_genres {
             let category = xml::Category {
                 term: genre.code.clone(),

@@ -29,6 +29,16 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/book-title", post(admin::update_book_title))
         .route("/scan", post(admin::scan_now))
         .route("/scan-status", get(admin::scan_status))
+        .route("/genres", get(admin::genres_admin_json))
+        .route("/genre-translation", post(admin::upsert_genre_translation))
+        .route(
+            "/genre-translation/delete",
+            post(admin::delete_genre_translation),
+        )
+        .route("/genre", post(admin::create_genre))
+        .route("/genre/delete", post(admin::delete_genre))
+        .route("/section", post(admin::create_section))
+        .route("/section/delete", post(admin::delete_section))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,

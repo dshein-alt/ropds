@@ -46,6 +46,29 @@ pub struct Genre {
     pub code: String,
     pub section: String,
     pub subsection: String,
+    pub section_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct GenreSection {
+    pub id: i64,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct GenreSectionTranslation {
+    pub id: i64,
+    pub section_id: i64,
+    pub lang: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct GenreTranslation {
+    pub id: i64,
+    pub genre_id: i64,
+    pub lang: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, FromRow, serde::Serialize)]

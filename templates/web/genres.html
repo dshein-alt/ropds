@@ -16,9 +16,9 @@
     {% else %}
     <div class="list-group">
       {% for section in sections %}
-      <a href="/web/genres?section={{ section.0 | urlencode }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-        <span class="fw-medium">{{ section.0 }}</span>
-        <span class="badge text-bg-secondary rounded-pill">{{ section.1 }}</span>
+      <a href="/web/genres?section={{ section.0 }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+        <span class="fw-medium">{{ section.1 }}</span>
+        <span class="badge text-bg-secondary rounded-pill">{{ section.2 }}</span>
       </a>
       {% endfor %}
     </div>

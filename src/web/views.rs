@@ -125,11 +125,12 @@ async fn enrich_book(
     book: crate::db::models::Book,
     hide_doubles: bool,
     shelf_ids: Option<&std::collections::HashSet<i64>>,
+    lang: &str,
 ) -> BookView {
     let book_authors = authors::get_for_book(&state.db, book.id)
         .await
         .unwrap_or_default();
-    let book_genres = genres::get_for_book(&state.db, book.id)
+    let book_genres = genres::get_for_book(&state.db, book.id, lang)
         .await
         .unwrap_or_default();
     let book_series = series::get_for_book(&state.db, book.id)
@@ -305,6 +306,10 @@ pub async fn search_books(
     Query(params): Query<SearchBooksParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "books").await;
+    let locale = jar
+        .get("lang")
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| state.config.web.language.clone());
     let search_target = match params.search_type.as_str() {
         "a" => "author",
         "s" => "series",
@@ -350,7 +355,7 @@ pub async fn search_books(
             let cnt = books::count_by_genre(&state.db, id, hide_doubles)
                 .await
                 .unwrap_or(0);
-            if let Ok(Some(genre)) = genres::get_by_id(&state.db, id).await {
+            if let Ok(Some(genre)) = genres::get_by_id(&state.db, id, &locale).await {
                 ctx.insert("search_label", &genre.subsection);
             }
             (bks, cnt)
@@ -403,7 +408,7 @@ pub async fn search_books(
 
     let mut book_views = Vec::with_capacity(raw_books.len());
     for book in raw_books {
-        book_views.push(enrich_book(&state, book, hide_doubles, shelf_ids.as_ref()).await);
+        book_views.push(enrich_book(&state, book, hide_doubles, shelf_ids.as_ref(), &locale).await);
     }
 
     let pagination = Pagination::new(params.page, max_items, total);
@@ -546,19 +551,28 @@ pub async fn genres(
     Query(params): Query<GenresParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "genres").await;
+    let locale = jar
+        .get("lang")
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| state.config.web.language.clone());
 
     match params.section {
         None => {
-            let sections = genres::get_sections_with_counts(&state.db)
+            let sections = genres::get_sections_with_counts(&state.db, &locale)
                 .await
                 .unwrap_or_default();
             ctx.insert("sections", &sections);
             ctx.insert("is_top_level", &true);
         }
-        Some(ref section) => {
-            let subsections = genres::get_by_section_with_counts(&state.db, section)
+        Some(ref section_code) => {
+            let subsections = genres::get_by_section_with_counts(&state.db, section_code, &locale)
                 .await
                 .unwrap_or_default();
+            // Extract translated section name from the first genre
+            let section_name = subsections
+                .first()
+                .map(|(g, _)| g.section.clone())
+                .unwrap_or_else(|| section_code.clone());
             let items: Vec<serde_json::Value> = subsections
                 .into_iter()
                 .map(|(g, cnt)| {
@@ -572,7 +586,8 @@ pub async fn genres(
                 .collect();
             ctx.insert("subsections", &items);
             ctx.insert("is_top_level", &false);
-            ctx.insert("section_name", section);
+            ctx.insert("section_code", section_code);
+            ctx.insert("section_name", &section_name);
         }
     }
 
@@ -765,7 +780,13 @@ pub async fn genres_json(State(state): State<AppState>, jar: CookieJar) -> Respo
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
-    let all_genres = genres::get_all(&state.db).await.unwrap_or_default();
+    let locale = jar
+        .get("lang")
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| state.config.web.language.clone());
+    let all_genres = genres::get_all(&state.db, &locale)
+        .await
+        .unwrap_or_default();
 
     let mut sections: std::collections::BTreeMap<String, Vec<serde_json::Value>> =
         std::collections::BTreeMap::new();
@@ -867,6 +888,7 @@ async fn fetch_bookshelf_views(
     ascending: bool,
     limit: i32,
     offset: i32,
+    lang: &str,
 ) -> Vec<BookView> {
     let raw_books = bookshelf::get_by_user(&state.db, user_id, sort, ascending, limit, offset)
         .await
@@ -880,7 +902,7 @@ async fn fetch_bookshelf_views(
     let mut views = Vec::with_capacity(raw_books.len());
     for book in raw_books {
         let bid = book.id;
-        let mut v = enrich_book(state, book, hide_doubles, Some(&shelf_ids)).await;
+        let mut v = enrich_book(state, book, hide_doubles, Some(&shelf_ids), lang).await;
         if let Some(rt) = read_times.get(&bid) {
             v.read_time = rt.clone();
         }
@@ -905,6 +927,10 @@ pub async fn bookshelf_page(
     Query(params): Query<BookshelfPageParams>,
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "bookshelf").await;
+    let locale = jar
+        .get("lang")
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| state.config.web.language.clone());
 
     let secret = state.config.server.session_secret.as_bytes();
     let user_id = match jar
@@ -931,8 +957,16 @@ pub async fn bookshelf_page(
         .await
         .unwrap_or(0);
 
-    let book_views =
-        fetch_bookshelf_views(&state, user_id, &sort_col, ascending, BOOKSHELF_BATCH, 0).await;
+    let book_views = fetch_bookshelf_views(
+        &state,
+        user_id,
+        &sort_col,
+        ascending,
+        BOOKSHELF_BATCH,
+        0,
+        &locale,
+    )
+    .await;
 
     let has_more = (book_views.len() as i64) < total;
 
@@ -963,6 +997,10 @@ pub async fn bookshelf_cards(
     jar: CookieJar,
     Query(params): Query<BookshelfCardsParams>,
 ) -> Result<axum::Json<serde_json::Value>, StatusCode> {
+    let locale = jar
+        .get("lang")
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| state.config.web.language.clone());
     let secret = state.config.server.session_secret.as_bytes();
     let user_id = match jar
         .get("session")
@@ -995,6 +1033,7 @@ pub async fn bookshelf_cards(
         ascending,
         BOOKSHELF_BATCH,
         params.offset,
+        &locale,
     )
     .await;
 

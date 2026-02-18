@@ -291,7 +291,50 @@
   </div>
 
   {# ══════════════════════════════════════════════════ #}
-  {# ── 3. Scanner ───────────────────────────────────── #}
+  {# ── 3. Genre Translations ──────────────────────── #}
+  {# ══════════════════════════════════════════════════ #}
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseGenres">
+        <i class="bi bi-translate me-2"></i>{{ t.admin.genre_translations }}
+      </button>
+    </h2>
+    <div id="collapseGenres" class="accordion-collapse collapse" data-bs-parent="#adminAccordion">
+      <div class="accordion-body">
+        <p class="text-body-secondary">{{ t.admin.genre_translations_desc }}</p>
+        <div id="genres-loading" class="text-center py-4 d-none">
+          <span class="spinner-border spinner-border-sm me-1"></span> Loading…
+        </div>
+        <div id="genres-container"></div>
+
+        {# ── Genre delete confirmation modal ── #}
+        <div class="modal fade" id="genreDelModal" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">{{ t.admin.genre_delete_confirm }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <p id="genreDelModalText"></p>
+                <div class="mb-3">
+                  <label class="form-label">{{ t.admin.type_delete_to_confirm | safe }}</label>
+                  <input type="text" class="form-control delete-confirm-input" autocomplete="off">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+                <button type="button" class="btn btn-danger delete-confirm-btn" id="genreDelModalBtn" disabled>{{ t.admin.delete }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════ #}
+  {# ── 4. Scanner ───────────────────────────────────── #}
   {# ══════════════════════════════════════════════════ #}
   <div class="accordion-item">
     <h2 class="accordion-header">
@@ -431,5 +474,339 @@ document.addEventListener('DOMContentLoaded', function() {
     }).catch(function() { clearInterval(poll); });
   }, 3000);
 });
+
+// ── Genre Translations Panel ──────────────────────────────────
+(function() {
+  var csrf = '{{ csrf_token }}';
+  var labels = {
+    code: '{{ t.admin.genre_code }}',
+    language: '{{ t.admin.genre_language }}',
+    name: '{{ t.admin.genre_name }}',
+    save: '{{ t.admin.save }}',
+    del: '{{ t.admin.delete }}',
+    cancel: '{{ t.admin.cancel }}',
+    addTranslation: '{{ t.admin.genre_add_translation }}',
+    noTranslations: '{{ t.admin.genre_no_translations }}',
+    deleteConfirm: '{{ t.admin.genre_delete_confirm }}',
+    sectionTranslations: '{{ t.admin.genre_section_translations }}',
+    genres: '{{ t.admin.genre_genres }}',
+    addSection: '{{ t.admin.genre_add_section }}',
+    section: '{{ t.admin.genre_section }}',
+    deleteSection: '{{ t.admin.genre_delete_section }}',
+    deleteGenre: '{{ t.admin.genre_delete_genre }}',
+    deleteTranslation: '{{ t.admin.genre_delete_translation }}',
+    duplicateCode: '{{ t.admin.genre_duplicate_code }}'
+  };
+  var loaded = false;
+  var container = document.getElementById('genres-container');
+  var loading = document.getElementById('genres-loading');
+  var pendingDeleteAction = null;
+
+  // Delete confirmation modal helper
+  var delModalEl = document.getElementById('genreDelModal');
+  var delModal = null;
+  var delModalText = document.getElementById('genreDelModalText');
+  var delModalBtn = document.getElementById('genreDelModalBtn');
+
+  function confirmDelete(text, action) {
+    if (!delModal) delModal = new bootstrap.Modal(delModalEl);
+    delModalText.textContent = text;
+    pendingDeleteAction = action;
+    delModal.show();
+  }
+
+  delModalBtn.addEventListener('click', function() {
+    if (pendingDeleteAction) {
+      pendingDeleteAction();
+      pendingDeleteAction = null;
+    }
+    delModal.hide();
+  });
+
+  document.getElementById('collapseGenres').addEventListener('show.bs.collapse', function() {
+    if (!loaded) loadGenres();
+  });
+
+  function getOpenSections() {
+    var ids = [];
+    container.querySelectorAll('.collapse.show').forEach(function(el) {
+      if (el.id && el.id.startsWith('gsec-')) ids.push(el.id);
+    });
+    return ids;
+  }
+
+  function restoreOpenSections(ids) {
+    ids.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.add('show');
+    });
+  }
+
+  function loadGenres() {
+    var openIds = getOpenSections();
+    loading.classList.remove('d-none');
+    container.innerHTML = '';
+    fetch('/web/admin/genres').then(function(r){ return r.json(); }).then(function(data) {
+      loading.classList.add('d-none');
+      loaded = true;
+      renderGenres(data);
+      restoreOpenSections(openIds);
+    }).catch(function() {
+      loading.classList.add('d-none');
+      container.innerHTML = '<div class="alert alert-danger">Failed to load genre data.</div>';
+    });
+  }
+
+  function renderGenres(data) {
+    var langs = data.languages || [];
+    var html = '';
+
+    // Add section input
+    html += '<div class="input-group input-group-sm mb-3" style="max-width:400px">';
+    html += '<input type="text" class="form-control" placeholder="' + labels.code + '" id="new-section-code">';
+    html += '<button class="btn btn-outline-success" id="add-section-btn"><i class="bi bi-plus-lg me-1"></i>' + labels.addSection + '</button>';
+    html += '</div>';
+
+    data.sections.forEach(function(section) {
+      html += '<div class="card mb-2">';
+      html += '<div class="card-header d-flex justify-content-between align-items-center py-2">';
+      html += '<span role="button" data-bs-toggle="collapse" data-bs-target="#gsec-' + section.id + '" class="flex-grow-1">';
+      html += '<i class="bi bi-folder me-1"></i><strong>' + esc(section.code) + '</strong>';
+      // Show translated names as badges
+      section.translations.forEach(function(t) {
+        html += ' <span class="badge bg-secondary ms-1">' + esc(t.lang) + ': ' + esc(t.name) + '</span>';
+      });
+      html += '</span>';
+      html += '<span class="badge text-bg-primary me-2">' + section.genres.length + '</span>';
+      html += '<button class="btn btn-sm btn-outline-danger del-section-btn" data-section-id="' + section.id + '" data-section-code="' + escAttr(section.code) + '" title="' + labels.deleteSection + '">'
+            + '<i class="bi bi-trash"></i></button>';
+      html += '</div>';
+
+      html += '<div id="gsec-' + section.id + '" class="collapse">';
+      html += '<div class="card-body py-2">';
+
+      // Section translations editor
+      html += '<h6 class="text-body-secondary mb-2">' + labels.sectionTranslations + '</h6>';
+      html += renderTransTable('section', section.id, section.translations, langs);
+
+      // Genres table
+      if (section.genres.length > 0) {
+        html += '<h6 class="text-body-secondary mt-3 mb-2">' + labels.genres + '</h6>';
+        html += '<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light">';
+        html += '<tr><th style="width:30%">' + labels.code + '</th>';
+        langs.forEach(function(l) {
+          html += '<th>' + esc(l) + '</th>';
+        });
+        html += '<th></th></tr></thead><tbody>';
+
+        section.genres.forEach(function(genre) {
+          html += '<tr><td><code>' + esc(genre.code) + '</code></td>';
+          langs.forEach(function(l) {
+            var tr = genre.translations.find(function(t){ return t.lang === l; });
+            var val = tr ? tr.name : '';
+            html += '<td>';
+            html += '<input type="text" class="form-control form-control-sm genre-trans-input" '
+                  + 'data-genre-id="' + genre.id + '" data-lang="' + esc(l) + '" '
+                  + 'value="' + escAttr(val) + '" placeholder="—">';
+            html += '</td>';
+          });
+          html += '<td class="text-nowrap">'
+                + '<button class="btn btn-sm btn-outline-primary save-genre-row" data-genre-id="' + genre.id + '">'
+                + '<i class="bi bi-check-lg"></i></button> '
+                + '<button class="btn btn-sm btn-outline-danger del-genre-btn" data-genre-id="' + genre.id + '">'
+                + '<i class="bi bi-trash"></i></button>'
+                + '</td>';
+          html += '</tr>';
+        });
+
+        // Add genre row
+        html += '<tr class="table-light"><td>';
+        html += '<input type="text" class="form-control form-control-sm" placeholder="' + labels.code + '" id="new-gc-' + section.id + '">';
+        html += '</td>';
+        langs.forEach(function() { html += '<td></td>'; });
+        html += '<td><button class="btn btn-sm btn-outline-success add-genre-btn" data-section-id="' + section.id + '">+</button></td>';
+        html += '</tr>';
+
+        html += '</tbody></table></div>';
+      } else {
+        // Even if no genres yet, show an add row
+        html += '<h6 class="text-body-secondary mt-3 mb-2">' + labels.genres + '</h6>';
+        html += '<div class="input-group input-group-sm" style="max-width:400px">';
+        html += '<input type="text" class="form-control" placeholder="' + labels.code + '" id="new-gc-' + section.id + '">';
+        html += '<button class="btn btn-outline-success add-genre-btn" data-section-id="' + section.id + '">+</button>';
+        html += '</div>';
+      }
+
+      html += '</div></div></div>';
+    });
+
+    container.innerHTML = html;
+
+    // Bind save buttons for genre rows
+    container.querySelectorAll('.save-genre-row').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var gid = parseInt(btn.dataset.genreId);
+        var inputs = container.querySelectorAll('.genre-trans-input[data-genre-id="' + gid + '"]');
+        var promises = [];
+        inputs.forEach(function(inp) {
+          var val = inp.value.trim();
+          if (val) {
+            promises.push(apiPost('/web/admin/genre-translation', {
+              genre_id: gid, lang: inp.dataset.lang, name: val, csrf_token: csrf
+            }));
+          }
+        });
+        Promise.all(promises).then(function() {
+          btn.classList.remove('btn-outline-primary');
+          btn.classList.add('btn-success');
+          setTimeout(function() { loadGenres(); }, 500);
+        });
+      });
+    });
+
+    // Bind save buttons for section translations
+    container.querySelectorAll('.save-section-trans').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var sid = parseInt(btn.dataset.sectionId);
+        var lang = btn.dataset.lang;
+        var inp = container.querySelector('.section-trans-input[data-section-id="' + sid + '"][data-lang="' + lang + '"]');
+        if (!inp || !inp.value.trim()) return;
+        apiPost('/web/admin/genre-translation', {
+          section_id: sid, lang: lang, name: inp.value.trim(), csrf_token: csrf
+        }).then(function() {
+          btn.classList.remove('btn-outline-primary');
+          btn.classList.add('btn-success');
+          setTimeout(function() { loadGenres(); }, 500);
+        });
+      });
+    });
+
+    // Bind delete buttons for section translations
+    container.querySelectorAll('.del-section-trans').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var sid = parseInt(btn.dataset.sectionId);
+        var lang = btn.dataset.lang;
+        confirmDelete(labels.deleteTranslation + ' (' + lang + ')?', function() {
+          apiPost('/web/admin/genre-translation/delete', {
+            section_id: sid, lang: lang, csrf_token: csrf
+          }).then(function() { loadGenres(); });
+        });
+      });
+    });
+  }
+
+  function renderTransTable(type, id, translations, langs) {
+    var html = '<table class="table table-sm mb-2"><tbody>';
+    translations.forEach(function(t) {
+      html += '<tr>';
+      html += '<td style="width:60px"><strong>' + esc(t.lang) + '</strong></td>';
+      html += '<td><input type="text" class="form-control form-control-sm section-trans-input" '
+            + 'data-section-id="' + id + '" data-lang="' + esc(t.lang) + '" '
+            + 'value="' + escAttr(t.name) + '"></td>';
+      html += '<td style="width:80px">';
+      html += '<button class="btn btn-sm btn-outline-primary save-section-trans" data-section-id="' + id + '" data-lang="' + esc(t.lang) + '"><i class="bi bi-check-lg"></i></button> ';
+      html += '<button class="btn btn-sm btn-outline-danger del-section-trans" data-section-id="' + id + '" data-lang="' + esc(t.lang) + '"><i class="bi bi-trash"></i></button>';
+      html += '</td></tr>';
+    });
+    // Add new translation row
+    html += '<tr><td colspan="3">';
+    html += '<div class="input-group input-group-sm">';
+    html += '<input type="text" class="form-control" placeholder="' + labels.language + '" id="new-stl-' + id + '" style="max-width:80px">';
+    html += '<input type="text" class="form-control" placeholder="' + labels.name + '" id="new-stn-' + id + '">';
+    html += '<button class="btn btn-outline-success add-section-trans" data-section-id="' + id + '">+</button>';
+    html += '</div></td></tr>';
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // Delegate add-section-trans clicks
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.add-section-trans');
+    if (!btn) return;
+    var sid = parseInt(btn.dataset.sectionId);
+    var langInp = document.getElementById('new-stl-' + sid);
+    var nameInp = document.getElementById('new-stn-' + sid);
+    if (!langInp || !nameInp || !langInp.value.trim() || !nameInp.value.trim()) return;
+    apiPost('/web/admin/genre-translation', {
+      section_id: sid, lang: langInp.value.trim(), name: nameInp.value.trim(), csrf_token: csrf
+    }).then(function() {
+      loaded = false;
+      loadGenres();
+    });
+  });
+
+  // Delegate add-genre clicks
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.add-genre-btn');
+    if (!btn) return;
+    var sid = parseInt(btn.dataset.sectionId);
+    var codeInp = document.getElementById('new-gc-' + sid);
+    if (!codeInp || !codeInp.value.trim()) return;
+    apiPost('/web/admin/genre', {
+      code: codeInp.value.trim(), section_id: sid, csrf_token: csrf
+    }).then(function(data) {
+      if (data && data.error === 'duplicate') { alert(labels.duplicateCode); return; }
+      loadGenres();
+    });
+  });
+
+  // Delegate delete-genre clicks
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.del-genre-btn');
+    if (!btn) return;
+    var gid = parseInt(btn.dataset.genreId);
+    confirmDelete(labels.deleteGenre + '?', function() {
+      apiPost('/web/admin/genre/delete', {
+        genre_id: gid, csrf_token: csrf
+      }).then(function() { loadGenres(); });
+    });
+  });
+
+  // Delegate add-section clicks
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('#add-section-btn');
+    if (!btn) return;
+    var codeInp = document.getElementById('new-section-code');
+    if (!codeInp || !codeInp.value.trim()) return;
+    apiPost('/web/admin/section', {
+      code: codeInp.value.trim(), csrf_token: csrf
+    }).then(function(data) {
+      if (data && data.error === 'duplicate') { alert(labels.duplicateCode); return; }
+      loadGenres();
+    });
+  });
+
+  // Delegate delete-section clicks
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.del-section-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    var sid = parseInt(btn.dataset.sectionId);
+    var code = btn.dataset.sectionCode || '';
+    confirmDelete(labels.deleteSection + ' "' + code + '"?', function() {
+      apiPost('/web/admin/section/delete', {
+        section_id: sid, csrf_token: csrf
+      }).then(function() { loadGenres(); });
+    });
+  });
+
+  function apiPost(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) { return r.json(); });
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function escAttr(s) {
+    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+})();
 </script>
 {% endblock %}
