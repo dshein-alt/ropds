@@ -87,12 +87,6 @@
                   {% if item.show_zip %}
                   <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary">{{ item.format }}+zip</a>
                   {% endif %}
-                  {% if item.show_epub_convert %}
-                  <a href="/opds/convert/{{ item.id }}/epub/" class="btn btn-outline-success">epub</a>
-                  {% endif %}
-                  {% if item.show_mobi_convert %}
-                  <a href="/opds/convert/{{ item.id }}/mobi/" class="btn btn-outline-success">mobi</a>
-                  {% endif %}
                 </div>
 
                 {# Star/bookshelf toggle #}

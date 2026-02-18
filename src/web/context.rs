@@ -104,12 +104,6 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
         && (is_superuser == 1 || user_allow_upload == 1);
     ctx.insert("can_upload", &can_upload);
 
-    // Converter availability
-    let fb2toepub = !state.config.converter.fb2_to_epub.is_empty();
-    let fb2tomobi = !state.config.converter.fb2_to_mobi.is_empty();
-    ctx.insert("fb2toepub", &fb2toepub);
-    ctx.insert("fb2tomobi", &fb2tomobi);
-
     // Stats from counters table
     let counters_list = counters::get_all(&state.db).await.unwrap_or_default();
     let stats = Stats {

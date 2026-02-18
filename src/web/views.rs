@@ -25,8 +25,6 @@ pub struct BookView {
     pub cover: i32,
     pub cat_type: i32,
     pub show_zip: bool,
-    pub show_epub_convert: bool,
-    pub show_mobi_convert: bool,
     pub doubles: i64,
     pub authors: Vec<Author>,
     pub genres: Vec<Genre>,
@@ -145,7 +143,6 @@ async fn enrich_book(
     };
 
     let is_nozip = book.format == "epub" || book.format == "mobi";
-    let is_fb2 = book.format == "fb2";
 
     BookView {
         id: book.id,
@@ -159,8 +156,6 @@ async fn enrich_book(
         cover: book.cover,
         cat_type: book.cat_type,
         show_zip: !is_nozip,
-        show_epub_convert: is_fb2 && !state.config.converter.fb2_to_epub.is_empty(),
-        show_mobi_convert: is_fb2 && !state.config.converter.fb2_to_mobi.is_empty(),
         doubles,
         authors: book_authors,
         genres: book_genres,

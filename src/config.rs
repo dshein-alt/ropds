@@ -9,8 +9,6 @@ pub struct Config {
     pub opds: OpdsConfig,
     pub scanner: ScannerConfig,
     #[serde(default)]
-    pub converter: ConverterConfig,
-    #[serde(default)]
     pub web: WebConfig,
     #[serde(default)]
     pub upload: UploadConfig,
@@ -86,16 +84,6 @@ pub struct ScannerConfig {
     pub schedule_day_of_week: Vec<u32>,
     #[serde(default = "default_true")]
     pub delete_logical: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct ConverterConfig {
-    #[serde(default)]
-    pub fb2_to_epub: String,
-    #[serde(default)]
-    pub fb2_to_mobi: String,
-    #[serde(default = "default_temp_dir")]
-    pub temp_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -217,9 +205,6 @@ fn default_session_ttl_hours() -> u64 {
     24
 }
 
-fn default_temp_dir() -> PathBuf {
-    PathBuf::from("/tmp")
-}
 
 fn default_max_upload_size_mb() -> u64 {
     100
@@ -291,11 +276,6 @@ schedule_hours = [6]
 schedule_day_of_week = [1, 4]
 delete_logical = false
 
-[converter]
-fb2_to_epub = "/usr/bin/fb2epub"
-fb2_to_mobi = "/usr/bin/fb2mobi"
-temp_dir = "/var/tmp"
-
 [web]
 language = "ru"
 theme = "dark"
@@ -310,7 +290,6 @@ theme = "dark"
         assert_eq!(config.opds.max_items, 50);
         assert!(!config.opds.auth_required);
         assert_eq!(config.scanner.schedule_hours, vec![6]);
-        assert_eq!(config.converter.fb2_to_epub, "/usr/bin/fb2epub");
         assert_eq!(config.web.language, "ru");
         assert_eq!(config.web.theme, "dark");
     }

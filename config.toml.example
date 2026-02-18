@@ -32,11 +32,6 @@ schedule_hours = [0, 12]
 schedule_day_of_week = []
 delete_logical = false
 
-[converter]
-fb2_to_epub = ""
-fb2_to_mobi = ""
-temp_dir = "/tmp"
-
 [web]
 language = "en"
 theme = "light"
