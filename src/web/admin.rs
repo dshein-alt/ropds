@@ -612,12 +612,14 @@ pub async fn update_book_title(
             .into_response();
     }
 
-    let search_title = title.to_lowercase();
+    let search_title = title.to_uppercase();
+    let lang_code = crate::scanner::parsers::detect_lang_code(&title);
     match crate::db::queries::books::update_title(
         &state.db,
         payload.book_id,
         &title,
         &search_title,
+        lang_code,
     )
     .await
     {

@@ -518,10 +518,12 @@ pub async fn update_title(
     book_id: i64,
     title: &str,
     search_title: &str,
+    lang_code: i32,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE books SET title = ?, search_title = ? WHERE id = ?")
+    sqlx::query("UPDATE books SET title = ?, search_title = ?, lang_code = ? WHERE id = ?")
         .bind(title)
         .bind(search_title)
+        .bind(lang_code)
         .bind(book_id)
         .execute(pool)
         .await?;
