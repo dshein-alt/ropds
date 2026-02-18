@@ -100,12 +100,12 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(middleware::from_fn_with_state(
             state,
             auth::basic_auth_layer,
-        ));
+        ))
+        .layer(middleware::from_fn(opds_logging));
 
     // Public routes (covers don't need auth, used by web UI img tags)
     Router::new()
         .route("/cover/{book_id}/", get(covers::cover))
         .route("/thumb/{book_id}/", get(covers::thumbnail))
         .merge(protected)
-        .layer(middleware::from_fn(opds_logging))
 }

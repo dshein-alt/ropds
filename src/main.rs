@@ -19,7 +19,6 @@ use axum::response::Json;
 use axum::routing::get;
 use clap::Parser;
 use tower_http::services::ServeDir;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
@@ -63,7 +62,6 @@ fn build_router(state: AppState) -> Router {
         .nest("/opds", opds::router(state.clone()))
         .nest("/web", web::router(state.clone()))
         .nest_service("/static", ServeDir::new("static"))
-        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
