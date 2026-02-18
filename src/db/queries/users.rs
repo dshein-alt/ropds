@@ -146,14 +146,6 @@ pub async fn get_username(pool: &DbPool, user_id: i64) -> Result<String, sqlx::E
     Ok(row.map(|(v,)| v).unwrap_or_default())
 }
 
-pub async fn get_display_name(pool: &DbPool, user_id: i64) -> Result<String, sqlx::Error> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT display_name FROM users WHERE id = ?")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(row.map(|(v,)| v).unwrap_or_default())
-}
-
 /// Check if user must change password before accessing the app.
 pub async fn password_change_required(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
     let row: Option<(i32,)> =
@@ -306,12 +298,9 @@ mod tests {
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(user.display_name, "Jane Doe");
 
-        let name = get_display_name(&pool, id).await.unwrap();
-        assert_eq!(name, "Jane Doe");
-
         update_display_name(&pool, id, "J. Doe").await.unwrap();
-        let name = get_display_name(&pool, id).await.unwrap();
-        assert_eq!(name, "J. Doe");
+        let user = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(user.display_name, "J. Doe");
     }
 
     #[tokio::test]

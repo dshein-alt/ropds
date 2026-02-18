@@ -359,13 +359,6 @@ pub async fn physical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Err
     Ok(result.rows_affected())
 }
 
-pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM books WHERE avail > 0")
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
-}
-
 /// Random available book (for footer).
 pub async fn get_random(pool: &DbPool) -> Result<Option<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>("SELECT * FROM books WHERE avail > 0 ORDER BY ABS(RANDOM()) LIMIT 1")

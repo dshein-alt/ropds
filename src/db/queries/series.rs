@@ -81,13 +81,6 @@ pub async fn insert(
     Ok(row.0)
 }
 
-pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM series")
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
-}
-
 pub async fn link_book(
     pool: &DbPool,
     book_id: i64,

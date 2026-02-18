@@ -37,13 +37,6 @@ pub async fn get_all(pool: &DbPool) -> Result<Vec<Genre>, sqlx::Error> {
         .await
 }
 
-pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM genres")
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
-}
-
 pub async fn link_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)")
         .bind(book_id)
@@ -71,15 +64,6 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Genre>, sql
     .bind(book_id)
     .fetch_all(pool)
     .await
-}
-
-pub async fn unlink_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM book_genres WHERE book_id = ? AND genre_id = ?")
-        .bind(book_id)
-        .bind(genre_id)
-        .execute(pool)
-        .await?;
-    Ok(())
 }
 
 /// Replace all genres for a book: delete existing links, insert new ones.

@@ -81,24 +81,8 @@ pub async fn insert(
     Ok(row.0)
 }
 
-pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM authors")
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
-}
-
 pub async fn link_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT OR IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)")
-        .bind(book_id)
-        .bind(author_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn unlink_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM book_authors WHERE book_id = ? AND author_id = ?")
         .bind(book_id)
         .bind(author_id)
         .execute(pool)

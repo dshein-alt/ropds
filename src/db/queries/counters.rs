@@ -2,13 +2,6 @@ use crate::db::DbPool;
 
 use crate::db::models::Counter;
 
-pub async fn get(pool: &DbPool, name: &str) -> Result<Option<Counter>, sqlx::Error> {
-    sqlx::query_as::<_, Counter>("SELECT * FROM counters WHERE name = ?")
-        .bind(name)
-        .fetch_optional(pool)
-        .await
-}
-
 pub async fn get_all(pool: &DbPool) -> Result<Vec<Counter>, sqlx::Error> {
     sqlx::query_as::<_, Counter>("SELECT * FROM counters ORDER BY name")
         .fetch_all(pool)
