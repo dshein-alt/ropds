@@ -142,7 +142,7 @@ struct ScanContext {
 
 async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, ScanError> {
     let root = &config.library.root_path;
-    let covers_dir = &config.opds.covers_dir;
+    let covers_dir = &config.library.covers_path;
     let extensions: HashSet<String> = config
         .library
         .book_extensions

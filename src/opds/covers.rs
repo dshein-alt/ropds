@@ -34,7 +34,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         return image_response(NOCOVER_SVG, "image/svg+xml");
     }
 
-    let covers_dir = state.config.opds.covers_dir.clone();
+    let covers_dir = state.config.library.covers_path.clone();
     let root = state.config.library.root_path.clone();
     let path = book.path.clone();
     let filename = book.filename.clone();

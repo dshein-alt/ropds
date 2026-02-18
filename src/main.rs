@@ -122,12 +122,25 @@ async fn main() {
     tracing::info!("Database initialized: {}", config.database.url);
 
     // Ensure covers directory exists
-    if let Err(e) = std::fs::create_dir_all(&config.opds.covers_dir) {
+    if let Err(e) = std::fs::create_dir_all(&config.library.covers_path) {
         tracing::error!(
             "Failed to create covers directory {:?}: {e}",
-            config.opds.covers_dir
+            config.library.covers_path
         );
         std::process::exit(1);
+    }
+    let covers_test = config.library.covers_path.join(".ropds_write_test");
+    match std::fs::File::create(&covers_test) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&covers_test);
+        }
+        Err(e) => {
+            tracing::error!(
+                "Covers path '{}' is not writable: {e}",
+                config.library.covers_path.display()
+            );
+            std::process::exit(1);
+        }
     }
 
     // Validate upload configuration

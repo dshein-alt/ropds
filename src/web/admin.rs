@@ -116,6 +116,10 @@ pub async fn admin_page(
     ctx.insert("cfg_scan_zip", &state.config.library.scan_zip);
     ctx.insert("cfg_zip_codepage", &state.config.library.zip_codepage);
     ctx.insert("cfg_inpx_enable", &state.config.library.inpx_enable);
+    ctx.insert(
+        "cfg_covers_path",
+        &state.config.library.covers_path.display().to_string(),
+    );
 
     ctx.insert("cfg_opds_title", &state.config.opds.title);
     ctx.insert("cfg_opds_subtitle", &state.config.opds.subtitle);
@@ -125,10 +129,6 @@ pub async fn admin_page(
     ctx.insert("cfg_show_covers", &state.config.opds.show_covers);
     ctx.insert("cfg_alphabet_menu", &state.config.opds.alphabet_menu);
     ctx.insert("cfg_hide_doubles", &state.config.opds.hide_doubles);
-    ctx.insert(
-        "cfg_covers_dir",
-        &state.config.opds.covers_dir.display().to_string(),
-    );
 
     // Upload config
     ctx.insert("cfg_upload_allow_upload", &state.config.upload.allow_upload);

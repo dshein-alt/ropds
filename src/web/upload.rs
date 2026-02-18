@@ -733,7 +733,7 @@ pub async fn publish(
         upload_state.size,
         i32::from(crate::db::models::CatType::Normal),
         &meta,
-        &state.config.opds.covers_dir,
+        &state.config.library.covers_path,
     )
     .await
     {

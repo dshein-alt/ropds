@@ -33,6 +33,8 @@ pub struct ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct LibraryConfig {
     pub root_path: PathBuf,
+    #[serde(default = "default_covers_path")]
+    pub covers_path: PathBuf,
     #[serde(default = "default_book_extensions")]
     pub book_extensions: Vec<String>,
     #[serde(default = "default_true")]
@@ -67,8 +69,6 @@ pub struct OpdsConfig {
     pub alphabet_menu: bool,
     #[serde(default)]
     pub hide_doubles: bool,
-    #[serde(default = "default_covers_dir")]
-    pub covers_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -201,7 +201,7 @@ fn default_split_items() -> u32 {
     300
 }
 
-fn default_covers_dir() -> PathBuf {
+fn default_covers_path() -> PathBuf {
     PathBuf::from("covers")
 }
 
@@ -250,6 +250,7 @@ root_path = "/books"
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "0.0.0.0");
         assert_eq!(config.server.port, 8081);
+        assert_eq!(config.library.covers_path, PathBuf::from("covers"));
         assert_eq!(config.library.root_path, PathBuf::from("/books"));
         assert_eq!(config.database.url, "sqlite://sopds.db");
         assert_eq!(config.opds.max_items, 30);
@@ -267,6 +268,7 @@ log_level = "debug"
 
 [library]
 root_path = "/media/books"
+covers_path = "/tmp/covers"
 book_extensions = ["fb2", "epub"]
 scan_zip = false
 zip_codepage = "utf-8"
@@ -302,6 +304,7 @@ theme = "dark"
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 9090);
+        assert_eq!(config.library.covers_path, PathBuf::from("/tmp/covers"));
         assert_eq!(config.library.root_path, PathBuf::from("/media/books"));
         assert!(!config.library.scan_zip);
         assert!(config.library.inpx_enable);
