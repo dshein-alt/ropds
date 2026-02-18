@@ -1,7 +1,6 @@
 mod config;
 mod db;
 mod djvu;
-mod error;
 mod opds;
 mod password;
 mod pdf;
