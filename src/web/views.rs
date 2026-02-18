@@ -735,20 +735,21 @@ pub async fn web_download(
         let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
     }
 
-    let filename = &book.filename;
+    let download_name =
+        crate::opds::download::title_to_filename(&book.title, &book.format, &book.filename);
     let mime = crate::opds::xml::mime_for_format(&book.format);
 
     if zip_flag == 1 && !crate::opds::xml::is_nozip_format(&book.format) {
-        match crate::opds::download::wrap_in_zip(filename, &data) {
+        match crate::opds::download::wrap_in_zip(&book.filename, &data) {
             Ok(zipped) => {
-                let zip_name = format!("{filename}.zip");
+                let zip_name = format!("{download_name}.zip");
                 let zip_mime = crate::opds::xml::mime_for_zip(&book.format);
                 crate::opds::download::file_response(&zipped, &zip_name, &zip_mime)
             }
             Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ZIP error").into_response(),
         }
     } else {
-        crate::opds::download::file_response(&data, filename, mime)
+        crate::opds::download::file_response(&data, &download_name, mime)
     }
 }
 
@@ -917,18 +918,24 @@ pub async fn bookshelf_page(
         None => return Err(StatusCode::UNAUTHORIZED),
     };
 
-    let sort_key = if params.sort.is_empty() { "date" } else { &params.sort };
-    let dir_key = if params.dir.is_empty() { "desc" } else { &params.dir };
+    let sort_key = if params.sort.is_empty() {
+        "date"
+    } else {
+        &params.sort
+    };
+    let dir_key = if params.dir.is_empty() {
+        "desc"
+    } else {
+        &params.dir
+    };
     let (sort_col, ascending) = parse_bookshelf_sort(sort_key, dir_key);
 
     let total = bookshelf::count_by_user(&state.db, user_id)
         .await
         .unwrap_or(0);
 
-    let book_views = fetch_bookshelf_views(
-        &state, user_id, &sort_col, ascending, BOOKSHELF_BATCH, 0,
-    )
-    .await;
+    let book_views =
+        fetch_bookshelf_views(&state, user_id, &sort_col, ascending, BOOKSHELF_BATCH, 0).await;
 
     let has_more = (book_views.len() as i64) < total;
 
@@ -968,8 +975,16 @@ pub async fn bookshelf_cards(
         None => return Err(StatusCode::UNAUTHORIZED),
     };
 
-    let sort_key = if params.sort.is_empty() { "date" } else { &params.sort };
-    let dir_key = if params.dir.is_empty() { "desc" } else { &params.dir };
+    let sort_key = if params.sort.is_empty() {
+        "date"
+    } else {
+        &params.sort
+    };
+    let dir_key = if params.dir.is_empty() {
+        "desc"
+    } else {
+        &params.dir
+    };
     let (sort_col, ascending) = parse_bookshelf_sort(sort_key, dir_key);
 
     let total = bookshelf::count_by_user(&state.db, user_id)

@@ -40,21 +40,21 @@ pub async fn download(
         let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
     }
 
-    let filename = &book.filename;
+    let download_name = title_to_filename(&book.title, &book.format, &book.filename);
     let mime = xml::mime_for_format(&book.format);
 
     if zip_flag == 1 && !xml::is_nozip_format(&book.format) {
-        // Wrap in ZIP
-        match wrap_in_zip(filename, &data) {
+        // Wrap in ZIP — use original filename inside the archive
+        match wrap_in_zip(&book.filename, &data) {
             Ok(zipped) => {
-                let zip_name = format!("{filename}.zip");
+                let zip_name = format!("{download_name}.zip");
                 let zip_mime = xml::mime_for_zip(&book.format);
                 file_response(&zipped, &zip_name, &zip_mime)
             }
             Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ZIP error").into_response(),
         }
     } else {
-        file_response(&data, filename, mime)
+        file_response(&data, &download_name, mime)
     }
 }
 
@@ -105,6 +105,51 @@ pub fn wrap_in_zip(filename: &str, data: &[u8]) -> Result<Vec<u8>, zip::result::
     zip_writer.write_all(data)?;
     let cursor = zip_writer.finish()?;
     Ok(cursor.into_inner())
+}
+
+/// Build a safe download filename from the book title and format extension.
+///
+/// - Collapses consecutive whitespace into a single `_`
+/// - Replaces non-alphanumeric, non-Unicode-letter characters with `_`
+/// - Collapses consecutive `_` into one
+/// - Trims leading/trailing `_`
+/// - Falls back to the original filename if the result is empty
+pub fn title_to_filename(title: &str, format: &str, original_filename: &str) -> String {
+    let safe: String = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' || c == '\'' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    // Collapse consecutive underscores and trim
+    let mut result = String::new();
+    let mut prev_underscore = true; // trim leading
+    for c in safe.chars() {
+        if c == '_' {
+            if !prev_underscore {
+                result.push('_');
+            }
+            prev_underscore = true;
+        } else {
+            result.push(c);
+            prev_underscore = false;
+        }
+    }
+    // Trim trailing underscore
+    while result.ends_with('_') {
+        result.pop();
+    }
+
+    if result.is_empty() {
+        original_filename.to_string()
+    } else {
+        format!("{result}.{format}")
+    }
 }
 
 /// Build an HTTP response for a file download.
