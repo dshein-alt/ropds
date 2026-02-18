@@ -27,6 +27,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/book-genres", post(admin::update_book_genres))
         .route("/book-authors", post(admin::update_book_authors))
         .route("/book-title", post(admin::update_book_title))
+        .route("/scan", post(admin::scan_now))
+        .route("/scan-status", get(admin::scan_status))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,

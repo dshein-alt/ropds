@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
@@ -18,8 +19,37 @@ use parsers::{BookMeta, detect_lang_code, normalise_author_name};
 /// Global scan lock — prevents overlapping scans.
 static SCAN_LOCK: AtomicBool = AtomicBool::new(false);
 
+/// Last completed scan result (taken once by the status endpoint).
+static LAST_SCAN_RESULT: Mutex<Option<ScanResult>> = Mutex::new(None);
+
+/// Returns `true` if a scan is currently in progress.
+pub fn is_scanning() -> bool {
+    SCAN_LOCK.load(Ordering::SeqCst)
+}
+
+/// Takes the last scan result, leaving `None` in its place.
+pub fn take_last_scan_result() -> Option<ScanResult> {
+    LAST_SCAN_RESULT.lock().ok().and_then(|mut r| r.take())
+}
+
+pub fn store_scan_result(result: ScanResult) {
+    if let Ok(mut r) = LAST_SCAN_RESULT.lock() {
+        *r = Some(result);
+    }
+}
+
+/// Outcome of a completed scan (stats or error message).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ScanResult {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<ScanStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Statistics collected during a scan run.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct ScanStats {
     pub books_added: u64,
     pub books_skipped: u64,

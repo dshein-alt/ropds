@@ -339,6 +339,21 @@
           <strong>{{ t.admin.deletion_physical }}</strong> — {{ t.admin.deletion_physical_desc }}
         </div>
         {% endif %}
+
+        <hr>
+        <form method="post" action="/web/admin/scan" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% if is_scanning %}
+          <button id="scanBtn" type="submit" class="btn btn-secondary" disabled>
+            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+            {{ t.admin.scanning }}
+          </button>
+          {% else %}
+          <button id="scanBtn" type="submit" class="btn btn-primary">
+            <i class="bi bi-play-circle me-1"></i>{{ t.admin.scan_now }}
+          </button>
+          {% endif %}
+        </form>
       </div>
     </div>
   </div>
@@ -351,14 +366,70 @@ window._flashMessages = {
   user_created: "{{ t.admin.success_user_created }}",
   password_changed: "{{ t.admin.success_password_changed }}",
   user_deleted: "{{ t.admin.success_user_deleted }}",
-  upload_toggled: "{{ t.admin.success_upload_toggled }}"
+  upload_toggled: "{{ t.admin.success_upload_toggled }}",
+  scan_started: "{{ t.admin.success_scan_started }}"
 };
 window._flashErrors = {
   username_exists: "{{ t.admin.error_username_exists }}",
   username_empty: "{{ t.admin.error_username_empty }}",
   password_short: "{{ t.admin.error_password_short }}",
   cannot_delete_self: "{{ t.admin.error_cannot_delete_self }}",
-  db_error: "{{ t.admin.error_db }}"
+  db_error: "{{ t.admin.error_db }}",
+  scan_already_running: "{{ t.admin.error_scan_already_running }}"
 };
+
+// Capture params NOW (before sopds.js replaceState strips them on DOMContentLoaded)
+var _scanJustStarted = new URLSearchParams(window.location.search).get('msg') === 'scan_started';
+var _serverSaysScanning = {{ is_scanning }};
+
+// Run after Bootstrap JS is loaded
+document.addEventListener('DOMContentLoaded', function() {
+  if (!_scanJustStarted && !_serverSaysScanning) return;
+
+  var accordion = document.getElementById('collapseScanner');
+  if (accordion && !accordion.classList.contains('show')) {
+    new bootstrap.Collapse(accordion, { toggle: true });
+  }
+
+  var btn = document.getElementById('scanBtn');
+  var flash = document.getElementById('flash-msg');
+  var flashText = document.getElementById('flash-text');
+  var labels = {
+    complete: "{{ t.admin.scan_complete }}",
+    added: "{{ t.admin.scan_added }}",
+    deleted: "{{ t.admin.scan_deleted }}",
+    errors: "{{ t.admin.scan_errors }}",
+    failed: "{{ t.admin.scan_failed }}"
+  };
+
+  btn.disabled = true;
+  btn.className = 'btn btn-secondary';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t.admin.scanning }}';
+
+  var poll = setInterval(function() {
+    fetch('/web/admin/scan-status').then(function(r) { return r.json(); }).then(function(data) {
+      if (!data.scanning) {
+        clearInterval(poll);
+        btn.disabled = false;
+        btn.className = 'btn btn-primary';
+        btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>{{ t.admin.scan_now }}';
+        if (data.result && flash && flashText) {
+          flash.classList.remove('d-none', 'alert-success', 'alert-danger');
+          if (data.result.ok && data.result.stats) {
+            var s = data.result.stats;
+            flash.classList.add('alert-success');
+            flashText.innerHTML = '<strong>' + labels.complete + ':</strong> '
+              + s.books_added + ' ' + labels.added + ', '
+              + s.books_deleted + ' ' + labels.deleted + ', '
+              + s.errors + ' ' + labels.errors;
+          } else {
+            flash.classList.add('alert-danger');
+            flashText.textContent = labels.failed + ': ' + (data.result.error || '');
+          }
+        }
+      }
+    }).catch(function() { clearInterval(poll); });
+  }, 3000);
+});
 </script>
 {% endblock %}
