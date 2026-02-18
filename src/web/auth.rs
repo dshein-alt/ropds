@@ -201,7 +201,7 @@ pub async fn login_submit(
     let redirect_to = form
         .next
         .filter(|n| !n.is_empty() && n.starts_with('/'))
-        .unwrap_or_else(|| "/web".to_string());
+        .unwrap_or_else(|| "/web/bookshelf".to_string());
 
     (jar.add(cookie), Redirect::to(&redirect_to)).into_response()
 }

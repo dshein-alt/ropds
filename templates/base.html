@@ -26,6 +26,13 @@
 
       <div class="collapse navbar-collapse flex-lg-wrap" id="navMain">
         <ul class="navbar-nav me-auto flex-nowrap">
+          {% if is_authenticated %}
+          <li class="nav-item">
+            <a class="nav-link{% if active_page == 'bookshelf' %} active{% endif %}" href="/web/bookshelf">
+              <i class="bi bi-star me-1"></i>{{ t.nav.bookshelf }}
+            </a>
+          </li>
+          {% endif %}
           <li class="nav-item">
             <a class="nav-link{% if active_page == 'catalogs' %} active{% endif %}" href="/web/catalogs">
               <i class="bi bi-folder2-open me-1"></i>{{ t.nav.catalogs }}
@@ -95,13 +102,6 @@
               <i class="bi bi-tags me-1"></i>{{ t.nav.genres }}
             </a>
           </li>
-          {% if is_authenticated %}
-          <li class="nav-item">
-            <a class="nav-link{% if active_page == 'bookshelf' %} active{% endif %}" href="/web/bookshelf">
-              <i class="bi bi-star me-1"></i>{{ t.nav.bookshelf }}
-            </a>
-          </li>
-          {% endif %}
           {% if can_upload %}
           <li class="nav-item">
             <a class="nav-link{% if active_page == 'upload' %} active{% endif %}" href="/web/upload">
