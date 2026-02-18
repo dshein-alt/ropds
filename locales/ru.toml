@@ -36,6 +36,11 @@ edit_authors = "Редактировать авторов"
 genres_selected = "жанров выбрано"
 add_author = "Добавить автора"
 author_name = "Имя автора"
+edit_title = "Редактировать название"
+title_placeholder = "Название книги"
+error_title_empty = "Название не может быть пустым."
+error_title_too_long = "Название не должно превышать 256 символов."
+error_title_invalid = "Название содержит недопустимые символы."
 
 [footer]
 statistics = "Статистика"

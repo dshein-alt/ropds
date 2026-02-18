@@ -36,6 +36,11 @@ edit_authors = "Edit Authors"
 genres_selected = "genres selected"
 add_author = "Add Author"
 author_name = "Author name"
+edit_title = "Edit Title"
+title_placeholder = "Book title"
+error_title_empty = "Title cannot be empty."
+error_title_too_long = "Title must be 256 characters or less."
+error_title_invalid = "Title contains invalid characters."
 
 [footer]
 statistics = "Statistics"
