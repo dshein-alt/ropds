@@ -769,12 +769,21 @@ pub struct BookshelfToggleForm {
 pub async fn bookshelf_toggle(
     State(state): State<AppState>,
     jar: CookieJar,
+    headers: axum::http::HeaderMap,
     axum::Form(form): axum::Form<BookshelfToggleForm>,
 ) -> Response {
     use crate::web::context::validate_csrf;
 
+    let is_ajax = headers
+        .get("X-Requested-With")
+        .and_then(|v| v.to_str().ok())
+        == Some("XMLHttpRequest");
+
     let secret = state.config.server.session_secret.as_bytes();
     if !validate_csrf(&jar, secret, &form.csrf_token) {
+        if is_ajax {
+            return axum::Json(serde_json::json!({"ok": false})).into_response();
+        }
         return (StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
     }
 
@@ -783,7 +792,12 @@ pub async fn bookshelf_toggle(
         .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
     {
         Some(uid) => uid,
-        None => return Redirect::to("/web/login").into_response(),
+        None => {
+            if is_ajax {
+                return axum::Json(serde_json::json!({"ok": false})).into_response();
+            }
+            return Redirect::to("/web/login").into_response();
+        }
     };
 
     let on_shelf = bookshelf::is_on_shelf(&state.db, user_id, form.book_id)
@@ -793,6 +807,10 @@ pub async fn bookshelf_toggle(
         let _ = bookshelf::delete_one(&state.db, user_id, form.book_id).await;
     } else {
         let _ = bookshelf::upsert(&state.db, user_id, form.book_id).await;
+    }
+
+    if is_ajax {
+        return axum::Json(serde_json::json!({"ok": true, "on_shelf": !on_shelf})).into_response();
     }
 
     let redirect = form

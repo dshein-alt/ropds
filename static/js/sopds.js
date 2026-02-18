@@ -247,6 +247,64 @@ function convertUtcTimes(root) {
   });
 })();
 
+// Bookshelf star toggle via AJAX (no page reload)
+(function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest(".bookshelf-toggle-btn");
+      if (!btn) return;
+      e.preventDefault();
+
+      var form = btn.closest("form");
+      if (!form) return;
+
+      var body = new URLSearchParams(new FormData(form)).toString();
+      btn.disabled = true;
+
+      fetch(form.action, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: body,
+        credentials: "same-origin"
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!data.ok) return;
+
+          // On the bookshelf page, remove the card
+          var isBookshelfPage = !!document.getElementById("bookshelf-grid");
+          if (isBookshelfPage && !data.on_shelf) {
+            var card = btn.closest(".col");
+            if (card) {
+              card.style.transition = "opacity 0.3s";
+              card.style.opacity = "0";
+              setTimeout(function () { card.remove(); }, 300);
+            }
+            return;
+          }
+
+          // On other pages, toggle the star appearance
+          var icon = btn.querySelector("i");
+          if (data.on_shelf) {
+            btn.classList.remove("btn-outline-secondary");
+            btn.classList.add("btn-warning");
+            if (icon) { icon.classList.remove("bi-star"); icon.classList.add("bi-star-fill"); }
+          } else {
+            btn.classList.remove("btn-warning");
+            btn.classList.add("btn-outline-secondary");
+            if (icon) { icon.classList.remove("bi-star-fill"); icon.classList.add("bi-star"); }
+          }
+        })
+        .finally(function () {
+          btn.disabled = false;
+        });
+    });
+  });
+})();
+
 // Bookshelf infinite scroll
 (function () {
   document.addEventListener("DOMContentLoaded", function () {

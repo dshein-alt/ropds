@@ -14,7 +14,7 @@
         {% endif %}
 
         <div class="flex-grow-1 min-width-0">
-          <div class="fw-semibold small text-truncate" title="{{ item.title }}">{{ item.title }}</div>
+          <div class="fw-semibold small text-truncate" title="{{ item.title }}"><a href="/web/search/books?type=i&q={{ item.id }}" class="text-decoration-none">{{ item.title }}</a></div>
 
           {% if item.authors | length > 0 %}
           <div class="small text-body-secondary text-truncate">
@@ -43,7 +43,7 @@
               <input type="hidden" name="book_id" value="{{ item.id }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="redirect" value="/web/bookshelf">
-              <button type="submit" class="btn btn-sm btn-warning py-0 px-1" title="{{ t.bookshelf.remove }}">
+              <button type="submit" class="btn btn-sm btn-warning bookshelf-toggle-btn py-0 px-1" title="{{ t.bookshelf.remove }}">
                 <i class="bi bi-star-fill"></i>
               </button>
             </form>

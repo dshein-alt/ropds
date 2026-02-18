@@ -93,7 +93,7 @@
                   <input type="hidden" name="book_id" value="{{ item.id }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <input type="hidden" name="redirect" value="{{ current_path | default(value='/web') }}">
-                  <button type="submit" class="btn btn-sm {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}">
+                  <button type="submit" class="btn btn-sm bookshelf-toggle-btn {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}">
                     <i class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
                   </button>
                 </form>
