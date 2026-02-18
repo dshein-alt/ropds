@@ -565,6 +565,78 @@ pub async fn update_book_authors(
     }
 }
 
+// ── Book title management (admin-only) ──────────────────────────────
+
+#[derive(Deserialize)]
+pub struct UpdateBookTitlePayload {
+    pub book_id: i64,
+    pub title: String,
+    #[serde(default)]
+    pub csrf_token: String,
+}
+
+pub async fn update_book_title(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Json(payload): axum::Json<UpdateBookTitlePayload>,
+) -> Response {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &payload.csrf_token) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"ok": false, "error": "csrf"})),
+        )
+            .into_response();
+    }
+
+    // Validate title
+    let title = match validate_book_title(&payload.title) {
+        Ok(t) => t,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"ok": false, "error": err})),
+            )
+                .into_response();
+        }
+    };
+
+    // Check book exists
+    if let Ok(None) | Err(_) =
+        crate::db::queries::books::get_by_id(&state.db, payload.book_id).await
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({"ok": false})),
+        )
+            .into_response();
+    }
+
+    let search_title = title.to_lowercase();
+    match crate::db::queries::books::update_title(
+        &state.db,
+        payload.book_id,
+        &title,
+        &search_title,
+    )
+    .await
+    {
+        Ok(()) => axum::Json(serde_json::json!({
+            "ok": true,
+            "title": title,
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!("Failed to update title for book {}: {e}", payload.book_id);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"ok": false})),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// POST /web/change-password — submit forced password change.
 pub async fn change_password_submit(
     State(state): State<AppState>,

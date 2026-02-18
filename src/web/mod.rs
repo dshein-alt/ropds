@@ -26,6 +26,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/users/{id}/upload", post(admin::toggle_upload))
         .route("/book-genres", post(admin::update_book_genres))
         .route("/book-authors", post(admin::update_book_authors))
+        .route("/book-title", post(admin::update_book_title))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,
