@@ -73,6 +73,35 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Genre>, sql
     .await
 }
 
+pub async fn unlink_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM book_genres WHERE book_id = ? AND genre_id = ?")
+        .bind(book_id)
+        .bind(genre_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Replace all genres for a book: delete existing links, insert new ones.
+pub async fn set_book_genres(
+    pool: &DbPool,
+    book_id: i64,
+    genre_ids: &[i64],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM book_genres WHERE book_id = ?")
+        .bind(book_id)
+        .execute(pool)
+        .await?;
+    for &genre_id in genre_ids {
+        sqlx::query("INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)")
+            .bind(book_id)
+            .bind(genre_id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Get genre sections with book counts.
 pub async fn get_sections_with_counts(pool: &DbPool) -> Result<Vec<(String, i64)>, sqlx::Error> {
     let rows: Vec<(String, i64)> = sqlx::query_as(

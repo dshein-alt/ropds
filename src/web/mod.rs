@@ -24,6 +24,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/users/{id}/password", post(admin::change_password))
         .route("/users/{id}/delete", post(admin::delete_user))
         .route("/users/{id}/upload", post(admin::toggle_upload))
+        .route("/book-genres", post(admin::update_book_genres))
+        .route("/book-authors", post(admin::update_book_authors))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,
@@ -57,6 +59,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/bookshelf/cards", get(views::bookshelf_cards))
         .route("/bookshelf/toggle", post(views::bookshelf_toggle))
         .route("/bookshelf/clear", post(views::bookshelf_clear))
+        .route("/api/genres", get(views::genres_json))
         .route("/upload", get(upload::upload_page))
         .route(
             "/upload/file",

@@ -94,6 +94,67 @@ pub async fn link_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<()
     Ok(())
 }
 
+pub async fn unlink_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM book_authors WHERE book_id = ? AND author_id = ?")
+        .bind(book_id)
+        .bind(author_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Replace all authors for a book: delete existing links, insert new ones,
+/// then remove any orphaned authors (no remaining book links).
+pub async fn set_book_authors(
+    pool: &DbPool,
+    book_id: i64,
+    author_ids: &[i64],
+) -> Result<(), sqlx::Error> {
+    // Remember old author IDs before unlinking
+    let old_ids: Vec<(i64,)> =
+        sqlx::query_as("SELECT author_id FROM book_authors WHERE book_id = ?")
+            .bind(book_id)
+            .fetch_all(pool)
+            .await?;
+
+    sqlx::query("DELETE FROM book_authors WHERE book_id = ?")
+        .bind(book_id)
+        .execute(pool)
+        .await?;
+    for &author_id in author_ids {
+        sqlx::query("INSERT OR IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)")
+            .bind(book_id)
+            .bind(author_id)
+            .execute(pool)
+            .await?;
+    }
+
+    // Clean up orphaned authors that no longer have any books
+    for (old_id,) in old_ids {
+        if !author_ids.contains(&old_id) {
+            delete_if_orphaned(pool, old_id).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Delete an author if they have no remaining book links.
+pub async fn delete_if_orphaned(pool: &DbPool, author_id: i64) -> Result<(), sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM book_authors WHERE author_id = ?",
+    )
+    .bind(author_id)
+    .fetch_one(pool)
+    .await?;
+    if row.0 == 0 {
+        sqlx::query("DELETE FROM authors WHERE id = ?")
+            .bind(author_id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
 pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Author>, sqlx::Error> {
     sqlx::query_as::<_, Author>(
         "SELECT a.* FROM authors a \

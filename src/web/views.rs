@@ -421,8 +421,8 @@ pub async fn search_books(
             .filter(|s| !s.trim().is_empty())
             .unwrap_or(&params.q)
             .to_string(),
-        // ID-based direct jumps (e.g. random book) should not prefill the search box.
-        "i" => String::new(),
+        // ID-based lookups (genre, direct book jump) should not prefill the search box.
+        "g" | "i" => String::new(),
         _ => params.q.clone(),
     };
 
@@ -755,6 +755,39 @@ pub async fn web_download(
     } else {
         crate::opds::download::file_response(&data, filename, mime)
     }
+}
+
+// ── Genres JSON API ────────────────────────────────────────────────
+
+pub async fn genres_json(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Response {
+    let secret = state.config.server.session_secret.as_bytes();
+    if jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
+        .is_none()
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let all_genres = genres::get_all(&state.db).await.unwrap_or_default();
+
+    let mut sections: std::collections::BTreeMap<String, Vec<serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    for g in &all_genres {
+        sections
+            .entry(g.section.clone())
+            .or_default()
+            .push(serde_json::json!({
+                "id": g.id,
+                "code": g.code,
+                "subsection": g.subsection,
+            }));
+    }
+
+    axum::Json(serde_json::json!({ "sections": sections })).into_response()
 }
 
 // ── Bookshelf toggle handler ────────────────────────────────────────
