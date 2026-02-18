@@ -357,6 +357,18 @@ pub async fn search_books(
                 .unwrap_or(0);
             if let Ok(Some(genre)) = genres::get_by_id(&state.db, id, &locale).await {
                 ctx.insert("search_label", &genre.subsection);
+                // Back navigation to the genre's section
+                if let Some(section_id) = genre.section_id {
+                    if let Ok(Some(code)) =
+                        genres::get_section_code(&state.db, section_id).await
+                    {
+                        ctx.insert(
+                            "back_url",
+                            &format!("/web/genres?section={}", urlencoding::encode(&code)),
+                        );
+                        ctx.insert("back_label", &genre.section);
+                    }
+                }
             }
             (bks, cnt)
         }
