@@ -50,7 +50,7 @@ fn is_valid_password(password: &str) -> bool {
 
 /// Validate book title: non-empty, max 256 chars, no control characters.
 /// Returns the trimmed title on success, or an error message.
-fn validate_book_title(title: &str) -> Result<String, &'static str> {
+pub(crate) fn validate_book_title(title: &str) -> Result<String, &'static str> {
     let trimmed = title.trim().to_string();
     if trimmed.is_empty() {
         return Err("title_empty");

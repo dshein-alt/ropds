@@ -290,15 +290,28 @@
       }
     });
 
+    var TITLE_ERRORS = {
+      title_empty: "{{ t.book.error_title_empty }}",
+      title_too_long: "{{ t.book.error_title_too_long }}",
+      title_invalid: "{{ t.book.error_title_invalid }}"
+    };
+
     function validateTitle(value) {
       var trimmed = value.trim();
-      if (!trimmed) return false;
-      if ([...trimmed].length > 256) return false;
+      if (!trimmed) return "title_empty";
+      if ([...trimmed].length > 256) return "title_too_long";
       for (var i = 0; i < trimmed.length; i++) {
         var code = trimmed.charCodeAt(i);
-        if (code < 32 && code !== 9 && code !== 10 && code !== 13) return false;
+        if (code < 32) return "title_invalid";
       }
-      return true;
+      return null; // valid
+    }
+
+    function showTitleError(errKey) {
+      var input = document.getElementById("edit-book-title");
+      var errorDiv = document.getElementById("edit-title-error");
+      input.classList.add("is-invalid");
+      errorDiv.textContent = TITLE_ERRORS[errKey] || errKey;
     }
 
     // Save
@@ -314,8 +327,9 @@
         var newTitle = titleInput.value.trim();
         var originalTitle = document.getElementById("edit-modal-title").textContent.trim();
         if (newTitle !== originalTitle) {
-          if (!validateTitle(newTitle)) {
-            titleInput.classList.add("is-invalid");
+          var titleErr = validateTitle(newTitle);
+          if (titleErr) {
+            showTitleError(titleErr);
             throw new Error("invalid title");
           }
           var titleResp = await fetch("/web/admin/book-title", {
@@ -326,7 +340,7 @@
           });
           var titleData = await titleResp.json();
           if (!titleData.ok) {
-            titleInput.classList.add("is-invalid");
+            showTitleError(titleData.error || "title_invalid");
             throw new Error("title save failed");
           }
           // Update DOM — card title

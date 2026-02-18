@@ -680,14 +680,10 @@ pub async fn publish(
         .as_ref()
         .and_then(|p| std::fs::read(p).ok());
 
-    // Use user-submitted title if provided, otherwise fall back to parsed title
-    let publish_title = {
-        let t = form.title.trim().to_string();
-        if t.is_empty() || t.chars().count() > 256 || t.chars().any(|c| c.is_control()) {
-            upload_state.title.clone()
-        } else {
-            t
-        }
+    // Use user-submitted title if provided and valid, otherwise fall back to parsed title
+    let publish_title = match crate::web::admin::validate_book_title(&form.title) {
+        Ok(t) => t,
+        Err(_) => upload_state.title.clone(),
     };
 
     let meta = crate::scanner::parsers::BookMeta {
