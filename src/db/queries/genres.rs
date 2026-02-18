@@ -348,19 +348,6 @@ pub async fn delete_genre(pool: &DbPool, genre_id: i64) -> Result<(), sqlx::Erro
     Ok(())
 }
 
-pub async fn update_genre_section(
-    pool: &DbPool,
-    genre_id: i64,
-    section_id: i64,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE genres SET section_id = ? WHERE id = ?")
-        .bind(section_id)
-        .bind(genre_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Admin CRUD: genre translations
 // ---------------------------------------------------------------------------
