@@ -43,14 +43,22 @@
                 {% endif %}
 
                 {# Genres #}
-                {% if item.genres | length > 0 %}
-                <div class="mb-1">
+                <div class="mb-1 book-genres-container" data-book-id="{{ item.id }}">
+                  {% if item.genres | length > 0 %}
                   <i class="bi bi-tags text-body-secondary me-1"></i>
+                  <span class="book-genres-badges">
                   {% for genre in item.genres %}
                     <a href="/web/search/books?type=g&q={{ genre.id }}" class="badge text-bg-light text-decoration-none">{{ genre.subsection }}</a>
                   {% endfor %}
+                  </span>
+                  {% endif %}
+                  {% if is_superuser %}
+                  <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1 btn-edit-book"
+                          data-book-id="{{ item.id }}" title="{{ t.book.edit_genres }}">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  {% endif %}
                 </div>
-                {% endif %}
 
                 {# Series #}
                 {% if item.series_list | length > 0 %}
@@ -117,5 +125,236 @@
 
   {% if pagination.total_pages > 1 %}
   {% include "web/_pagination.html" %}
+  {% endif %}
+
+  {% if is_superuser %}
+  {# ── Book Edit Modal (admin-only) ───────────────── #}
+  <div class="modal fade" id="bookEditModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-pencil me-2"></i><span id="edit-modal-title"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+
+          {# ── Genre Editor ─── #}
+          <h6><i class="bi bi-tags me-1"></i>{{ t.book.edit_genres }}</h6>
+          <div id="edit-genre-sections" class="accordion accordion-flush border rounded mb-2" style="max-height: 300px; overflow-y: auto;"></div>
+          <div class="mb-3 small text-body-secondary">
+            <span id="edit-genre-count">0</span> {{ t.book.genres_selected }}
+          </div>
+
+          {# ── Author Editor ─── #}
+          <h6><i class="bi bi-person me-1"></i>{{ t.book.edit_authors }}</h6>
+          <div id="edit-authors-list" class="mb-2"></div>
+          <div class="input-group input-group-sm mb-2">
+            <input type="text" id="edit-new-author" class="form-control" placeholder="{{ t.book.author_name }}">
+            <button type="button" id="edit-add-author" class="btn btn-outline-primary">
+              <i class="bi bi-plus-lg me-1"></i>{{ t.book.add_author }}
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+          <button type="button" id="edit-save-btn" class="btn btn-primary">
+            <span id="edit-save-text">{{ t.admin.save }}</span>
+            <span id="edit-save-spinner" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var csrfToken = "{{ csrf_token }}";
+    var editBookId = null;
+    var editAuthors = []; // [{id, full_name}]
+    var newAuthors = [];  // [string]
+    var modal = null;
+
+    // Open modal
+    document.addEventListener("click", function(e) {
+      var btn = e.target.closest(".btn-edit-book");
+      if (!btn) return;
+      editBookId = parseInt(btn.dataset.bookId, 10);
+
+      // Gather current genres from badges
+      var card = btn.closest(".col-12");
+      var genreBadges = card.querySelectorAll(".book-genres-badges a");
+      var currentGenreIds = [];
+      genreBadges.forEach(function(a) {
+        var href = a.getAttribute("href");
+        var match = href && href.match(/q=(\d+)/);
+        if (match) currentGenreIds.push(parseInt(match[1], 10));
+      });
+
+      // Gather current authors
+      var authorLinks = card.querySelectorAll(".mb-1 a[href*='type=a']");
+      editAuthors = [];
+      authorLinks.forEach(function(a) {
+        var href = a.getAttribute("href");
+        var match = href && href.match(/q=(\d+)/);
+        if (match) {
+          editAuthors.push({ id: parseInt(match[1], 10), full_name: a.textContent.trim() });
+        }
+      });
+      newAuthors = [];
+
+      // Set modal title
+      var titleEl = card.querySelector(".card-title");
+      document.getElementById("edit-modal-title").textContent = titleEl ? titleEl.textContent : "";
+
+      // Build genre selector
+      var genreContainer = document.getElementById("edit-genre-sections");
+      GenreSelector.fetchGenres().then(function(sections) {
+        GenreSelector.build(genreContainer, sections, {
+          selectedIds: currentGenreIds,
+          onChange: function(ids) {
+            document.getElementById("edit-genre-count").textContent = ids.length;
+          }
+        });
+        document.getElementById("edit-genre-count").textContent = currentGenreIds.length;
+      });
+
+      // Build author list
+      renderAuthors();
+
+      if (!modal) modal = new bootstrap.Modal(document.getElementById("bookEditModal"));
+      modal.show();
+    });
+
+    function renderAuthors() {
+      var container = document.getElementById("edit-authors-list");
+      var html = "";
+      editAuthors.forEach(function(a, i) {
+        html += '<span class="badge bg-secondary me-1 mb-1">' +
+          a.full_name +
+          ' <button type="button" class="btn-close btn-close-white ms-1" style="font-size:0.6em" data-remove-author="' + i + '"></button>' +
+          '</span>';
+      });
+      newAuthors.forEach(function(name, i) {
+        html += '<span class="badge bg-info me-1 mb-1">' +
+          name +
+          ' <button type="button" class="btn-close btn-close-white ms-1" style="font-size:0.6em" data-remove-new="' + i + '"></button>' +
+          '</span>';
+      });
+      container.innerHTML = html;
+    }
+
+    // Remove author badge
+    document.addEventListener("click", function(e) {
+      var btn = e.target.closest("[data-remove-author]");
+      if (btn) {
+        var idx = parseInt(btn.dataset.removeAuthor, 10);
+        editAuthors.splice(idx, 1);
+        renderAuthors();
+        return;
+      }
+      var btn2 = e.target.closest("[data-remove-new]");
+      if (btn2) {
+        var idx2 = parseInt(btn2.dataset.removeNew, 10);
+        newAuthors.splice(idx2, 1);
+        renderAuthors();
+      }
+    });
+
+    // Add new author
+    document.getElementById("edit-add-author").addEventListener("click", function() {
+      var input = document.getElementById("edit-new-author");
+      var name = input.value.trim();
+      if (name) {
+        newAuthors.push(name);
+        input.value = "";
+        renderAuthors();
+      }
+    });
+    document.getElementById("edit-new-author").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("edit-add-author").click();
+      }
+    });
+
+    // Save
+    document.getElementById("edit-save-btn").addEventListener("click", async function() {
+      var saveBtn = this;
+      saveBtn.disabled = true;
+      document.getElementById("edit-save-text").classList.add("d-none");
+      document.getElementById("edit-save-spinner").classList.remove("d-none");
+
+      try {
+        // Save genres
+        var genreIds = GenreSelector.getSelected(document.getElementById("edit-genre-sections"));
+        var genreResp = await fetch("/web/admin/book-genres", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ book_id: editBookId, genre_ids: genreIds, csrf_token: csrfToken })
+        });
+        var genreData = await genreResp.json();
+
+        // Save authors
+        var authorIds = editAuthors.map(function(a) { return a.id; });
+        var authorResp = await fetch("/web/admin/book-authors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ book_id: editBookId, author_ids: authorIds, new_authors: newAuthors, csrf_token: csrfToken })
+        });
+        var authorData = await authorResp.json();
+
+        // Update DOM - genres
+        if (genreData.ok) {
+          var card = document.querySelector('.book-genres-container[data-book-id="' + editBookId + '"]');
+          if (card) {
+            var badgesSpan = card.querySelector(".book-genres-badges");
+            if (!badgesSpan) {
+              // No genres previously — add icon and badges span
+              var icon = document.createElement("i");
+              icon.className = "bi bi-tags text-body-secondary me-1";
+              card.insertBefore(icon, card.querySelector(".btn-edit-book"));
+              badgesSpan = document.createElement("span");
+              badgesSpan.className = "book-genres-badges";
+              card.insertBefore(badgesSpan, card.querySelector(".btn-edit-book"));
+            }
+            badgesSpan.innerHTML = genreData.genres.map(function(g) {
+              return '<a href="/web/search/books?type=g&q=' + g.id + '" class="badge text-bg-light text-decoration-none">' + g.subsection + '</a>';
+            }).join("");
+          }
+        }
+
+        // Update DOM - authors
+        if (authorData.ok) {
+          var cardEl = document.querySelector('.btn-edit-book[data-book-id="' + editBookId + '"]');
+          if (cardEl) {
+            var bookCard = cardEl.closest(".col-12");
+            var authorDiv = bookCard.querySelector(".mb-1:has(.bi-person)");
+            if (!authorDiv) {
+              // Find the right place to insert
+              authorDiv = document.createElement("div");
+              authorDiv.className = "mb-1";
+              var titleEl = bookCard.querySelector(".card-title");
+              if (titleEl) titleEl.after(authorDiv);
+            }
+            authorDiv.innerHTML = '<i class="bi bi-person text-body-secondary me-1"></i>' +
+              authorData.authors.map(function(a) {
+                return '<a href="/web/search/books?type=a&q=' + a.id + '" class="text-decoration-none">' + a.full_name + '</a>';
+              }).join(", ");
+          }
+        }
+
+        if (modal) modal.hide();
+      } catch (err) {
+        console.error("Save failed:", err);
+      } finally {
+        saveBtn.disabled = false;
+        document.getElementById("edit-save-text").classList.remove("d-none");
+        document.getElementById("edit-save-spinner").classList.add("d-none");
+      }
+    });
+  })();
+  </script>
   {% endif %}
 {% endblock %}
