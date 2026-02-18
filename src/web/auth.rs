@@ -1,4 +1,4 @@
-use axum::extract::{Query, Request, State};
+use axum::extract::{ConnectInfo, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -6,6 +6,7 @@ use axum_extra::extract::cookie::{Cookie, CookieJar};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
+use std::net::SocketAddr;
 
 use crate::state::AppState;
 use crate::web::i18n;
@@ -167,12 +168,15 @@ pub struct LoginForm {
 /// POST /web/login — validate credentials and set session cookie.
 pub async fn login_submit(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     jar: CookieJar,
     axum::Form(form): axum::Form<LoginForm>,
 ) -> impl IntoResponse {
+    let remote = addr.ip().to_string();
     let valid = verify_credentials(&state.db, &form.username, &form.password).await;
 
     if !valid {
+        tracing::info!("{remote} Login failed: user={}", form.username);
         let next_val = form.next.as_deref().unwrap_or_default().to_string();
         let next = urlencoding::encode(&next_val);
         return (
@@ -184,6 +188,8 @@ pub async fn login_submit(
 
     // Get user_id for the session
     let user_id = get_user_id(&state.db, &form.username).await.unwrap_or(0);
+
+    tracing::info!("{remote} Login: user={}", form.username);
 
     // Record login timestamp
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -207,7 +213,22 @@ pub async fn login_submit(
 }
 
 /// GET /web/logout — clear session and redirect to login.
-pub async fn logout(jar: CookieJar) -> impl IntoResponse {
+pub async fn logout(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    jar: CookieJar,
+) -> impl IntoResponse {
+    let remote = addr.ip().to_string();
+    let secret = state.config.server.session_secret.as_bytes();
+    if let Some(uid) = jar
+        .get("session")
+        .and_then(|c| verify_session(c.value(), secret))
+    {
+        let name = crate::db::queries::users::get_username(&state.db, uid)
+            .await
+            .unwrap_or_else(|_| format!("uid={uid}"));
+        tracing::info!("{remote} Logout: user={name}");
+    }
     let cookie = Cookie::build(("session", "")).path("/web").http_only(true);
     (jar.remove(cookie), Redirect::to("/web/login"))
 }

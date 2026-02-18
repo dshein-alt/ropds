@@ -288,7 +288,12 @@ async fn main() {
             std::process::exit(1);
         });
 
-    axum::serve(listener, app).await.unwrap_or_else(|e| {
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .unwrap_or_else(|e| {
         tracing::error!("Server error: {e}");
         std::process::exit(1);
     });
