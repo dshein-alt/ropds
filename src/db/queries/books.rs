@@ -512,3 +512,18 @@ pub async fn get_title_prefix_groups(
     .await?;
     Ok(rows)
 }
+
+pub async fn update_title(
+    pool: &DbPool,
+    book_id: i64,
+    title: &str,
+    search_title: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE books SET title = ?, search_title = ? WHERE id = ?")
+        .bind(title)
+        .bind(search_title)
+        .bind(book_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
