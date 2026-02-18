@@ -29,24 +29,32 @@ fn json_success(data: serde_json::Value) -> Response {
 // Permission check
 // ---------------------------------------------------------------------------
 
-/// Check upload permission.  Returns `Ok(user_id)` or `Err(JSON 403)`.
-async fn check_upload_permission(state: &AppState, jar: &CookieJar) -> Result<i64, Response> {
+/// Core upload permission check (format-agnostic).
+/// Returns `Ok(user_id)` on success, `Err(())` on any auth/permission failure.
+async fn verify_upload_permission(state: &AppState, jar: &CookieJar) -> Result<i64, ()> {
     if !state.config.upload.allow_upload {
-        return Err(json_error(StatusCode::FORBIDDEN, "forbidden"));
+        return Err(());
     }
     let secret = state.config.server.session_secret.as_bytes();
     let user_id = jar
         .get("session")
         .and_then(|c| verify_session(c.value(), secret))
-        .ok_or_else(|| json_error(StatusCode::FORBIDDEN, "forbidden"))?;
+        .ok_or(())?;
     let user = users::get_by_id(&state.db, user_id)
         .await
-        .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_upload"))?
-        .ok_or_else(|| json_error(StatusCode::FORBIDDEN, "forbidden"))?;
+        .map_err(|_| ())?
+        .ok_or(())?;
     if user.is_superuser != 1 && user.allow_upload != 1 {
-        return Err(json_error(StatusCode::FORBIDDEN, "forbidden"));
+        return Err(());
     }
     Ok(user_id)
+}
+
+/// Check upload permission for JSON API endpoints.
+async fn check_upload_permission(state: &AppState, jar: &CookieJar) -> Result<i64, Response> {
+    verify_upload_permission(state, jar)
+        .await
+        .map_err(|()| json_error(StatusCode::FORBIDDEN, "forbidden"))
 }
 
 // ---------------------------------------------------------------------------
@@ -288,21 +296,8 @@ fn extract_book_from_zip(
 // ---------------------------------------------------------------------------
 
 pub async fn upload_page(State(state): State<AppState>, jar: CookieJar) -> Response {
-    // Permission check (HTML 403 for a page request, not JSON)
-    if !state.config.upload.allow_upload {
+    if verify_upload_permission(&state, &jar).await.is_err() {
         return StatusCode::FORBIDDEN.into_response();
-    }
-    let secret = state.config.server.session_secret.as_bytes();
-    let user_id = match jar
-        .get("session")
-        .and_then(|c| verify_session(c.value(), secret))
-    {
-        Some(id) => id,
-        None => return StatusCode::FORBIDDEN.into_response(),
-    };
-    match users::get_by_id(&state.db, user_id).await {
-        Ok(Some(user)) if user.is_superuser == 1 || user.allow_upload == 1 => {}
-        _ => return StatusCode::FORBIDDEN.into_response(),
     }
 
     let mut ctx = build_context(&state, &jar, "upload").await;
@@ -520,10 +515,10 @@ pub async fn upload_cover(
     jar: CookieJar,
     axum::extract::Path(token): axum::extract::Path<String>,
 ) -> Response {
-    // Guard: feature must be enabled
-    if !state.config.upload.allow_upload {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let user_id = match verify_upload_permission(&state, &jar).await {
+        Ok(id) => id,
+        Err(()) => return StatusCode::FORBIDDEN.into_response(),
+    };
 
     // Validate token format (hex chars only, reasonable length)
     if !token.chars().all(|c| c.is_ascii_hexdigit()) || token.len() > 64 {
@@ -543,11 +538,7 @@ pub async fn upload_cover(
     };
 
     // Verify the current user owns this upload
-    let secret = state.config.server.session_secret.as_bytes();
-    let current_user = jar
-        .get("session")
-        .and_then(|c| verify_session(c.value(), secret));
-    if current_user != Some(upload_state.user_id) {
+    if upload_state.user_id != user_id {
         return StatusCode::FORBIDDEN.into_response();
     }
 
