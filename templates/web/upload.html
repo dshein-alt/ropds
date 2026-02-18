@@ -93,7 +93,10 @@
               <tbody>
                 <tr>
                   <td class="text-body-secondary" style="width: 35%">{{ t.upload.book_title }}</td>
-                  <td id="meta-title" class="fw-medium"></td>
+                  <td>
+                    <input type="text" id="meta-title" class="form-control form-control-sm fw-medium"
+                           maxlength="256" placeholder="{{ t.book.title_placeholder }}">
+                  </td>
                 </tr>
                 <tr>
                   <td class="text-body-secondary">{{ t.upload.book_authors }}</td>
@@ -374,7 +377,7 @@
 
       // Populate metadata preview
       const m = data.meta;
-      metaTitle.textContent   = m.title || "";
+      metaTitle.value = m.title || "";
       uploadAuthors = (m.authors || []).slice();
       renderAuthorBadges();
       metaFormat.textContent  = m.format || "";
@@ -432,6 +435,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token: uploadToken,
+          title: metaTitle.value.trim(),
           genres: genreCodes,
           authors: uploadAuthors,
           csrf_token: csrfToken

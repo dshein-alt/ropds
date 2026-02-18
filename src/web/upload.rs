@@ -579,6 +579,8 @@ pub async fn upload_cover(
 pub struct PublishForm {
     pub token: String,
     #[serde(default)]
+    pub title: String,
+    #[serde(default)]
     pub genres: Vec<String>,
     #[serde(default)]
     pub authors: Vec<String>,
@@ -678,8 +680,18 @@ pub async fn publish(
         .as_ref()
         .and_then(|p| std::fs::read(p).ok());
 
+    // Use user-submitted title if provided, otherwise fall back to parsed title
+    let publish_title = {
+        let t = form.title.trim().to_string();
+        if t.is_empty() || t.chars().count() > 256 || t.chars().any(|c| c.is_control()) {
+            upload_state.title.clone()
+        } else {
+            t
+        }
+    };
+
     let meta = crate::scanner::parsers::BookMeta {
-        title: upload_state.title.clone(),
+        title: publish_title,
         authors: if form.authors.is_empty() {
             upload_state.authors.clone()
         } else {
