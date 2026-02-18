@@ -97,7 +97,13 @@
                 </tr>
                 <tr>
                   <td class="text-body-secondary">{{ t.upload.book_authors }}</td>
-                  <td id="meta-authors"></td>
+                  <td>
+                    <span id="meta-authors-badges"></span>
+                    <div class="input-group input-group-sm mt-1" style="max-width:300px">
+                      <input type="text" id="meta-add-author" class="form-control" placeholder="{{ t.book.author_name }}">
+                      <button type="button" id="meta-add-author-btn" class="btn btn-outline-primary"><i class="bi bi-plus-lg"></i></button>
+                    </div>
+                  </td>
                 </tr>
                 <tr>
                   <td class="text-body-secondary">{{ t.upload.book_format }}</td>
@@ -111,9 +117,26 @@
                   <td class="text-body-secondary">{{ t.upload.book_language }}</td>
                   <td id="meta-lang"></td>
                 </tr>
+                <tr>
+                  <td class="text-body-secondary">{{ t.upload.book_genres }}</td>
+                  <td id="meta-genres"></td>
+                </tr>
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Genre Selector ─────────────────────────────── #}
+    <div id="genre-selector" class="card d-none mb-4">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-tags me-2"></i>{{ t.upload.edit_genres }}</h6>
+      </div>
+      <div class="card-body p-2">
+        <div id="genre-sections" class="accordion accordion-flush" style="max-height: 300px; overflow-y: auto;"></div>
+        <div class="mt-2 px-2 small text-body-secondary">
+          <span id="genre-count">0</span> {{ t.upload.genres_selected }}
         </div>
       </div>
     </div>
@@ -156,15 +179,22 @@
   const metaCoverWrap  = document.getElementById("meta-cover-wrap");
   const metaCover      = document.getElementById("meta-cover");
   const metaTitle      = document.getElementById("meta-title");
-  const metaAuthors    = document.getElementById("meta-authors");
+  const metaAuthorsBadges = document.getElementById("meta-authors-badges");
+  const metaAddAuthor  = document.getElementById("meta-add-author");
+  const metaAddAuthorBtn = document.getElementById("meta-add-author-btn");
   const metaFormat     = document.getElementById("meta-format");
   const metaSize       = document.getElementById("meta-size");
   const metaLang       = document.getElementById("meta-lang");
   const alertBox       = document.getElementById("upload-alert");
   const alertText      = document.getElementById("upload-alert-text");
+  const metaGenres     = document.getElementById("meta-genres");
+  const genreSelector  = document.getElementById("genre-selector");
+  const genreSections  = document.getElementById("genre-sections");
+  const genreCount     = document.getElementById("genre-count");
 
   let selectedFile = null;
   let uploadToken  = null;
+  let uploadAuthors = [];
 
   // ── Helpers ────────────────────────────────────────
 
@@ -193,13 +223,49 @@
   function resetForm() {
     selectedFile = null;
     uploadToken  = null;
+    uploadAuthors = [];
     fileInput.value = "";
     dropzoneInfo.classList.add("d-none");
     metaCard.classList.add("d-none");
     metaCoverWrap.classList.add("d-none");
+    genreSelector.classList.add("d-none");
+    metaAuthorsBadges.innerHTML = "";
+    metaAddAuthor.value = "";
     uploadBtn.disabled  = true;
     publishBtn.disabled = true;
   }
+
+  function renderAuthorBadges() {
+    metaAuthorsBadges.innerHTML = uploadAuthors.map(function(name, i) {
+      return '<span class="badge text-bg-secondary me-1">' +
+        name +
+        ' <button type="button" class="btn-close btn-close-white ms-1" style="font-size:.5em;vertical-align:middle" data-author-idx="' + i + '"></button>' +
+        '</span>';
+    }).join("");
+  }
+
+  metaAuthorsBadges.addEventListener("click", function(e) {
+    var closeBtn = e.target.closest("[data-author-idx]");
+    if (!closeBtn) return;
+    var idx = parseInt(closeBtn.getAttribute("data-author-idx"), 10);
+    uploadAuthors.splice(idx, 1);
+    renderAuthorBadges();
+  });
+
+  function addAuthor() {
+    var name = metaAddAuthor.value.trim();
+    if (!name) return;
+    if (uploadAuthors.indexOf(name) === -1) {
+      uploadAuthors.push(name);
+      renderAuthorBadges();
+    }
+    metaAddAuthor.value = "";
+  }
+
+  metaAddAuthorBtn.addEventListener("click", addAuthor);
+  metaAddAuthor.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") { e.preventDefault(); addAuthor(); }
+  });
 
   // ── File Selection ─────────────────────────────────
 
@@ -309,7 +375,8 @@
       // Populate metadata preview
       const m = data.meta;
       metaTitle.textContent   = m.title || "";
-      metaAuthors.textContent = m.authors || "";
+      uploadAuthors = (m.authors || []).slice();
+      renderAuthorBadges();
       metaFormat.textContent  = m.format || "";
       metaSize.textContent    = m.size || "";
       metaLang.textContent    = m.lang || "";
@@ -321,7 +388,25 @@
         metaCoverWrap.classList.add("d-none");
       }
 
+      // Show extracted genres as badges
+      const extractedGenres = m.genres || [];
+      metaGenres.innerHTML = extractedGenres.length > 0
+        ? extractedGenres.map(function(c) { return '<span class="badge text-bg-light me-1">' + c + '</span>'; }).join("")
+        : '<span class="text-body-secondary small">—</span>';
+
       metaCard.classList.remove("d-none");
+
+      // Build genre selector with extracted codes pre-checked
+      try {
+        const sections = await GenreSelector.fetchGenres();
+        GenreSelector.build(genreSections, sections, {
+          selectedCodes: extractedGenres,
+          onChange: function(ids) { genreCount.textContent = ids.length; }
+        });
+        genreCount.textContent = extractedGenres.length;
+        genreSelector.classList.remove("d-none");
+      } catch (e) { /* genre selector is optional, don't block upload */ }
+
       publishBtn.disabled = false;
 
     } catch (err) {
@@ -341,10 +426,16 @@
     uploadBtn.disabled = true;
 
     try {
+      const genreCodes = GenreSelector.getCodes(genreSections);
       const resp = await fetch("/web/upload/publish", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "token=" + encodeURIComponent(uploadToken) + "&csrf_token=" + encodeURIComponent(csrfToken)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: uploadToken,
+          genres: genreCodes,
+          authors: uploadAuthors,
+          csrf_token: csrfToken
+        })
       });
       const data = await resp.json();
 

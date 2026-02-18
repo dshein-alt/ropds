@@ -507,6 +507,7 @@ pub async fn upload_file(
         "meta": {
             "title": meta.title,
             "authors": meta.authors,
+            "genres": meta.genres,
             "format": book_ext,
             "size": book_data.len(),
             "lang": meta.lang,
@@ -578,13 +579,17 @@ pub async fn upload_cover(
 pub struct PublishForm {
     pub token: String,
     #[serde(default)]
+    pub genres: Vec<String>,
+    #[serde(default)]
+    pub authors: Vec<String>,
+    #[serde(default)]
     pub csrf_token: String,
 }
 
 pub async fn publish(
     State(state): State<AppState>,
     jar: CookieJar,
-    axum::Form(form): axum::Form<PublishForm>,
+    axum::Json(form): axum::Json<PublishForm>,
 ) -> Response {
     // 1. Permission check
     let user_id = match check_upload_permission(&state, &jar).await {
@@ -675,8 +680,16 @@ pub async fn publish(
 
     let meta = crate::scanner::parsers::BookMeta {
         title: upload_state.title.clone(),
-        authors: upload_state.authors.clone(),
-        genres: upload_state.genres.clone(),
+        authors: if form.authors.is_empty() {
+            upload_state.authors.clone()
+        } else {
+            form.authors
+        },
+        genres: if form.genres.is_empty() {
+            upload_state.genres.clone()
+        } else {
+            form.genres
+        },
         annotation: upload_state.annotation.clone(),
         docdate: upload_state.docdate.clone(),
         lang: upload_state.lang.clone(),
