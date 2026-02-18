@@ -5,10 +5,36 @@ pub mod feeds;
 pub mod xml;
 
 use axum::Router;
-use axum::middleware;
+use axum::extract::ConnectInfo;
+use axum::extract::Request;
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::get;
+use std::net::SocketAddr;
 
 use crate::state::AppState;
+
+/// Logging middleware for OPDS requests.
+async fn opds_logging(request: Request, next: Next) -> Response {
+    let start = std::time::Instant::now();
+    let addr = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+        .unwrap_or_else(|| "-".into());
+    let method = request.method().clone();
+    let uri = request.uri().to_string();
+
+    let response = next.run(request).await;
+
+    let elapsed = start.elapsed();
+    let status = response.status().as_u16();
+    tracing::info!(
+        "{addr} {method} {uri} {status} {elapsed:.1?}",
+    );
+
+    response
+}
 
 /// Build the OPDS router with all feed, download, and cover routes.
 pub fn router(state: AppState) -> Router<AppState> {
@@ -81,4 +107,5 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/cover/{book_id}/", get(covers::cover))
         .route("/thumb/{book_id}/", get(covers::thumbnail))
         .merge(protected)
+        .layer(middleware::from_fn(opds_logging))
 }
