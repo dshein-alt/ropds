@@ -45,7 +45,7 @@ async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-#[cfg(test)]
+/// Create an in-memory SQLite pool for testing, with all migrations applied.
 pub async fn create_test_pool() -> DbPool {
     sqlx::any::install_default_drivers();
 
