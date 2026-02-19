@@ -12,7 +12,8 @@
 The goal is simple: **a personal library server you can set up once and forget about.** Easy to deploy on a home server or VPS for yourself, family, and friends.
 
 - **Fast & resource-friendly** — written in Rust with production-grade async libraries (Axum, Tokio, SQLx)
-- **Single binary** — no runtime dependencies, no containers required
+- **Single binary** — no runtime dependencies, containers are optional
+- **Docker-ready** — compose bundle for SQLite, PostgreSQL, and MySQL/MariaDB deployments
 - **Zero-config database** — SQLite by default, just point it at your book collection
 - **OPDS 1.2 compatible** — works with any OPDS reader (KOReader, Moon+ Reader, Librera, etc.)
 - **Clean web UI** — browse, search, and download books from any browser
@@ -128,6 +129,13 @@ To scan the library once without starting the server:
 ./target/release/ropds --scan
 ```
 
+## Docker
+
+For containerized deployment, use the ready-to-run bundle in [`docker/`](docker/):
+
+- English guide: [`docker/README.md`](docker/README.md)
+- Russian guide: [`docker/README_RU.md`](docker/README_RU.md)
+
 ## Configuration
 
 All settings live in `config.toml`. See [config.toml.example](config.toml.example) for a fully commented reference.
@@ -158,7 +166,7 @@ Books inside **ZIP archives** are scanned transparently. **INPX** index files ar
 
 SQLite is the default and recommended choice — no setup needed. PostgreSQL and MySQL are also supported via the `[database].url` setting.
 
-Migrations run automatically on startup.
+Migrations run automatically on startup. Backend-specific migration sets are embedded at build time and selected by database backend (`sqlite://`, `postgres://`, `mysql://`).
 
 ## Tech Stack
 
