@@ -164,3 +164,71 @@ pub enum PdfInfoError {
     #[error("pdfinfo exited with status {0:?}")]
     ExitStatus(Option<i32>),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_pdfinfo_stdout_and_normalize_values() {
+        let out = r#"
+Title:   The Book
+Author:  Jane Doe
+Producer: ignored
+"#;
+        let meta = parse_pdfinfo_stdout(out);
+        assert_eq!(meta.title, Some("The Book".to_string()));
+        assert_eq!(meta.author, Some("Jane Doe".to_string()));
+
+        let out_null = "Title: (null)\nAuthor:   \n";
+        let meta = parse_pdfinfo_stdout(out_null);
+        assert_eq!(meta.title, None);
+        assert_eq!(meta.author, None);
+    }
+
+    #[test]
+    fn test_temp_work_dir_shape() {
+        let p1 = temp_work_dir();
+        let p2 = temp_work_dir();
+        assert_ne!(p1, p2);
+        let s1 = p1.to_string_lossy();
+        assert!(s1.contains("ropds-pdfthumb-"));
+    }
+
+    #[test]
+    fn test_render_first_page_from_missing_path() {
+        let err = render_first_page_jpeg_from_path(Path::new("/definitely/missing/file.pdf"))
+            .unwrap_err();
+        assert!(matches!(err, PdfRenderError::ReadInput(_)));
+    }
+
+    #[test]
+    fn test_render_first_page_from_invalid_bytes_errors() {
+        let err = render_first_page_jpeg_from_bytes(b"not a pdf").unwrap_err();
+        assert!(matches!(
+            err,
+            PdfRenderError::Spawn(_)
+                | PdfRenderError::ExitStatus(_)
+                | PdfRenderError::ReadOutput(_)
+        ));
+    }
+
+    #[test]
+    fn test_extract_metadata_from_missing_path_errors() {
+        let err =
+            extract_metadata_from_path(Path::new("/definitely/missing/file.pdf")).unwrap_err();
+        assert!(matches!(
+            err,
+            PdfInfoError::Spawn(_) | PdfInfoError::ExitStatus(_)
+        ));
+    }
+
+    #[test]
+    fn test_extract_metadata_from_invalid_bytes_errors() {
+        let err = extract_metadata_from_bytes(b"not a pdf").unwrap_err();
+        assert!(matches!(
+            err,
+            PdfInfoError::Spawn(_) | PdfInfoError::ExitStatus(_)
+        ));
+    }
+}

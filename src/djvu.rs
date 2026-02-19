@@ -89,3 +89,35 @@ pub enum DjvuRenderError {
     #[error("failed to encode JPEG: {0}")]
     EncodeJpeg(image::ImageError),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_temp_work_dir_shape() {
+        let p1 = temp_work_dir();
+        let p2 = temp_work_dir();
+        assert_ne!(p1, p2);
+        let s1 = p1.to_string_lossy();
+        assert!(s1.contains("ropds-djvuthumb-"));
+    }
+
+    #[test]
+    fn test_render_first_page_from_missing_path() {
+        let err = render_first_page_jpeg_from_path(Path::new("/definitely/missing/file.djvu"))
+            .unwrap_err();
+        assert!(matches!(err, DjvuRenderError::ReadInput(_)));
+    }
+
+    #[test]
+    fn test_render_first_page_from_invalid_bytes_errors() {
+        let err = render_first_page_jpeg_from_bytes(b"not a djvu").unwrap_err();
+        assert!(matches!(
+            err,
+            DjvuRenderError::Spawn(_)
+                | DjvuRenderError::ExitStatus(_)
+                | DjvuRenderError::DecodeOutput(_)
+        ));
+    }
+}
