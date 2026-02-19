@@ -302,7 +302,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_credentials_and_get_user_id() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let hash = crate::password::hash("password123");
         sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)")
             .bind("alice")

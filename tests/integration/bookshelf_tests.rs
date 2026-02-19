@@ -13,7 +13,7 @@ async fn setup_with_user() -> (
     tempfile::TempDir,
     tempfile::TempDir,
 ) {
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -180,7 +180,7 @@ async fn bookshelf_sorting() {
 /// Bookshelf requires authentication when auth_required is true.
 #[tokio::test]
 async fn bookshelf_requires_auth() {
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
 

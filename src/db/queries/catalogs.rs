@@ -135,7 +135,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_lookup_hierarchy() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let root_id = insert(&pool, None, "/root", "root", CatType::Normal, 0, "")
             .await
@@ -170,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_duplicate_returns_same_id() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let id1 = insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "")
             .await
@@ -184,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_archive_meta() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let id = insert(
             &pool,
@@ -209,7 +209,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_empty_prunes_tree_and_keeps_non_empty() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let a = insert(&pool, None, "/a", "a", CatType::Normal, 0, "")
             .await

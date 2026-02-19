@@ -491,7 +491,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_display_queries_and_count_queries() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
 
         let section_id = create_section(&pool, "ut_section_a").await.unwrap();
@@ -566,7 +566,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_linking_and_set_book_genres() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
 
         let section_id = create_section(&pool, "ut_section_b").await.unwrap();
@@ -615,7 +615,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_admin_crud_translations_and_languages() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let section_id = create_section(&pool, "ut_section_c").await.unwrap();
         assert!(
@@ -693,7 +693,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_admin_contains_created_genres() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let section_id = create_section(&pool, "ut_section_d").await.unwrap();
         let g1 = create_genre(&pool, "ut_genre_d1", section_id)

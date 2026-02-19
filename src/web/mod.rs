@@ -94,6 +94,7 @@ mod tests {
         Config, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig, ServerConfig,
         UploadConfig, WebConfig,
     };
+    use crate::db::DbBackend;
     use crate::db::create_test_pool;
     use crate::web::i18n::Translations;
     use std::path::PathBuf;
@@ -150,12 +151,20 @@ mod tests {
             },
         };
 
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let tera = tera::Tera::default();
         let mut translations = Translations::new();
         translations.insert("en".to_string(), serde_json::json!({"admin": {}}));
 
-        let state = AppState::new(config, pool, tera, translations, false, false);
+        let state = AppState::new(
+            config,
+            pool,
+            DbBackend::Sqlite,
+            tera,
+            translations,
+            false,
+            false,
+        );
         let _router = router(state);
     }
 }

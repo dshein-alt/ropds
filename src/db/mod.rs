@@ -12,25 +12,46 @@ use crate::config::DatabaseConfig;
 ///   - `mysql://...`       → MySQL / MariaDB
 pub type DbPool = sqlx::AnyPool;
 
+/// Database backend detected from the connection URL scheme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DbBackend {
+    Sqlite,
+    Postgres,
+    Mysql,
+}
+
+impl DbBackend {
+    pub fn from_url(url: &str) -> Self {
+        if url.starts_with("postgres") {
+            DbBackend::Postgres
+        } else if url.starts_with("mysql") {
+            DbBackend::Mysql
+        } else {
+            DbBackend::Sqlite
+        }
+    }
+}
+
 /// Install database drivers and create a connection pool.
 /// The backend is determined by the URI scheme in `config.url`.
-pub async fn create_pool(config: &DatabaseConfig) -> Result<DbPool, sqlx::Error> {
+pub async fn create_pool(config: &DatabaseConfig) -> Result<(DbPool, DbBackend), sqlx::Error> {
     // Register all compiled-in database drivers
     sqlx::any::install_default_drivers();
 
+    let backend = DbBackend::from_url(&config.url);
     let pool = AnyPoolOptions::new()
         .max_connections(5)
         .connect(&config.url)
         .await?;
 
     // Apply SQLite-specific pragmas after connecting
-    if config.url.starts_with("sqlite") {
+    if backend == DbBackend::Sqlite {
         configure_sqlite(&pool).await?;
     }
 
     run_migrations(&pool).await?;
 
-    Ok(pool)
+    Ok((pool, backend))
 }
 
 /// Set SQLite pragmas for WAL journal mode and foreign key enforcement.
@@ -46,7 +67,7 @@ async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
 }
 
 /// Create an in-memory SQLite pool for testing, with all migrations applied.
-pub async fn create_test_pool() -> DbPool {
+pub async fn create_test_pool() -> (DbPool, DbBackend) {
     sqlx::any::install_default_drivers();
 
     let pool = AnyPoolOptions::new()
@@ -60,5 +81,5 @@ pub async fn create_test_pool() -> DbPool {
         .await
         .expect("Failed to run migrations");
 
-    pool
+    (pool, DbBackend::Sqlite)
 }

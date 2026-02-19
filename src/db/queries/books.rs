@@ -656,14 +656,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_empty() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
         assert!(groups.is_empty());
     }
 
     #[tokio::test]
     async fn test_title_prefix_groups_basic() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         insert_test_book(&pool, cat, "Alpha", 2).await;
         insert_test_book(&pool, cat, "Beta", 2).await;
@@ -678,7 +678,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_lang_filter() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         insert_test_book(&pool, cat, "Альфа", 1).await; // Cyrillic
         insert_test_book(&pool, cat, "Бета", 1).await; // Cyrillic
@@ -700,7 +700,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_drill_down() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         insert_test_book(&pool, cat, "Aa book", 2).await;
         insert_test_book(&pool, cat, "Ab book", 2).await;
@@ -723,7 +723,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_deep_drill_down() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         insert_test_book(&pool, cat, "Abc one", 2).await;
         insert_test_book(&pool, cat, "Abd two", 2).await;
@@ -749,7 +749,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_count_aggregation() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         // 3 books starting with "A", 2 with "B", 1 with "C"
         insert_test_book(&pool, cat, "Alpha", 2).await;
@@ -768,7 +768,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_excludes_unavailable() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         let book_id = insert_test_book(&pool, cat, "Alpha", 2).await;
         insert_test_book(&pool, cat, "Beta", 2).await;
@@ -787,7 +787,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_by_title_prefix() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         insert_test_book(&pool, cat, "Alpha", 2).await;
         insert_test_book(&pool, cat, "Another", 2).await;
@@ -822,7 +822,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_by_title_prefix_pagination() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         insert_test_book(&pool, cat, "Aa", 2).await;
         insert_test_book(&pool, cat, "Ab", 2).await;
@@ -847,7 +847,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_prefix_groups_lang_filter_with_drill_down() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         // Two Cyrillic books with different second chars
         insert_test_book(&pool, cat, "Альфа", 1).await;
@@ -867,7 +867,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_catalog_and_find_by_path_with_doubles() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         let alpha_a = insert_test_book_custom(
             &pool,
@@ -920,7 +920,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_author_genre_series_and_counts() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         let author = insert_test_author(&pool, "Test Author").await;
         let genre = insert_test_genre(&pool, "books_q_tests").await;
@@ -1034,7 +1034,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_title_and_update_title() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         let b1 = insert_test_book_custom(
             &pool,
@@ -1087,7 +1087,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_availability_helpers_and_cleanup_flow() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
 
         let normal = insert_test_book_custom(
@@ -1165,7 +1165,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_avail_all_and_get_random() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         let first = insert_test_book(&pool, cat, "Random One", 2).await;
         insert_test_book(&pool, cat, "Random Two", 2).await;

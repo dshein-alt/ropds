@@ -1472,7 +1472,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ensure_catalog_author_series() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cat_id = ensure_catalog(&pool, "a/b", CatType::Normal).await.unwrap();
         assert!(cat_id > 0);
 
@@ -1493,7 +1493,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_scan_already_running() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let cfg: crate::config::Config = toml::from_str(
             r#"
 [server]

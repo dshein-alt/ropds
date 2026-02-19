@@ -1151,6 +1151,7 @@ mod tests {
         Config, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig, ServerConfig,
         UploadConfig, WebConfig,
     };
+    use crate::db::DbBackend;
     use crate::db::create_test_pool;
     use crate::db::models::CatType;
     use crate::db::queries::books;
@@ -1211,12 +1212,20 @@ mod tests {
             },
         };
 
-        let db = create_test_pool().await;
+        let (db, _) = create_test_pool().await;
         let tera = tera::Tera::default();
         let mut translations = Translations::new();
         translations.insert("en".to_string(), serde_json::json!({"web": {}}));
 
-        AppState::new(config, db, tera, translations, false, false)
+        AppState::new(
+            config,
+            db,
+            DbBackend::Sqlite,
+            tera,
+            translations,
+            false,
+            false,
+        )
     }
 
     async fn ensure_catalog(pool: &crate::db::DbPool) -> i64 {

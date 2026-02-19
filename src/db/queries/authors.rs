@@ -228,7 +228,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_search_count_and_prefix_groups() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let alice = insert(&pool, "Alice Smith", "ALICE SMITH", 2)
             .await
@@ -259,7 +259,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_duplicate_returns_same_id() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let id1 = insert(&pool, "Same Name", "SAME NAME", 2).await.unwrap();
         let id2 = insert(&pool, "Same Name", "DIFFERENT SEARCH", 1)
@@ -270,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_link_and_set_book_authors_with_orphan_cleanup() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let catalog_id = ensure_catalog(&pool).await;
         let book_id = insert_test_book(&pool, catalog_id, "Book One").await;
 

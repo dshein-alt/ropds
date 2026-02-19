@@ -119,7 +119,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_credentials_and_get_user_id_from_headers() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let hash = crate::password::hash("secret123");
         sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)")
             .bind("alice")
@@ -142,7 +142,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_user_id_from_headers_invalid_inputs() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let mut headers = HeaderMap::new();
 
         assert_eq!(get_user_id_from_headers(&pool, &headers).await, None);

@@ -7,7 +7,7 @@ use super::*;
 #[tokio::test]
 async fn search_series_by_name() {
     let _lock = SCAN_MUTEX.lock().await;
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -32,7 +32,7 @@ async fn search_series_by_name() {
 #[tokio::test]
 async fn browse_series_by_lang_and_prefix() {
     let _lock = SCAN_MUTEX.lock().await;
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -70,7 +70,7 @@ async fn browse_series_by_lang_and_prefix() {
 #[tokio::test]
 async fn search_cyrillic_series() {
     let _lock = SCAN_MUTEX.lock().await;
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -99,7 +99,7 @@ async fn search_cyrillic_series() {
 #[tokio::test]
 async fn browse_cyrillic_series() {
     let _lock = SCAN_MUTEX.lock().await;
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());

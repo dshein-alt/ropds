@@ -7,7 +7,7 @@ use super::*;
 #[tokio::test]
 async fn catalog_page_lists_root_catalogs() {
     let _lock = SCAN_MUTEX.lock().await;
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -33,7 +33,7 @@ async fn catalog_page_lists_root_catalogs() {
 #[tokio::test]
 async fn catalog_drill_down_shows_books() {
     let _lock = SCAN_MUTEX.lock().await;
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());

@@ -11,7 +11,7 @@ async fn setup_library() -> (
     tempfile::TempDir,
     tempfile::TempDir,
 ) {
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -176,7 +176,7 @@ async fn browse_books_by_lang_and_prefix() {
 async fn browse_books_cyrillic() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -209,7 +209,7 @@ async fn browse_books_cyrillic() {
 async fn browse_books_digit_prefix() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -234,7 +234,7 @@ async fn browse_books_digit_prefix() {
 async fn search_cyrillic_book_by_title() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());

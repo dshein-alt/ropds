@@ -76,7 +76,7 @@ async fn main() {
     }
 
     // Initialize database
-    let pool = ropds::db::create_pool(&config.database)
+    let (pool, backend) = ropds::db::create_pool(&config.database)
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Failed to initialize database: {e}");
@@ -247,6 +247,7 @@ async fn main() {
     let state = AppState::new(
         config,
         pool,
+        backend,
         tera,
         translations,
         pdf_preview_tool_available,

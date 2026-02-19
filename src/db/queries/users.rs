@@ -175,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_and_get_all_views() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "alice", "hash123", 0, "Alice").await.unwrap();
         assert!(id > 0);
 
@@ -188,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_duplicate_username() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         create(&pool, "bob", "hash1", 0, "").await.unwrap();
         let result = create(&pool, "bob", "hash2", 0, "").await;
         assert!(result.is_err());
@@ -196,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_superuser() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "admin", "hash", 1, "Administrator")
             .await
             .unwrap();
@@ -208,13 +208,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_superuser_nonexistent() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         assert!(!is_superuser(&pool, 9999).await.unwrap());
     }
 
     #[tokio::test]
     async fn test_update_password() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "carol", "old_hash", 0, "").await.unwrap();
         update_password(&pool, id, "new_hash").await.unwrap();
 
@@ -224,7 +224,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_password_hash_verify() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let old_hash = crate::password::hash("old_password");
         let id = create(&pool, "frank", &old_hash, 0, "").await.unwrap();
 
@@ -247,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "dave", "hash", 0, "").await.unwrap();
         delete(&pool, id).await.unwrap();
 
@@ -257,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_last_login() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "eve", "hash", 0, "").await.unwrap();
 
         update_last_login(&pool, id, "2026-01-15 10:30:00")
@@ -269,7 +269,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_sets_password_change_required() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "newuser", "hash", 0, "").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -279,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_password_change_required() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "testuser", "hash", 0, "").await.unwrap();
         assert!(password_change_required(&pool, id).await.unwrap());
 
@@ -292,7 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_display_name() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "jane", "hash", 0, "Jane Doe").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -305,7 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_display_name_default_empty() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let id = create(&pool, "noname", "hash", 0, "").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();

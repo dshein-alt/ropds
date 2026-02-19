@@ -10,7 +10,7 @@ use super::*;
 async fn scan_adds_books_from_files() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -41,7 +41,7 @@ async fn scan_adds_books_from_files() {
 async fn scan_adds_books_from_zip() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -68,7 +68,7 @@ async fn scan_adds_books_from_zip() {
 async fn scan_skips_existing_books() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -88,7 +88,7 @@ async fn scan_skips_existing_books() {
 async fn scan_deletes_removed_books() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -116,7 +116,7 @@ async fn scan_deletes_removed_books() {
 async fn scan_handles_metadata_variants() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -189,7 +189,7 @@ async fn scan_handles_metadata_variants() {
 async fn scan_duplicate_path_detection() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -212,7 +212,7 @@ async fn scan_duplicate_path_detection() {
 async fn scan_epub_metadata() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -242,7 +242,7 @@ async fn scan_epub_metadata() {
 async fn scan_lang_code_variants() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -309,7 +309,7 @@ async fn scan_lang_code_variants() {
 async fn scan_books_have_confirmed_status() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let pool = db::create_test_pool().await;
+    let (pool, _) = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());

@@ -96,7 +96,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_and_set() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let all = get_all(&pool).await.unwrap();
         assert!(all.len() >= 5);
@@ -108,7 +108,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_all_recalculates_values() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let catalog_id = ensure_catalog(&pool).await;
         let book1 = insert_test_book(&pool, catalog_id, "Live", 2).await;

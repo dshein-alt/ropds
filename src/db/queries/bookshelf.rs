@@ -186,7 +186,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bookshelf_lifecycle_and_upsert_dedup() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let user_id = insert_user(&pool, "shelf_user").await;
         let catalog_id = ensure_catalog(&pool).await;
         let b1 = insert_book(&pool, catalog_id, "Book One").await;
@@ -218,7 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_user_sorting_variants() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let user_id = insert_user(&pool, "sort_user").await;
         let catalog_id = ensure_catalog(&pool).await;
 

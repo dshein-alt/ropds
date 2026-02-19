@@ -199,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_search_count_and_prefix_groups() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2).await.unwrap();
         let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2).await.unwrap();
@@ -228,7 +228,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_duplicate_returns_same_id() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
 
         let id1 = insert(&pool, "Shared Series", "SHARED SERIES", 2)
             .await
@@ -239,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_link_book_and_get_for_book() {
-        let pool = create_test_pool().await;
+        let (pool, _) = create_test_pool().await;
         let catalog_id = ensure_catalog(&pool).await;
         let book_id = insert_test_book(&pool, catalog_id, "Linked Book").await;
 
