@@ -1,5 +1,5 @@
-use crate::db::DbPool;
 use crate::db::models::Book;
+use crate::db::{DbBackend, DbPool};
 
 /// Bookshelf sort column.
 pub enum SortColumn {
@@ -10,15 +10,27 @@ pub enum SortColumn {
 
 /// Add or update a book on the user's bookshelf.
 /// Uses ON CONFLICT to update read_time on re-download.
-pub async fn upsert(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO bookshelf (user_id, book_id, read_time) VALUES (?, ?, CURRENT_TIMESTAMP) \
-         ON CONFLICT(user_id, book_id) DO UPDATE SET read_time = CURRENT_TIMESTAMP",
-    )
-    .bind(user_id)
-    .bind(book_id)
-    .execute(pool)
-    .await?;
+pub async fn upsert(
+    pool: &DbPool,
+    user_id: i64,
+    book_id: i64,
+    backend: DbBackend,
+) -> Result<(), sqlx::Error> {
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT INTO bookshelf (user_id, book_id, read_time) VALUES (?, ?, CURRENT_TIMESTAMP) \
+             ON DUPLICATE KEY UPDATE read_time = CURRENT_TIMESTAMP"
+        }
+        _ => {
+            "INSERT INTO bookshelf (user_id, book_id, read_time) VALUES (?, ?, CURRENT_TIMESTAMP) \
+             ON CONFLICT(user_id, book_id) DO UPDATE SET read_time = CURRENT_TIMESTAMP"
+        }
+    };
+    sqlx::query(sql)
+        .bind(user_id)
+        .bind(book_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -30,6 +42,7 @@ pub async fn get_by_user(
     ascending: bool,
     limit: i32,
     offset: i32,
+    backend: DbBackend,
 ) -> Result<Vec<Book>, sqlx::Error> {
     let dir = if ascending { "ASC" } else { "DESC" };
     let sql = match sort {
@@ -40,23 +53,37 @@ pub async fn get_by_user(
              ORDER BY bs.read_time {dir} \
              LIMIT ? OFFSET ?"
         ),
-        SortColumn::Title => format!(
-            "SELECT b.* FROM books b \
-             JOIN bookshelf bs ON bs.book_id = b.id \
-             WHERE bs.user_id = ? \
-             ORDER BY b.title COLLATE NOCASE {dir} \
-             LIMIT ? OFFSET ?"
-        ),
-        SortColumn::Author => format!(
-            "SELECT b.* FROM books b \
-             JOIN bookshelf bs ON bs.book_id = b.id \
-             LEFT JOIN book_authors ba ON ba.book_id = b.id \
-             LEFT JOIN authors a ON a.id = ba.author_id \
-             WHERE bs.user_id = ? \
-             GROUP BY b.id \
-             ORDER BY COALESCE(MIN(a.full_name), '') COLLATE NOCASE {dir} \
-             LIMIT ? OFFSET ?"
-        ),
+        SortColumn::Title => {
+            let order_expr = match backend {
+                DbBackend::Sqlite => format!("b.title COLLATE NOCASE {dir}"),
+                _ => format!("LOWER(b.title) {dir}"),
+            };
+            format!(
+                "SELECT b.* FROM books b \
+                 JOIN bookshelf bs ON bs.book_id = b.id \
+                 WHERE bs.user_id = ? \
+                 ORDER BY {order_expr} \
+                 LIMIT ? OFFSET ?"
+            )
+        }
+        SortColumn::Author => {
+            let order_expr = match backend {
+                DbBackend::Sqlite => {
+                    format!("COALESCE(MIN(a.full_name), '') COLLATE NOCASE {dir}")
+                }
+                _ => format!("LOWER(COALESCE(MIN(a.full_name), '')) {dir}"),
+            };
+            format!(
+                "SELECT b.* FROM books b \
+                 JOIN bookshelf bs ON bs.book_id = b.id \
+                 LEFT JOIN book_authors ba ON ba.book_id = b.id \
+                 LEFT JOIN authors a ON a.id = ba.author_id \
+                 WHERE bs.user_id = ? \
+                 GROUP BY b.id \
+                 ORDER BY {order_expr} \
+                 LIMIT ? OFFSET ?"
+            )
+        }
     };
     sqlx::query_as::<_, Book>(&sql)
         .bind(user_id)
@@ -192,9 +219,9 @@ mod tests {
         let b1 = insert_book(&pool, catalog_id, "Book One").await;
         let b2 = insert_book(&pool, catalog_id, "Book Two").await;
 
-        upsert(&pool, user_id, b1).await.unwrap();
-        upsert(&pool, user_id, b1).await.unwrap(); // should not duplicate
-        upsert(&pool, user_id, b2).await.unwrap();
+        upsert(&pool, user_id, b1, DbBackend::Sqlite).await.unwrap();
+        upsert(&pool, user_id, b1, DbBackend::Sqlite).await.unwrap(); // should not duplicate
+        upsert(&pool, user_id, b2, DbBackend::Sqlite).await.unwrap();
 
         assert_eq!(count_by_user(&pool, user_id).await.unwrap(), 2);
         assert!(is_on_shelf(&pool, user_id, b1).await.unwrap());
@@ -251,8 +278,12 @@ mod tests {
             .await
             .unwrap();
 
-        upsert(&pool, user_id, b_alpha).await.unwrap();
-        upsert(&pool, user_id, b_zulu).await.unwrap();
+        upsert(&pool, user_id, b_alpha, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        upsert(&pool, user_id, b_zulu, DbBackend::Sqlite)
+            .await
+            .unwrap();
         sqlx::query("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?")
             .bind("2026-01-01 00:00:00")
             .bind(user_id)
@@ -268,21 +299,45 @@ mod tests {
             .await
             .unwrap();
 
-        let by_title = get_by_user(&pool, user_id, &SortColumn::Title, true, 10, 0)
-            .await
-            .unwrap();
+        let by_title = get_by_user(
+            &pool,
+            user_id,
+            &SortColumn::Title,
+            true,
+            10,
+            0,
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
         assert_eq!(by_title[0].id, b_alpha);
         assert_eq!(by_title[1].id, b_zulu);
 
-        let by_author = get_by_user(&pool, user_id, &SortColumn::Author, true, 10, 0)
-            .await
-            .unwrap();
+        let by_author = get_by_user(
+            &pool,
+            user_id,
+            &SortColumn::Author,
+            true,
+            10,
+            0,
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
         assert_eq!(by_author[0].id, b_zulu); // Alice
         assert_eq!(by_author[1].id, b_alpha); // Charlie
 
-        let by_date_desc = get_by_user(&pool, user_id, &SortColumn::Date, false, 10, 0)
-            .await
-            .unwrap();
+        let by_date_desc = get_by_user(
+            &pool,
+            user_id,
+            &SortColumn::Date,
+            false,
+            10,
+            0,
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
         assert_eq!(by_date_desc[0].id, b_zulu);
         assert_eq!(by_date_desc[1].id, b_alpha);
     }

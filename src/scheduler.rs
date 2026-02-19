@@ -3,7 +3,7 @@ use tokio::time::{Duration, sleep};
 use tracing::{info, warn};
 
 use crate::config::{Config, ScannerConfig};
-use crate::db::DbPool;
+use crate::db::{DbBackend, DbPool};
 use crate::scanner;
 
 /// Validate scanner schedule config values at startup.
@@ -84,7 +84,7 @@ pub fn format_schedule(config: &ScannerConfig) -> String {
 }
 
 /// Run the scheduler loop. Checks every minute, spawns a scan task if schedule matches.
-pub async fn run(pool: DbPool, config: Config) {
+pub async fn run(pool: DbPool, config: Config, backend: DbBackend) {
     info!("Scheduler started: {}", format_schedule(&config.scanner));
 
     loop {
@@ -101,7 +101,7 @@ pub async fn run(pool: DbPool, config: Config) {
             let pool = pool.clone();
             let config = config.clone();
             tokio::spawn(async move {
-                match scanner::run_scan(&pool, &config).await {
+                match scanner::run_scan(&pool, &config, backend).await {
                     Ok(stats) => {
                         info!(
                             "Scheduled scan finished: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",

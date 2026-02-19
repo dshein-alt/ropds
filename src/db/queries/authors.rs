@@ -1,4 +1,4 @@
-use crate::db::DbPool;
+use crate::db::{DbBackend, DbPool};
 
 use crate::db::models::Author;
 
@@ -59,15 +59,23 @@ pub async fn insert(
     full_name: &str,
     search_full_name: &str,
     lang_code: i32,
+    backend: DbBackend,
 ) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?)",
-    )
-    .bind(full_name)
-    .bind(search_full_name)
-    .bind(lang_code)
-    .execute(pool)
-    .await?;
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT IGNORE INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?)"
+        }
+        _ => {
+            "INSERT INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?) \
+             ON CONFLICT (full_name) DO NOTHING"
+        }
+    };
+    let result = sqlx::query(sql)
+        .bind(full_name)
+        .bind(search_full_name)
+        .bind(lang_code)
+        .execute(pool)
+        .await?;
     if let Some(id) = result.last_insert_id()
         && id > 0
     {
@@ -81,8 +89,20 @@ pub async fn insert(
     Ok(row.0)
 }
 
-pub async fn link_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT OR IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)")
+pub async fn link_book(
+    pool: &DbPool,
+    book_id: i64,
+    author_id: i64,
+    backend: DbBackend,
+) -> Result<(), sqlx::Error> {
+    let sql = match backend {
+        DbBackend::Mysql => "INSERT IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)",
+        _ => {
+            "INSERT INTO book_authors (book_id, author_id) VALUES (?, ?) \
+             ON CONFLICT (book_id, author_id) DO NOTHING"
+        }
+    };
+    sqlx::query(sql)
         .bind(book_id)
         .bind(author_id)
         .execute(pool)
@@ -96,6 +116,7 @@ pub async fn set_book_authors(
     pool: &DbPool,
     book_id: i64,
     author_ids: &[i64],
+    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
     // Remember old author IDs before unlinking
     let old_ids: Vec<(i64,)> =
@@ -108,8 +129,15 @@ pub async fn set_book_authors(
         .bind(book_id)
         .execute(pool)
         .await?;
+    let sql = match backend {
+        DbBackend::Mysql => "INSERT IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)",
+        _ => {
+            "INSERT INTO book_authors (book_id, author_id) VALUES (?, ?) \
+             ON CONFLICT (book_id, author_id) DO NOTHING"
+        }
+    };
     for &author_id in author_ids {
-        sqlx::query("INSERT OR IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)")
+        sqlx::query(sql)
             .bind(book_id)
             .bind(author_id)
             .execute(pool)
@@ -230,11 +258,15 @@ mod tests {
     async fn test_insert_search_count_and_prefix_groups() {
         let (pool, _) = create_test_pool().await;
 
-        let alice = insert(&pool, "Alice Smith", "ALICE SMITH", 2)
+        let alice = insert(&pool, "Alice Smith", "ALICE SMITH", 2, DbBackend::Sqlite)
             .await
             .unwrap();
-        let _alina = insert(&pool, "Alina West", "ALINA WEST", 2).await.unwrap();
-        let _cyr = insert(&pool, "Алиса", "АЛИСА", 1).await.unwrap();
+        let _alina = insert(&pool, "Alina West", "ALINA WEST", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        let _cyr = insert(&pool, "Алиса", "АЛИСА", 1, DbBackend::Sqlite)
+            .await
+            .unwrap();
 
         let found = get_by_id(&pool, alice).await.unwrap().unwrap();
         assert_eq!(found.full_name, "Alice Smith");
@@ -261,8 +293,10 @@ mod tests {
     async fn test_insert_duplicate_returns_same_id() {
         let (pool, _) = create_test_pool().await;
 
-        let id1 = insert(&pool, "Same Name", "SAME NAME", 2).await.unwrap();
-        let id2 = insert(&pool, "Same Name", "DIFFERENT SEARCH", 1)
+        let id1 = insert(&pool, "Same Name", "SAME NAME", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        let id2 = insert(&pool, "Same Name", "DIFFERENT SEARCH", 1, DbBackend::Sqlite)
             .await
             .unwrap();
         assert_eq!(id1, id2);
@@ -274,15 +308,23 @@ mod tests {
         let catalog_id = ensure_catalog(&pool).await;
         let book_id = insert_test_book(&pool, catalog_id, "Book One").await;
 
-        let alice_id = insert(&pool, "Alice", "ALICE", 2).await.unwrap();
-        let bob_id = insert(&pool, "Bob", "BOB", 2).await.unwrap();
+        let alice_id = insert(&pool, "Alice", "ALICE", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        let bob_id = insert(&pool, "Bob", "BOB", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
 
-        link_book(&pool, book_id, alice_id).await.unwrap();
+        link_book(&pool, book_id, alice_id, DbBackend::Sqlite)
+            .await
+            .unwrap();
         let linked = get_for_book(&pool, book_id).await.unwrap();
         assert_eq!(linked.len(), 1);
         assert_eq!(linked[0].id, alice_id);
 
-        set_book_authors(&pool, book_id, &[bob_id]).await.unwrap();
+        set_book_authors(&pool, book_id, &[bob_id], DbBackend::Sqlite)
+            .await
+            .unwrap();
         let linked = get_for_book(&pool, book_id).await.unwrap();
         assert_eq!(linked.len(), 1);
         assert_eq!(linked[0].id, bob_id);

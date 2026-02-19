@@ -1,4 +1,4 @@
-use crate::db::DbPool;
+use crate::db::{DbBackend, DbPool};
 
 use crate::db::models::{CatType, Catalog};
 
@@ -37,19 +37,27 @@ pub async fn insert(
     cat_type: CatType,
     cat_size: i64,
     cat_mtime: &str,
+    backend: DbBackend,
 ) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO catalogs (parent_id, path, cat_name, cat_type, cat_size, cat_mtime) \
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .bind(parent_id)
-    .bind(path)
-    .bind(cat_name)
-    .bind(cat_type as i32)
-    .bind(cat_size)
-    .bind(cat_mtime)
-    .execute(pool)
-    .await?;
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT IGNORE INTO catalogs (parent_id, path, cat_name, cat_type, cat_size, cat_mtime) \
+             VALUES (?, ?, ?, ?, ?, ?)"
+        }
+        _ => {
+            "INSERT INTO catalogs (parent_id, path, cat_name, cat_type, cat_size, cat_mtime) \
+             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (path) DO NOTHING"
+        }
+    };
+    let result = sqlx::query(sql)
+        .bind(parent_id)
+        .bind(path)
+        .bind(cat_name)
+        .bind(cat_type as i32)
+        .bind(cat_size)
+        .bind(cat_mtime)
+        .execute(pool)
+        .await?;
     if let Some(id) = result.last_insert_id()
         && id > 0
     {
@@ -137,9 +145,18 @@ mod tests {
     async fn test_insert_and_lookup_hierarchy() {
         let (pool, _) = create_test_pool().await;
 
-        let root_id = insert(&pool, None, "/root", "root", CatType::Normal, 0, "")
-            .await
-            .unwrap();
+        let root_id = insert(
+            &pool,
+            None,
+            "/root",
+            "root",
+            CatType::Normal,
+            0,
+            "",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
         let child_id = insert(
             &pool,
             Some(root_id),
@@ -148,6 +165,7 @@ mod tests {
             CatType::Normal,
             0,
             "",
+            DbBackend::Sqlite,
         )
         .await
         .unwrap();
@@ -172,12 +190,30 @@ mod tests {
     async fn test_insert_duplicate_returns_same_id() {
         let (pool, _) = create_test_pool().await;
 
-        let id1 = insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "")
-            .await
-            .unwrap();
-        let id2 = insert(&pool, None, "/dup", "dup2", CatType::Zip, 42, "mtime")
-            .await
-            .unwrap();
+        let id1 = insert(
+            &pool,
+            None,
+            "/dup",
+            "dup",
+            CatType::Normal,
+            0,
+            "",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
+        let id2 = insert(
+            &pool,
+            None,
+            "/dup",
+            "dup2",
+            CatType::Zip,
+            42,
+            "mtime",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(id1, id2);
     }
@@ -194,6 +230,7 @@ mod tests {
             CatType::Zip,
             10,
             "old",
+            DbBackend::Sqlite,
         )
         .await
         .unwrap();
@@ -211,16 +248,43 @@ mod tests {
     async fn test_delete_empty_prunes_tree_and_keeps_non_empty() {
         let (pool, _) = create_test_pool().await;
 
-        let a = insert(&pool, None, "/a", "a", CatType::Normal, 0, "")
-            .await
-            .unwrap();
-        let _b = insert(&pool, Some(a), "/a/b", "b", CatType::Normal, 0, "")
-            .await
-            .unwrap();
+        let a = insert(
+            &pool,
+            None,
+            "/a",
+            "a",
+            CatType::Normal,
+            0,
+            "",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
+        let _b = insert(
+            &pool,
+            Some(a),
+            "/a/b",
+            "b",
+            CatType::Normal,
+            0,
+            "",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
 
-        let keep = insert(&pool, None, "/keep", "keep", CatType::Normal, 0, "")
-            .await
-            .unwrap();
+        let keep = insert(
+            &pool,
+            None,
+            "/keep",
+            "keep",
+            CatType::Normal,
+            0,
+            "",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
         let _book_id = insert_test_book(&pool, keep, "Live Book", 2).await;
 
         let deleted = delete_empty(&pool).await.unwrap();

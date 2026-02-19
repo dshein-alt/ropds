@@ -804,7 +804,7 @@ pub async fn web_download(
         .get("session")
         .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
     {
-        let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
+        let _ = bookshelf::upsert(&state.db, user_id, book_id, state.backend).await;
     }
 
     let download_name =
@@ -910,7 +910,7 @@ pub async fn bookshelf_toggle(
     if on_shelf {
         let _ = bookshelf::delete_one(&state.db, user_id, form.book_id).await;
     } else {
-        let _ = bookshelf::upsert(&state.db, user_id, form.book_id).await;
+        let _ = bookshelf::upsert(&state.db, user_id, form.book_id, state.backend).await;
     }
 
     if is_ajax {
@@ -947,9 +947,17 @@ async fn fetch_bookshelf_views(
     offset: i32,
     lang: &str,
 ) -> Vec<BookView> {
-    let raw_books = bookshelf::get_by_user(&state.db, user_id, sort, ascending, limit, offset)
-        .await
-        .unwrap_or_default();
+    let raw_books = bookshelf::get_by_user(
+        &state.db,
+        user_id,
+        sort,
+        ascending,
+        limit,
+        offset,
+        state.backend,
+    )
+    .await
+    .unwrap_or_default();
     let read_times = bookshelf::get_read_times(&state.db, user_id)
         .await
         .unwrap_or_default();

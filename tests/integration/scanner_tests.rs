@@ -25,7 +25,9 @@ async fn scan_adds_books_from_files() {
         ],
     );
 
-    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats.books_added, 4, "should add 4 books");
     assert_eq!(stats.books_skipped, 0, "nothing to skip on first scan");
 
@@ -48,7 +50,9 @@ async fn scan_adds_books_from_zip() {
 
     copy_test_files(lib_dir.path(), &["test_book.fb2.zip", "test_book.pdf.zip"]);
 
-    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats.books_added, 2, "should extract books from 2 ZIPs");
     assert_eq!(stats.archives_scanned, 2);
 
@@ -75,10 +79,14 @@ async fn scan_skips_existing_books() {
 
     copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
 
-    let stats1 = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats1 = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats1.books_added, 2);
 
-    let stats2 = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats2 = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats2.books_added, 0, "no new books on second scan");
     assert_eq!(stats2.books_skipped, 2, "both books should be skipped");
 }
@@ -94,12 +102,16 @@ async fn scan_deletes_removed_books() {
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     // Remove one file
     std::fs::remove_file(lib_dir.path().join("test_book.fb2")).unwrap();
 
-    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats.books_deleted, 1, "one book should be deleted");
     assert_eq!(stats.books_skipped, 1, "one book should remain");
 
@@ -132,7 +144,9 @@ async fn scan_handles_metadata_variants() {
         ],
     );
 
-    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats.books_added, 5);
 
     // test_book.fb2 — full metadata
@@ -196,8 +210,12 @@ async fn scan_duplicate_path_detection() {
 
     copy_test_files(lib_dir.path(), &["test_book.fb2"]);
 
-    scanner::run_scan(&pool, &config).await.unwrap();
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM books WHERE filename = 'test_book.fb2'")
@@ -219,7 +237,9 @@ async fn scan_epub_metadata() {
 
     copy_test_files(lib_dir.path(), &["test_book.epub"]);
 
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let book = books::find_by_path_and_filename(&pool, "", "test_book.epub")
         .await
@@ -257,7 +277,9 @@ async fn scan_lang_code_variants() {
         ],
     );
 
-    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(stats.books_added, 4);
 
     // Latin title → lang_code=2
@@ -315,7 +337,9 @@ async fn scan_books_have_confirmed_status() {
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2"]);
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let book = books::find_by_path_and_filename(&pool, "", "test_book.fb2")
         .await

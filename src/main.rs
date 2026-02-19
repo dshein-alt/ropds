@@ -164,7 +164,7 @@ async fn main() {
     // One-shot scan mode
     if cli.scan {
         tracing::info!("Running one-shot scan...");
-        match ropds::scanner::run_scan(&pool, &config).await {
+        match ropds::scanner::run_scan(&pool, &config, backend).await {
             Ok(stats) => {
                 tracing::info!(
                     "Scan finished: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",
@@ -242,7 +242,7 @@ async fn main() {
     tracing::info!("Listening on {addr}");
 
     // Start background scan scheduler
-    tokio::spawn(ropds::scheduler::run(pool.clone(), config.clone()));
+    tokio::spawn(ropds::scheduler::run(pool.clone(), config.clone(), backend));
 
     let state = AppState::new(
         config,

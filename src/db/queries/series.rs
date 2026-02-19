@@ -1,4 +1,4 @@
-use crate::db::DbPool;
+use crate::db::{DbBackend, DbPool};
 
 use crate::db::models::Series;
 
@@ -59,15 +59,23 @@ pub async fn insert(
     ser_name: &str,
     search_ser: &str,
     lang_code: i32,
+    backend: DbBackend,
 ) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)",
-    )
-    .bind(ser_name)
-    .bind(search_ser)
-    .bind(lang_code)
-    .execute(pool)
-    .await?;
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT IGNORE INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)"
+        }
+        _ => {
+            "INSERT INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?) \
+             ON CONFLICT (ser_name) DO NOTHING"
+        }
+    };
+    let result = sqlx::query(sql)
+        .bind(ser_name)
+        .bind(search_ser)
+        .bind(lang_code)
+        .execute(pool)
+        .await?;
     if let Some(id) = result.last_insert_id()
         && id > 0
     {
@@ -86,8 +94,18 @@ pub async fn link_book(
     book_id: i64,
     series_id: i64,
     ser_no: i32,
+    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT OR IGNORE INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)")
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT IGNORE INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)"
+        }
+        _ => {
+            "INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?) \
+             ON CONFLICT (book_id, series_id) DO NOTHING"
+        }
+    };
+    sqlx::query(sql)
         .bind(book_id)
         .bind(series_id)
         .bind(ser_no)
@@ -201,9 +219,15 @@ mod tests {
     async fn test_insert_search_count_and_prefix_groups() {
         let (pool, _) = create_test_pool().await;
 
-        let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2).await.unwrap();
-        let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2).await.unwrap();
-        let _cyr = insert(&pool, "Альфа", "АЛЬФА", 1).await.unwrap();
+        let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        let _cyr = insert(&pool, "Альфа", "АЛЬФА", 1, DbBackend::Sqlite)
+            .await
+            .unwrap();
 
         let found = get_by_id(&pool, alpha).await.unwrap().unwrap();
         assert_eq!(found.ser_name, "Alpha Saga");
@@ -230,10 +254,18 @@ mod tests {
     async fn test_insert_duplicate_returns_same_id() {
         let (pool, _) = create_test_pool().await;
 
-        let id1 = insert(&pool, "Shared Series", "SHARED SERIES", 2)
+        let id1 = insert(
+            &pool,
+            "Shared Series",
+            "SHARED SERIES",
+            2,
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
+        let id2 = insert(&pool, "Shared Series", "OTHER", 1, DbBackend::Sqlite)
             .await
             .unwrap();
-        let id2 = insert(&pool, "Shared Series", "OTHER", 1).await.unwrap();
         assert_eq!(id1, id2);
     }
 
@@ -243,10 +275,18 @@ mod tests {
         let catalog_id = ensure_catalog(&pool).await;
         let book_id = insert_test_book(&pool, catalog_id, "Linked Book").await;
 
-        let z_id = insert(&pool, "Zeta", "ZETA", 2).await.unwrap();
-        let a_id = insert(&pool, "Alpha", "ALPHA", 2).await.unwrap();
-        link_book(&pool, book_id, z_id, 7).await.unwrap();
-        link_book(&pool, book_id, a_id, 3).await.unwrap();
+        let z_id = insert(&pool, "Zeta", "ZETA", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        let a_id = insert(&pool, "Alpha", "ALPHA", 2, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        link_book(&pool, book_id, z_id, 7, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        link_book(&pool, book_id, a_id, 3, DbBackend::Sqlite)
+            .await
+            .unwrap();
 
         let linked = get_for_book(&pool, book_id).await.unwrap();
         assert_eq!(linked.len(), 2);

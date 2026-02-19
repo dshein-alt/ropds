@@ -19,7 +19,9 @@ async fn setup_with_user() -> (
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let user_id = create_test_user(&pool, "testuser", "password123", false).await;
     let session = session_cookie_value(user_id);
@@ -84,7 +86,9 @@ async fn bookshelf_remove() {
         .unwrap();
 
     // Add to shelf directly via DB
-    bookshelf::upsert(&pool, user_id, book.id).await.unwrap();
+    bookshelf::upsert(&pool, user_id, book.id, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert!(
         bookshelf::is_on_shelf(&pool, user_id, book.id)
             .await
@@ -124,8 +128,12 @@ async fn bookshelf_clear_all() {
         .await
         .unwrap()
         .unwrap();
-    bookshelf::upsert(&pool, user_id, book1.id).await.unwrap();
-    bookshelf::upsert(&pool, user_id, book2.id).await.unwrap();
+    bookshelf::upsert(&pool, user_id, book1.id, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
+    bookshelf::upsert(&pool, user_id, book2.id, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     assert_eq!(bookshelf::count_by_user(&pool, user_id).await.unwrap(), 2);
 
     // Clear via web
@@ -158,8 +166,12 @@ async fn bookshelf_sorting() {
         .await
         .unwrap()
         .unwrap();
-    bookshelf::upsert(&pool, user_id, book1.id).await.unwrap();
-    bookshelf::upsert(&pool, user_id, book2.id).await.unwrap();
+    bookshelf::upsert(&pool, user_id, book1.id, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
+    bookshelf::upsert(&pool, user_id, book2.id, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let state = test_app_state(pool, config);
 

@@ -1,5 +1,5 @@
-use crate::db::DbPool;
 use crate::db::models::{Genre, GenreSection, GenreSectionTranslation, GenreTranslation};
+use crate::db::{DbBackend, DbPool};
 
 // ---------------------------------------------------------------------------
 // Display queries (language-aware, with English fallback)
@@ -212,8 +212,20 @@ pub async fn get_by_section_with_counts(
 // Link / unlink (no translations needed)
 // ---------------------------------------------------------------------------
 
-pub async fn link_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)")
+pub async fn link_book(
+    pool: &DbPool,
+    book_id: i64,
+    genre_id: i64,
+    backend: DbBackend,
+) -> Result<(), sqlx::Error> {
+    let sql = match backend {
+        DbBackend::Mysql => "INSERT IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)",
+        _ => {
+            "INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?) \
+             ON CONFLICT (book_id, genre_id) DO NOTHING"
+        }
+    };
+    sqlx::query(sql)
         .bind(book_id)
         .bind(genre_id)
         .execute(pool)
@@ -223,9 +235,14 @@ pub async fn link_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(),
 
 /// Link a book to a genre by genre code. If the code doesn't match
 /// any seeded genre, the link is silently skipped.
-pub async fn link_book_by_code(pool: &DbPool, book_id: i64, code: &str) -> Result<(), sqlx::Error> {
+pub async fn link_book_by_code(
+    pool: &DbPool,
+    book_id: i64,
+    code: &str,
+    backend: DbBackend,
+) -> Result<(), sqlx::Error> {
     if let Some(genre) = get_by_code(pool, code).await? {
-        link_book(pool, book_id, genre.id).await?;
+        link_book(pool, book_id, genre.id, backend).await?;
     }
     Ok(())
 }
@@ -235,13 +252,21 @@ pub async fn set_book_genres(
     pool: &DbPool,
     book_id: i64,
     genre_ids: &[i64],
+    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM book_genres WHERE book_id = ?")
         .bind(book_id)
         .execute(pool)
         .await?;
+    let sql = match backend {
+        DbBackend::Mysql => "INSERT IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)",
+        _ => {
+            "INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?) \
+             ON CONFLICT (book_id, genre_id) DO NOTHING"
+        }
+    };
     for &genre_id in genre_ids {
-        sqlx::query("INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)")
+        sqlx::query(sql)
             .bind(book_id)
             .bind(genre_id)
             .execute(pool)
@@ -304,16 +329,24 @@ pub async fn upsert_section_translation(
     section_id: i64,
     lang: &str,
     name: &str,
+    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO genre_section_translations (section_id, lang, name) VALUES (?, ?, ?) \
-         ON CONFLICT (section_id, lang) DO UPDATE SET name = excluded.name",
-    )
-    .bind(section_id)
-    .bind(lang)
-    .bind(name)
-    .execute(pool)
-    .await?;
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT INTO genre_section_translations (section_id, lang, name) VALUES (?, ?, ?) \
+             ON DUPLICATE KEY UPDATE name = VALUES(name)"
+        }
+        _ => {
+            "INSERT INTO genre_section_translations (section_id, lang, name) VALUES (?, ?, ?) \
+             ON CONFLICT (section_id, lang) DO UPDATE SET name = excluded.name"
+        }
+    };
+    sqlx::query(sql)
+        .bind(section_id)
+        .bind(lang)
+        .bind(name)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -381,16 +414,24 @@ pub async fn upsert_genre_translation(
     genre_id: i64,
     lang: &str,
     name: &str,
+    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO genre_translations (genre_id, lang, name) VALUES (?, ?, ?) \
-         ON CONFLICT (genre_id, lang) DO UPDATE SET name = excluded.name",
-    )
-    .bind(genre_id)
-    .bind(lang)
-    .bind(name)
-    .execute(pool)
-    .await?;
+    let sql = match backend {
+        DbBackend::Mysql => {
+            "INSERT INTO genre_translations (genre_id, lang, name) VALUES (?, ?, ?) \
+             ON DUPLICATE KEY UPDATE name = VALUES(name)"
+        }
+        _ => {
+            "INSERT INTO genre_translations (genre_id, lang, name) VALUES (?, ?, ?) \
+             ON CONFLICT (genre_id, lang) DO UPDATE SET name = excluded.name"
+        }
+    };
+    sqlx::query(sql)
+        .bind(genre_id)
+        .bind(lang)
+        .bind(name)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -496,23 +537,27 @@ mod tests {
 
         let section_id = create_section(&pool, "ut_section_a").await.unwrap();
         let genre_id = create_genre(&pool, "ut_genre_a", section_id).await.unwrap();
-        upsert_section_translation(&pool, section_id, "en", "Section A")
+        upsert_section_translation(&pool, section_id, "en", "Section A", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_section_translation(&pool, section_id, "ru", "Раздел А")
+        upsert_section_translation(&pool, section_id, "ru", "Раздел А", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "en", "Genre A")
+        upsert_genre_translation(&pool, genre_id, "en", "Genre A", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "ru", "Жанр А")
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр А", DbBackend::Sqlite)
             .await
             .unwrap();
 
         let b1 = insert_test_book(&pool, cat, "genre-a-1.fb2").await;
         let b2 = insert_test_book(&pool, cat, "genre-a-2.fb2").await;
-        link_book(&pool, b1, genre_id).await.unwrap();
-        link_book(&pool, b2, genre_id).await.unwrap();
+        link_book(&pool, b1, genre_id, DbBackend::Sqlite)
+            .await
+            .unwrap();
+        link_book(&pool, b2, genre_id, DbBackend::Sqlite)
+            .await
+            .unwrap();
 
         assert_eq!(
             get_section_code(&pool, section_id).await.unwrap(),
@@ -576,18 +621,18 @@ mod tests {
         let g2 = create_genre(&pool, "ut_genre_b2", section_id)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g1, "en", "Genre B1")
+        upsert_genre_translation(&pool, g1, "en", "Genre B1", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g2, "en", "Genre B2")
+        upsert_genre_translation(&pool, g2, "en", "Genre B2", DbBackend::Sqlite)
             .await
             .unwrap();
 
         let book_id = insert_test_book(&pool, cat, "linking.fb2").await;
-        link_book_by_code(&pool, book_id, "ut_genre_b1")
+        link_book_by_code(&pool, book_id, "ut_genre_b1", DbBackend::Sqlite)
             .await
             .unwrap();
-        link_book_by_code(&pool, book_id, "missing_genre_code")
+        link_book_by_code(&pool, book_id, "missing_genre_code", DbBackend::Sqlite)
             .await
             .unwrap();
 
@@ -595,11 +640,15 @@ mod tests {
         assert_eq!(linked.len(), 1);
         assert_eq!(linked[0].code, "ut_genre_b1");
 
-        link_book(&pool, book_id, g1).await.unwrap();
+        link_book(&pool, book_id, g1, DbBackend::Sqlite)
+            .await
+            .unwrap();
         let linked = get_for_book(&pool, book_id, "en").await.unwrap();
         assert_eq!(linked.len(), 1);
 
-        set_book_genres(&pool, book_id, &[g1, g2]).await.unwrap();
+        set_book_genres(&pool, book_id, &[g1, g2], DbBackend::Sqlite)
+            .await
+            .unwrap();
         let mut linked_codes: Vec<String> = get_for_book(&pool, book_id, "en")
             .await
             .unwrap()
@@ -626,15 +675,21 @@ mod tests {
                 .any(|s| s.id == section_id && s.code == "ut_section_c")
         );
 
-        upsert_section_translation(&pool, section_id, "en", "Section C")
+        upsert_section_translation(&pool, section_id, "en", "Section C", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_section_translation(&pool, section_id, "ru", "Раздел C")
+        upsert_section_translation(&pool, section_id, "ru", "Раздел C", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_section_translation(&pool, section_id, "en", "Section C Updated")
-            .await
-            .unwrap();
+        upsert_section_translation(
+            &pool,
+            section_id,
+            "en",
+            "Section C Updated",
+            DbBackend::Sqlite,
+        )
+        .await
+        .unwrap();
         let section_translations = get_section_translations(&pool, section_id).await.unwrap();
         assert_eq!(section_translations.len(), 2);
         assert!(
@@ -644,13 +699,13 @@ mod tests {
         );
 
         let genre_id = create_genre(&pool, "ut_genre_c", section_id).await.unwrap();
-        upsert_genre_translation(&pool, genre_id, "en", "Genre C")
+        upsert_genre_translation(&pool, genre_id, "en", "Genre C", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C")
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C Updated")
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C Updated", DbBackend::Sqlite)
             .await
             .unwrap();
         let genre_translations = get_genre_translations(&pool, genre_id).await.unwrap();
@@ -702,13 +757,13 @@ mod tests {
         let g2 = create_genre(&pool, "ut_genre_d2", section_id)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g1, "en", "Genre D1")
+        upsert_genre_translation(&pool, g1, "en", "Genre D1", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g1, "ru", "Жанр D1")
+        upsert_genre_translation(&pool, g1, "ru", "Жанр D1", DbBackend::Sqlite)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g2, "en", "Genre D2")
+        upsert_genre_translation(&pool, g2, "en", "Genre D2", DbBackend::Sqlite)
             .await
             .unwrap();
 

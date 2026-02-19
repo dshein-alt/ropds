@@ -27,7 +27,9 @@ async fn setup_library() -> (
         ],
     );
 
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
     (pool, config, lib_dir, covers_dir)
 }
 
@@ -182,7 +184,9 @@ async fn browse_books_cyrillic() {
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let state = test_app_state(pool.clone(), config.clone());
 
@@ -215,7 +219,9 @@ async fn browse_books_digit_prefix() {
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["digit_title.fb2"]);
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);
@@ -240,7 +246,9 @@ async fn search_cyrillic_book_by_title() {
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
-    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
+        .await
+        .unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);
