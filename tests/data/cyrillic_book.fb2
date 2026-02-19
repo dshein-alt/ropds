@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
+             xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <genre>detective</genre>
+      <author>
+        <first-name>Пётр</first-name>
+        <last-name>Иванов</last-name>
+      </author>
+      <book-title>Тайна старого дома</book-title>
+      <annotation><p>Детективная повесть о загадочных событиях.</p></annotation>
+      <lang>ru</lang>
+      <sequence name="Серия расследований" number="3"/>
+    </title-info>
+    <document-info>
+      <date>2025-01-01</date>
+    </document-info>
+  </description>
+  <body>
+    <section>
+      <title><p>Глава 1</p></title>
+      <p>Первый абзац тестовой книги на русском языке.</p>
+      <p>Содержит минимальный текст для целей тестирования.</p>
+    </section>
+  </body>
+</FictionBook>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
+             xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <genre>prose_classic</genre>
+      <author>
+        <first-name>Анна</first-name>
+        <last-name>Смирнова</last-name>
+      </author>
+      <book-title>"Цитата" и другие рассказы</book-title>
+      <lang>ru</lang>
+    </title-info>
+    <document-info>
+      <date>2025-01-01</date>
+    </document-info>
+  </description>
+  <body>
+    <section>
+      <title><p>Рассказ первый</p></title>
+      <p>Книга с заголовком, начинающимся с кавычки.</p>
+    </section>
+  </body>
+</FictionBook>

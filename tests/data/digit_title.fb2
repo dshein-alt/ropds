@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
+             xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <genre>sf_fantasy</genre>
+      <author>
+        <first-name>Ray</first-name>
+        <last-name>Burton</last-name>
+      </author>
+      <book-title>451 Degree</book-title>
+      <lang>en</lang>
+    </title-info>
+    <document-info>
+      <date>2025-01-01</date>
+    </document-info>
+  </description>
+  <body>
+    <section>
+      <title><p>Chapter 1</p></title>
+      <p>A book whose title starts with a digit.</p>
+    </section>
+  </body>
+</FictionBook>
