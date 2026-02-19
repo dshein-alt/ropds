@@ -49,7 +49,7 @@ pub async fn create_pool(config: &DatabaseConfig) -> Result<(DbPool, DbBackend),
         configure_sqlite(&pool).await?;
     }
 
-    run_migrations(&pool).await?;
+    run_migrations(&pool, backend).await?;
 
     Ok((pool, backend))
 }
@@ -61,8 +61,13 @@ async fn configure_sqlite(pool: &DbPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
-    sqlx::migrate!("./migrations").run(pool).await?;
+async fn run_migrations(pool: &DbPool, backend: DbBackend) -> Result<(), sqlx::Error> {
+    let migrator = match backend {
+        DbBackend::Sqlite => sqlx::migrate!("./migrations"),
+        DbBackend::Postgres => sqlx::migrate!("./migrations_pg"),
+        DbBackend::Mysql => sqlx::migrate!("./migrations_mysql"),
+    };
+    migrator.run(pool).await?;
     Ok(())
 }
 
@@ -76,10 +81,29 @@ pub async fn create_test_pool() -> (DbPool, DbBackend) {
         .await
         .expect("Failed to create test pool");
 
-    sqlx::migrate!("./migrations")
-        .run(&pool)
+    run_migrations(&pool, DbBackend::Sqlite)
         .await
         .expect("Failed to run migrations");
 
     (pool, DbBackend::Sqlite)
+}
+
+/// Create a test pool for any backend (used by Docker integration tests).
+pub async fn create_test_pool_for(url: &str) -> (DbPool, DbBackend) {
+    sqlx::any::install_default_drivers();
+    let backend = DbBackend::from_url(url);
+    let pool = AnyPoolOptions::new()
+        .max_connections(5)
+        .connect(url)
+        .await
+        .expect("Failed to create test pool");
+    if backend == DbBackend::Sqlite {
+        configure_sqlite(&pool)
+            .await
+            .expect("Failed to configure SQLite");
+    }
+    run_migrations(&pool, backend)
+        .await
+        .expect("Failed to run migrations");
+    (pool, backend)
 }
