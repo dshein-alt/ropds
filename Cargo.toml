@@ -15,7 +15,7 @@ tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
 tera = "1"
 
 # Cookies (for language preference)
-axum-extra = { version = "0.10", features = ["cookie"] }
+axum-extra = { version = "0.12.5", features = ["cookie"] }
 
 # Serialization & config
 serde = { version = "1", features = ["derive"] }
@@ -38,7 +38,7 @@ time = "0.3"
 
 # Scanner: filesystem, archives, XML parsing, images, parallelism
 walkdir = "2"
-zip = "8"
+zip = "8.1"
 rayon = "1"
 dashmap = "6"
 quick-xml = "0.39"
@@ -57,7 +57,7 @@ hex = "0.4"
 argon2 = "0.5"
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 
 # Testcontainers (opt-in, for Docker-based integration tests)
 testcontainers-modules = { version = "0.14", optional = true, features = ["postgres", "mariadb"] }
