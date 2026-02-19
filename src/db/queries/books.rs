@@ -526,3 +526,257 @@ pub async fn update_title(
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+
+    /// Create a root catalog and return its id. Call once per test pool.
+    async fn ensure_catalog(pool: &DbPool) -> i64 {
+        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/test', 'test')")
+            .execute(pool)
+            .await
+            .unwrap();
+        let row: (i64,) =
+            sqlx::query_as("SELECT id FROM catalogs WHERE path = '/test'")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        row.0
+    }
+
+    async fn insert_test_book(pool: &DbPool, catalog_id: i64, title: &str, lang_code: i32) -> i64 {
+        let search_title = title.to_uppercase();
+        insert(
+            pool,
+            catalog_id,
+            &format!("{title}.fb2"),
+            "/test",
+            "fb2",
+            title,
+            &search_title,
+            "",             // annotation
+            "",             // docdate
+            "ru",           // lang
+            lang_code,
+            1000,           // size
+            0,              // cat_type
+            0,              // cover
+            "",             // cover_type
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_empty() {
+        let pool = create_test_pool().await;
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert!(groups.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_basic() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat, "Alpha", 2).await;
+        insert_test_book(&pool, cat, "Beta", 2).await;
+        insert_test_book(&pool, cat, "Charlie", 2).await;
+
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], ("A".to_string(), 1));
+        assert_eq!(groups[1], ("B".to_string(), 1));
+        assert_eq!(groups[2], ("C".to_string(), 1));
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_lang_filter() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat, "Альфа", 1).await;    // Cyrillic
+        insert_test_book(&pool, cat, "Бета", 1).await;     // Cyrillic
+        insert_test_book(&pool, cat, "Alpha", 2).await;    // Latin
+
+        // lang_code=1 (Cyrillic) — only 2 groups
+        let groups = get_title_prefix_groups(&pool, 1, "").await.unwrap();
+        assert_eq!(groups.len(), 2);
+
+        // lang_code=2 (Latin) — only 1 group
+        let groups = get_title_prefix_groups(&pool, 2, "").await.unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "A");
+
+        // lang_code=0 (all) — all 3 groups
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert_eq!(groups.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_drill_down() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat, "Aa book", 2).await;
+        insert_test_book(&pool, cat, "Ab book", 2).await;
+        insert_test_book(&pool, cat, "Ac book", 2).await;
+        insert_test_book(&pool, cat, "Ba book", 2).await;
+
+        // Top level: "A" with count=3, "B" with count=1
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0], ("A".to_string(), 3));
+        assert_eq!(groups[1], ("B".to_string(), 1));
+
+        // Drill into "A": 3 sub-groups
+        let groups = get_title_prefix_groups(&pool, 0, "A").await.unwrap();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].0, "AA");
+        assert_eq!(groups[1].0, "AB");
+        assert_eq!(groups[2].0, "AC");
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_deep_drill_down() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat, "Abc one", 2).await;
+        insert_test_book(&pool, cat, "Abd two", 2).await;
+        insert_test_book(&pool, cat, "Abe three", 2).await;
+
+        // Level 1: all under "A"
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0], ("A".to_string(), 3));
+
+        // Level 2: all under "AB"
+        let groups = get_title_prefix_groups(&pool, 0, "A").await.unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0], ("AB".to_string(), 3));
+
+        // Level 3: three distinct 3-char prefixes
+        let groups = get_title_prefix_groups(&pool, 0, "AB").await.unwrap();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].0, "ABC");
+        assert_eq!(groups[1].0, "ABD");
+        assert_eq!(groups[2].0, "ABE");
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_count_aggregation() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        // 3 books starting with "A", 2 with "B", 1 with "C"
+        insert_test_book(&pool, cat, "Alpha", 2).await;
+        insert_test_book(&pool, cat, "Another", 2).await;
+        insert_test_book(&pool, cat, "Again", 2).await;
+        insert_test_book(&pool, cat, "Beta", 2).await;
+        insert_test_book(&pool, cat, "Bravo", 2).await;
+        insert_test_book(&pool, cat, "Charlie", 2).await;
+
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], ("A".to_string(), 3));
+        assert_eq!(groups[1], ("B".to_string(), 2));
+        assert_eq!(groups[2], ("C".to_string(), 1));
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_excludes_unavailable() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let book_id = insert_test_book(&pool, cat, "Alpha", 2).await;
+        insert_test_book(&pool, cat, "Beta", 2).await;
+
+        // Mark one book as unavailable
+        sqlx::query("UPDATE books SET avail = 0 WHERE id = ?")
+            .bind(book_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "B");
+    }
+
+    #[tokio::test]
+    async fn test_search_by_title_prefix() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat, "Alpha", 2).await;
+        insert_test_book(&pool, cat, "Another", 2).await;
+        insert_test_book(&pool, cat, "Beta", 2).await;
+
+        // Prefix "A" matches "Alpha" and "Another"
+        let results = search_by_title_prefix(&pool, "A", 100, 0, false)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Prefix "AL" matches only "Alpha"
+        let results = search_by_title_prefix(&pool, "AL", 100, 0, false)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Alpha");
+
+        // Prefix "B" matches only "Beta"
+        let results = search_by_title_prefix(&pool, "B", 100, 0, false)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Beta");
+
+        // Prefix "Z" matches nothing
+        let results = search_by_title_prefix(&pool, "Z", 100, 0, false)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_search_by_title_prefix_pagination() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat, "Aa", 2).await;
+        insert_test_book(&pool, cat, "Ab", 2).await;
+        insert_test_book(&pool, cat, "Ac", 2).await;
+        insert_test_book(&pool, cat, "Ad", 2).await;
+
+        // Page 1: limit 2, offset 0
+        let page1 = search_by_title_prefix(&pool, "A", 2, 0, false)
+            .await
+            .unwrap();
+        assert_eq!(page1.len(), 2);
+
+        // Page 2: limit 2, offset 2
+        let page2 = search_by_title_prefix(&pool, "A", 2, 2, false)
+            .await
+            .unwrap();
+        assert_eq!(page2.len(), 2);
+
+        // No overlap between pages
+        assert_ne!(page1[0].id, page2[0].id);
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_lang_filter_with_drill_down() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        // Two Cyrillic books with different second chars
+        insert_test_book(&pool, cat, "Альфа", 1).await;
+        insert_test_book(&pool, cat, "Абвгд", 1).await;
+        // One Latin book starting with "A"
+        insert_test_book(&pool, cat, "Alpha", 2).await;
+
+        // Drill into Cyrillic "А" — should see 2 sub-prefixes
+        let groups = get_title_prefix_groups(&pool, 1, "А").await.unwrap();
+        assert_eq!(groups.len(), 2);
+
+        // Drill into Latin "A" — should see 1 sub-prefix
+        let groups = get_title_prefix_groups(&pool, 2, "A").await.unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "AL");
+    }
+}

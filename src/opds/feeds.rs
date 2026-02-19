@@ -380,17 +380,24 @@ pub async fn genres_feed(
 pub async fn books_feed(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    path: Option<Path<(i32,)>>,
+    path: Option<Path<AuthorsParams>>,
 ) -> Response {
-    let lang = detect_opds_lang(&headers, &state.config);
+    let _lang = detect_opds_lang(&headers, &state.config);
     match path {
         None => lang_selection_feed("Books", "/opds/books/").await,
-        Some(Path((lang_code,))) => {
-            let max_items = state.config.opds.max_items as i32;
+        Some(Path(params)) => {
+            let lang_code = params.lang_code;
+            let prefix = params.prefix.unwrap_or_default();
+            let split_items = state.config.opds.split_items as i64;
+
             let mut fb = FeedBuilder::new();
-            let self_href = format!("/opds/books/{lang_code}/");
+            let self_href = if prefix.is_empty() {
+                format!("/opds/books/{lang_code}/")
+            } else {
+                format!("/opds/books/{lang_code}/{}/", urlencoding::encode(&prefix))
+            };
             let _ = fb.begin_feed(
-                &format!("tag:books:{lang_code}"),
+                &format!("tag:books:{lang_code}:{prefix}"),
                 "Books",
                 "",
                 DEFAULT_UPDATED,
@@ -399,14 +406,40 @@ pub async fn books_feed(
             );
             let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            // TODO: alphabet drill-down like authors/series
-            // For now, show first page of books matching the lang_code
-            let hide_doubles = state.config.opds.hide_doubles;
-            let book_list = books::search_by_title(&state.db, "", max_items, 0, hide_doubles)
-                .await
-                .unwrap_or_default();
-            for book in &book_list {
-                write_book_entry(&mut fb, &state, book, &lang).await;
+            let groups = books::get_title_prefix_groups(
+                &state.db,
+                lang_code,
+                &prefix.to_uppercase(),
+            )
+            .await
+            .unwrap_or_default();
+
+            for (prefix_str, count) in &groups {
+                if *count >= split_items {
+                    let href = format!(
+                        "/opds/books/{lang_code}/{}/",
+                        urlencoding::encode(prefix_str)
+                    );
+                    let _ = fb.write_nav_entry(
+                        &format!("bp:{prefix_str}"),
+                        prefix_str,
+                        &href,
+                        &format!("{count}"),
+                        DEFAULT_UPDATED,
+                    );
+                } else {
+                    let href = format!(
+                        "/opds/search/books/b/{}/",
+                        urlencoding::encode(prefix_str)
+                    );
+                    let _ = fb.write_nav_entry(
+                        &format!("bp:{prefix_str}"),
+                        prefix_str,
+                        &href,
+                        &format!("{count}"),
+                        DEFAULT_UPDATED,
+                    );
+                }
             }
 
             match fb.finish() {

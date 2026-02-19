@@ -58,6 +58,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         // Books by title
         .route("/books/", get(feeds::books_feed))
         .route("/books/{lang_code}/", get(feeds::books_feed))
+        .route("/books/{lang_code}/{prefix}/", get(feeds::books_feed))
         // OpenSearch
         .route("/search/", get(feeds::opensearch))
         // Search type selection
