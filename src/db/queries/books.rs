@@ -572,6 +572,88 @@ mod tests {
         .unwrap()
     }
 
+    async fn insert_test_book_custom(
+        pool: &DbPool,
+        catalog_id: i64,
+        filename: &str,
+        path: &str,
+        title: &str,
+        search_title: &str,
+        cat_type: CatType,
+    ) -> i64 {
+        insert(
+            pool,
+            catalog_id,
+            filename,
+            path,
+            "fb2",
+            title,
+            search_title,
+            "",
+            "",
+            "ru",
+            2,
+            1000,
+            cat_type,
+            0,
+            "",
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn insert_test_author(pool: &DbPool, full_name: &str) -> i64 {
+        let search_name = full_name.to_uppercase();
+        sqlx::query(
+            "INSERT INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?)",
+        )
+        .bind(full_name)
+        .bind(search_name)
+        .bind(2)
+        .execute(pool)
+        .await
+        .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM authors WHERE full_name = ?")
+            .bind(full_name)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    async fn insert_test_series(pool: &DbPool, ser_name: &str) -> i64 {
+        let search_name = ser_name.to_uppercase();
+        sqlx::query("INSERT INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)")
+            .bind(ser_name)
+            .bind(search_name)
+            .bind(2)
+            .execute(pool)
+            .await
+            .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM series WHERE ser_name = ?")
+            .bind(ser_name)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    async fn insert_test_genre(pool: &DbPool, code: &str) -> i64 {
+        sqlx::query("INSERT INTO genres (code, section, subsection) VALUES (?, ?, ?)")
+            .bind(code)
+            .bind("Test section")
+            .bind("Test subsection")
+            .execute(pool)
+            .await
+            .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM genres WHERE code = ?")
+            .bind(code)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
     #[tokio::test]
     async fn test_title_prefix_groups_empty() {
         let pool = create_test_pool().await;
@@ -781,5 +863,318 @@ mod tests {
         let groups = get_title_prefix_groups(&pool, 2, "A").await.unwrap();
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].0, "AL");
+    }
+
+    #[tokio::test]
+    async fn test_get_by_catalog_and_find_by_path_with_doubles() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let alpha_a = insert_test_book_custom(
+            &pool,
+            cat,
+            "alpha-a.fb2",
+            "/test/a",
+            "Alpha A",
+            "ALPHA",
+            CatType::Normal,
+        )
+        .await;
+        insert_test_book_custom(
+            &pool,
+            cat,
+            "alpha-b.fb2",
+            "/test/b",
+            "Alpha B",
+            "ALPHA",
+            CatType::Normal,
+        )
+        .await;
+        let beta = insert_test_book_custom(
+            &pool,
+            cat,
+            "beta.fb2",
+            "/test/c",
+            "Beta",
+            "BETA",
+            CatType::Normal,
+        )
+        .await;
+
+        // Availability filter should exclude this row from listing queries.
+        set_avail(&pool, beta, AvailStatus::Deleted).await.unwrap();
+
+        let all_rows = get_by_catalog(&pool, cat, 100, 0, false).await.unwrap();
+        assert_eq!(all_rows.len(), 2);
+
+        let deduped_rows = get_by_catalog(&pool, cat, 100, 0, true).await.unwrap();
+        assert_eq!(deduped_rows.len(), 1);
+        assert_eq!(deduped_rows[0].search_title, "ALPHA");
+
+        let found = find_by_path_and_filename(&pool, "/test/a", "alpha-a.fb2")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.id, alpha_a);
+        assert_eq!(found.title, "Alpha A");
+    }
+
+    #[tokio::test]
+    async fn test_get_by_author_genre_series_and_counts() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let author = insert_test_author(&pool, "Test Author").await;
+        let genre = insert_test_genre(&pool, "books_q_tests").await;
+        let series = insert_test_series(&pool, "Test Saga").await;
+
+        let b1 = insert_test_book_custom(
+            &pool,
+            cat,
+            "book-1.fb2",
+            "/test/series",
+            "First",
+            "DUPLICATE",
+            CatType::Normal,
+        )
+        .await;
+        let b2 = insert_test_book_custom(
+            &pool,
+            cat,
+            "book-2.fb2",
+            "/test/series",
+            "Second",
+            "DUPLICATE",
+            CatType::Normal,
+        )
+        .await;
+
+        for book_id in [b1, b2] {
+            sqlx::query("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?)")
+                .bind(book_id)
+                .bind(author)
+                .execute(&pool)
+                .await
+                .unwrap();
+
+            sqlx::query("INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?)")
+                .bind(book_id)
+                .bind(genre)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        sqlx::query("INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)")
+            .bind(b1)
+            .bind(series)
+            .bind(1)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)")
+            .bind(b2)
+            .bind(series)
+            .bind(2)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            get_by_author(&pool, author, 100, 0, false)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            get_by_author(&pool, author, 100, 0, true)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            get_by_genre(&pool, genre, 100, 0, false)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            get_by_genre(&pool, genre, 100, 0, true)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            get_by_series(&pool, series, 100, 0, false)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            get_by_series(&pool, series, 100, 0, true)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        assert_eq!(count_by_author(&pool, author, false).await.unwrap(), 2);
+        assert_eq!(count_by_author(&pool, author, true).await.unwrap(), 1);
+        assert_eq!(count_by_genre(&pool, genre, false).await.unwrap(), 2);
+        assert_eq!(count_by_genre(&pool, genre, true).await.unwrap(), 1);
+        assert_eq!(count_by_series(&pool, series, false).await.unwrap(), 2);
+        assert_eq!(count_by_series(&pool, series, true).await.unwrap(), 1);
+        assert_eq!(count_by_catalog(&pool, cat, false).await.unwrap(), 2);
+        assert_eq!(count_by_catalog(&pool, cat, true).await.unwrap(), 1);
+        assert_eq!(count_doubles(&pool, b1).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_search_title_and_update_title() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let b1 = insert_test_book_custom(
+            &pool,
+            cat,
+            "first.fb2",
+            "/test/search",
+            "The First",
+            "FOO BAR",
+            CatType::Normal,
+        )
+        .await;
+        insert_test_book_custom(
+            &pool,
+            cat,
+            "second.fb2",
+            "/test/search",
+            "The Second",
+            "FOO BAR",
+            CatType::Normal,
+        )
+        .await;
+
+        assert_eq!(
+            search_by_title(&pool, "FOO", 100, 0, false)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            search_by_title(&pool, "FOO", 100, 0, true)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(count_by_title_search(&pool, "FOO", false).await.unwrap(), 2);
+        assert_eq!(count_by_title_search(&pool, "FOO", true).await.unwrap(), 1);
+        assert_eq!(count_by_title_prefix(&pool, "FO", false).await.unwrap(), 2);
+        assert_eq!(count_by_title_prefix(&pool, "FO", true).await.unwrap(), 1);
+
+        update_title(&pool, b1, "Updated", "UPDATED", 3)
+            .await
+            .unwrap();
+        let row = get_by_id(&pool, b1).await.unwrap().unwrap();
+        assert_eq!(row.title, "Updated");
+        assert_eq!(row.search_title, "UPDATED");
+        assert_eq!(row.lang_code, 3);
+    }
+
+    #[tokio::test]
+    async fn test_availability_helpers_and_cleanup_flow() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+
+        let normal = insert_test_book_custom(
+            &pool,
+            cat,
+            "normal.fb2",
+            "/library/normal",
+            "Normal",
+            "NORMAL",
+            CatType::Normal,
+        )
+        .await;
+        let inpx_a = insert_test_book_custom(
+            &pool,
+            cat,
+            "inpx-a.fb2",
+            "/inpx/main/a",
+            "Inpx A",
+            "INPX_A",
+            CatType::Inpx,
+        )
+        .await;
+        let inpx_b = insert_test_book_custom(
+            &pool,
+            cat,
+            "inpx-b.fb2",
+            "/inpx/other/b",
+            "Inpx B",
+            "INPX_B",
+            CatType::Inpx,
+        )
+        .await;
+
+        let updated = set_avail_by_path(&pool, "/inpx/main/a", AvailStatus::Unverified)
+            .await
+            .unwrap();
+        assert_eq!(updated, 1);
+
+        let updated = set_avail_for_inpx_dir(&pool, "/inpx/main", AvailStatus::Unverified)
+            .await
+            .unwrap();
+        assert_eq!(updated, 1);
+        assert_eq!(
+            get_by_id(&pool, inpx_a).await.unwrap().unwrap().avail,
+            AvailStatus::Unverified as i32
+        );
+        assert_eq!(
+            get_by_id(&pool, inpx_b).await.unwrap().unwrap().avail,
+            AvailStatus::Confirmed as i32
+        );
+
+        let updated = set_avail_for_inpx_dir(&pool, "", AvailStatus::Unverified)
+            .await
+            .unwrap();
+        assert_eq!(updated, 2);
+
+        set_avail(&pool, normal, AvailStatus::Deleted)
+            .await
+            .unwrap();
+        let marked_deleted = logical_delete_unavailable(&pool).await.unwrap();
+        assert_eq!(marked_deleted, 3);
+
+        let mut unavailable_ids = get_unavailable_ids(&pool).await.unwrap();
+        unavailable_ids.sort_unstable();
+        let mut expected = vec![normal, inpx_a, inpx_b];
+        expected.sort_unstable();
+        assert_eq!(unavailable_ids, expected);
+
+        let physically_deleted = physical_delete_unavailable(&pool).await.unwrap();
+        assert_eq!(physically_deleted, 3);
+        assert!(get_by_id(&pool, normal).await.unwrap().is_none());
+        assert!(get_by_id(&pool, inpx_a).await.unwrap().is_none());
+        assert!(get_by_id(&pool, inpx_b).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_set_avail_all_and_get_random() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let first = insert_test_book(&pool, cat, "Random One", 2).await;
+        insert_test_book(&pool, cat, "Random Two", 2).await;
+
+        let random = get_random(&pool).await.unwrap().unwrap();
+        assert!(random.id == first || random.id > 0);
+
+        let updated = set_avail_all(&pool, AvailStatus::Deleted).await.unwrap();
+        assert_eq!(updated, 2);
+        assert!(get_random(&pool).await.unwrap().is_none());
     }
 }

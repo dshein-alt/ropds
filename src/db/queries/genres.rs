@@ -447,3 +447,286 @@ pub async fn get_all_admin(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+    use crate::db::models::CatType;
+    use crate::db::queries::books;
+
+    async fn ensure_catalog(pool: &DbPool) -> i64 {
+        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/genres-test', 'genres-test')")
+            .execute(pool)
+            .await
+            .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/genres-test'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    async fn insert_test_book(pool: &DbPool, catalog_id: i64, filename: &str) -> i64 {
+        books::insert(
+            pool,
+            catalog_id,
+            filename,
+            "/genres-test",
+            "fb2",
+            filename,
+            &filename.to_uppercase(),
+            "",
+            "",
+            "en",
+            2,
+            1000,
+            CatType::Normal,
+            0,
+            "",
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_display_queries_and_count_queries() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+
+        let section_id = create_section(&pool, "ut_section_a").await.unwrap();
+        let genre_id = create_genre(&pool, "ut_genre_a", section_id).await.unwrap();
+        upsert_section_translation(&pool, section_id, "en", "Section A")
+            .await
+            .unwrap();
+        upsert_section_translation(&pool, section_id, "ru", "Раздел А")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, genre_id, "en", "Genre A")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр А")
+            .await
+            .unwrap();
+
+        let b1 = insert_test_book(&pool, cat, "genre-a-1.fb2").await;
+        let b2 = insert_test_book(&pool, cat, "genre-a-2.fb2").await;
+        link_book(&pool, b1, genre_id).await.unwrap();
+        link_book(&pool, b2, genre_id).await.unwrap();
+
+        assert_eq!(
+            get_section_code(&pool, section_id).await.unwrap(),
+            Some("ut_section_a".to_string())
+        );
+
+        let by_code = get_by_code(&pool, "ut_genre_a").await.unwrap().unwrap();
+        assert_eq!(by_code.id, genre_id);
+
+        let by_id_ru = get_by_id(&pool, genre_id, "ru").await.unwrap().unwrap();
+        assert_eq!(by_id_ru.section, "Раздел А");
+        assert_eq!(by_id_ru.subsection, "Жанр А");
+
+        let by_id_fallback = get_by_id(&pool, genre_id, "de").await.unwrap().unwrap();
+        assert_eq!(by_id_fallback.section, "Section A");
+        assert_eq!(by_id_fallback.subsection, "Genre A");
+
+        let sections = get_sections(&pool, "de").await.unwrap();
+        let section = sections
+            .iter()
+            .find(|(code, _)| code == "ut_section_a")
+            .unwrap();
+        assert_eq!(section.1, "Section A");
+
+        let by_section = get_by_section(&pool, "ut_section_a", "de").await.unwrap();
+        assert_eq!(by_section.len(), 1);
+        assert_eq!(by_section[0].code, "ut_genre_a");
+        assert_eq!(by_section[0].subsection, "Genre A");
+
+        let all = get_all(&pool, "de").await.unwrap();
+        assert!(all.iter().any(|g| g.code == "ut_genre_a"));
+
+        let for_book = get_for_book(&pool, b1, "de").await.unwrap();
+        assert_eq!(for_book.len(), 1);
+        assert_eq!(for_book[0].code, "ut_genre_a");
+
+        let sections_with_counts = get_sections_with_counts(&pool, "de").await.unwrap();
+        let section_count = sections_with_counts
+            .iter()
+            .find(|(code, _, _)| code == "ut_section_a")
+            .unwrap();
+        assert_eq!(section_count.2, 2);
+
+        let by_section_with_counts = get_by_section_with_counts(&pool, "ut_section_a", "de")
+            .await
+            .unwrap();
+        assert_eq!(by_section_with_counts.len(), 1);
+        assert_eq!(by_section_with_counts[0].0.code, "ut_genre_a");
+        assert_eq!(by_section_with_counts[0].1, 2);
+    }
+
+    #[tokio::test]
+    async fn test_linking_and_set_book_genres() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+
+        let section_id = create_section(&pool, "ut_section_b").await.unwrap();
+        let g1 = create_genre(&pool, "ut_genre_b1", section_id)
+            .await
+            .unwrap();
+        let g2 = create_genre(&pool, "ut_genre_b2", section_id)
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, g1, "en", "Genre B1")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, g2, "en", "Genre B2")
+            .await
+            .unwrap();
+
+        let book_id = insert_test_book(&pool, cat, "linking.fb2").await;
+        link_book_by_code(&pool, book_id, "ut_genre_b1")
+            .await
+            .unwrap();
+        link_book_by_code(&pool, book_id, "missing_genre_code")
+            .await
+            .unwrap();
+
+        let linked = get_for_book(&pool, book_id, "en").await.unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].code, "ut_genre_b1");
+
+        link_book(&pool, book_id, g1).await.unwrap();
+        let linked = get_for_book(&pool, book_id, "en").await.unwrap();
+        assert_eq!(linked.len(), 1);
+
+        set_book_genres(&pool, book_id, &[g1, g2]).await.unwrap();
+        let mut linked_codes: Vec<String> = get_for_book(&pool, book_id, "en")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|g| g.code)
+            .collect();
+        linked_codes.sort();
+        assert_eq!(
+            linked_codes,
+            vec!["ut_genre_b1".to_string(), "ut_genre_b2".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_admin_crud_translations_and_languages() {
+        let pool = create_test_pool().await;
+
+        let section_id = create_section(&pool, "ut_section_c").await.unwrap();
+        assert!(
+            get_all_sections(&pool)
+                .await
+                .unwrap()
+                .iter()
+                .any(|s| s.id == section_id && s.code == "ut_section_c")
+        );
+
+        upsert_section_translation(&pool, section_id, "en", "Section C")
+            .await
+            .unwrap();
+        upsert_section_translation(&pool, section_id, "ru", "Раздел C")
+            .await
+            .unwrap();
+        upsert_section_translation(&pool, section_id, "en", "Section C Updated")
+            .await
+            .unwrap();
+        let section_translations = get_section_translations(&pool, section_id).await.unwrap();
+        assert_eq!(section_translations.len(), 2);
+        assert!(
+            section_translations
+                .iter()
+                .any(|t| t.lang == "en" && t.name == "Section C Updated")
+        );
+
+        let genre_id = create_genre(&pool, "ut_genre_c", section_id).await.unwrap();
+        upsert_genre_translation(&pool, genre_id, "en", "Genre C")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C Updated")
+            .await
+            .unwrap();
+        let genre_translations = get_genre_translations(&pool, genre_id).await.unwrap();
+        assert_eq!(genre_translations.len(), 2);
+        assert!(
+            genre_translations
+                .iter()
+                .any(|t| t.lang == "ru" && t.name == "Жанр C Updated")
+        );
+
+        let langs = get_available_languages(&pool).await.unwrap();
+        assert!(langs.iter().any(|lang| lang == "en"));
+        assert!(langs.iter().any(|lang| lang == "ru"));
+
+        delete_genre_translation(&pool, genre_id, "ru")
+            .await
+            .unwrap();
+        assert_eq!(
+            get_genre_translations(&pool, genre_id).await.unwrap().len(),
+            1
+        );
+
+        delete_section_translation(&pool, section_id, "ru")
+            .await
+            .unwrap();
+        assert_eq!(
+            get_section_translations(&pool, section_id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        delete_genre(&pool, genre_id).await.unwrap();
+        assert!(get_by_code(&pool, "ut_genre_c").await.unwrap().is_none());
+
+        delete_section(&pool, section_id).await.unwrap();
+        assert!(get_section_code(&pool, section_id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_all_admin_contains_created_genres() {
+        let pool = create_test_pool().await;
+
+        let section_id = create_section(&pool, "ut_section_d").await.unwrap();
+        let g1 = create_genre(&pool, "ut_genre_d1", section_id)
+            .await
+            .unwrap();
+        let g2 = create_genre(&pool, "ut_genre_d2", section_id)
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, g1, "en", "Genre D1")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, g1, "ru", "Жанр D1")
+            .await
+            .unwrap();
+        upsert_genre_translation(&pool, g2, "en", "Genre D2")
+            .await
+            .unwrap();
+
+        let admin_rows = get_all_admin(&pool).await.unwrap();
+
+        let d1 = admin_rows
+            .iter()
+            .find(|(_, code, _, _)| code == "ut_genre_d1")
+            .unwrap();
+        assert_eq!(d1.2, "ut_section_d");
+        assert!(d1.3.iter().any(|t| t.lang == "en" && t.name == "Genre D1"));
+        assert!(d1.3.iter().any(|t| t.lang == "ru" && t.name == "Жанр D1"));
+
+        let d2 = admin_rows
+            .iter()
+            .find(|(_, code, _, _)| code == "ut_genre_d2")
+            .unwrap();
+        assert_eq!(d2.2, "ut_section_d");
+        assert!(d2.3.iter().any(|t| t.lang == "en" && t.name == "Genre D2"));
+    }
+}
