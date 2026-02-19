@@ -11,7 +11,7 @@ async fn setup_library() -> (
     tempfile::TempDir,
     tempfile::TempDir,
 ) {
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -27,9 +27,7 @@ async fn setup_library() -> (
         ],
     );
 
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
     (pool, config, lib_dir, covers_dir)
 }
 
@@ -178,15 +176,13 @@ async fn browse_books_by_lang_and_prefix() {
 async fn browse_books_cyrillic() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool.clone(), config.clone());
 
@@ -213,15 +209,13 @@ async fn browse_books_cyrillic() {
 async fn browse_books_digit_prefix() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["digit_title.fb2"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);
@@ -240,15 +234,13 @@ async fn browse_books_digit_prefix() {
 async fn search_cyrillic_book_by_title() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);

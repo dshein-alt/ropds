@@ -40,7 +40,7 @@ fn build_multipart_body(csrf_token: &str, filename: &str, file_data: &[u8]) -> (
 /// Upload a test FB2 file, then publish it, verifying the full flow.
 #[tokio::test]
 async fn upload_file_and_publish() {
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let upload_dir = tempfile::tempdir().unwrap();
@@ -110,7 +110,7 @@ async fn upload_file_and_publish() {
 /// Upload with metadata override: verify edited values are stored, not parsed ones.
 #[tokio::test]
 async fn upload_edit_metadata_on_publish() {
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let upload_dir = tempfile::tempdir().unwrap();
@@ -162,7 +162,7 @@ async fn upload_edit_metadata_on_publish() {
 /// Upload page is forbidden without upload permission.
 #[tokio::test]
 async fn upload_rejects_unauthorized() {
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let upload_dir = tempfile::tempdir().unwrap();
@@ -173,7 +173,7 @@ async fn upload_rejects_unauthorized() {
     // Explicitly remove upload permission
     sqlx::query("UPDATE users SET allow_upload = 0 WHERE id = ?")
         .bind(user_id)
-        .execute(&pool)
+        .execute(pool.inner())
         .await
         .unwrap();
 
@@ -193,7 +193,7 @@ async fn upload_rejects_unauthorized() {
 /// Duplicate filename on publish should be rejected.
 #[tokio::test]
 async fn upload_duplicate_filename_rejected() {
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let upload_dir = tempfile::tempdir().unwrap();

@@ -10,9 +10,9 @@ use ropds::scanner;
 /// Verify that PG migrations run and seed the 228 built-in genres.
 #[tokio::test]
 async fn pg_migrations_run_successfully() {
-    let (_container, pool, _backend) = start_postgres().await;
+    let (_container, pool) = start_postgres().await;
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM genres")
-        .fetch_one(&pool)
+        .fetch_one(pool.inner())
         .await
         .unwrap();
     assert_eq!(row.0, 228); // 228 seeded genres
@@ -21,15 +21,15 @@ async fn pg_migrations_run_successfully() {
 /// CURRENT_TIMESTAMP default produces a non-empty TEXT value on PG.
 #[tokio::test]
 async fn pg_current_timestamp_produces_text() {
-    let (_container, pool, _backend) = start_postgres().await;
+    let (_container, pool) = start_postgres().await;
     sqlx::query(
         "INSERT INTO users (username, password_hash, is_superuser) VALUES ('ts_test', 'h', 0)",
     )
-    .execute(&pool)
+    .execute(pool.inner())
     .await
     .unwrap();
     let row: (String,) = sqlx::query_as("SELECT created_at FROM users WHERE username = 'ts_test'")
-        .fetch_one(&pool)
+        .fetch_one(pool.inner())
         .await
         .unwrap();
     assert!(!row.0.is_empty());
@@ -42,11 +42,11 @@ async fn pg_current_timestamp_produces_text() {
 /// Inserting a duplicate author (same full_name) returns the original row's ID.
 #[tokio::test]
 async fn pg_insert_duplicate_author_returns_same_id() {
-    let (_container, pool, backend) = start_postgres().await;
-    let id1 = authors::insert(&pool, "Test Author", "TEST AUTHOR", 2, backend)
+    let (_container, pool) = start_postgres().await;
+    let id1 = authors::insert(&pool, "Test Author", "TEST AUTHOR", 2)
         .await
         .unwrap();
-    let id2 = authors::insert(&pool, "Test Author", "DIFFERENT", 1, backend)
+    let id2 = authors::insert(&pool, "Test Author", "DIFFERENT", 1)
         .await
         .unwrap();
     assert_eq!(id1, id2);
@@ -55,22 +55,13 @@ async fn pg_insert_duplicate_author_returns_same_id() {
 /// Inserting a duplicate catalog (same path) returns the original row's ID.
 #[tokio::test]
 async fn pg_insert_duplicate_catalog_returns_same_id() {
-    let (_container, pool, backend) = start_postgres().await;
-    let id1 = catalogs::insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "", backend)
+    let (_container, pool) = start_postgres().await;
+    let id1 = catalogs::insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "")
         .await
         .unwrap();
-    let id2 = catalogs::insert(
-        &pool,
-        None,
-        "/dup",
-        "dup2",
-        CatType::Zip,
-        42,
-        "mtime",
-        backend,
-    )
-    .await
-    .unwrap();
+    let id2 = catalogs::insert(&pool, None, "/dup", "dup2", CatType::Zip, 42, "mtime")
+        .await
+        .unwrap();
     assert_eq!(id1, id2);
 }
 
@@ -81,8 +72,8 @@ async fn pg_insert_duplicate_catalog_returns_same_id() {
 /// Cyrillic text round-trips correctly and is searchable via LIKE.
 #[tokio::test]
 async fn pg_cyrillic_search_works() {
-    let (_container, pool, backend) = start_postgres().await;
-    let id = authors::insert(&pool, "Толстой Лев", "ТОЛСТОЙ ЛЕВ", 1, backend)
+    let (_container, pool) = start_postgres().await;
+    let id = authors::insert(&pool, "Толстой Лев", "ТОЛСТОЙ ЛЕВ", 1)
         .await
         .unwrap();
     let found = authors::search_by_name(&pool, "ТОЛСТОЙ", 10, 0)
@@ -99,34 +90,25 @@ async fn pg_cyrillic_search_works() {
 /// Upserting the same (user, book) pair twice results in only one row.
 #[tokio::test]
 async fn pg_bookshelf_upsert_dedup() {
-    let (_container, pool, backend) = start_postgres().await;
+    let (_container, pool) = start_postgres().await;
 
     // Create user
     sqlx::query(
         "INSERT INTO users (username, password_hash, is_superuser) VALUES ('shelf_user', 'h', 0)",
     )
-    .execute(&pool)
+    .execute(pool.inner())
     .await
     .unwrap();
     let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'shelf_user'")
-        .fetch_one(&pool)
+        .fetch_one(pool.inner())
         .await
         .unwrap();
     let user_id = row.0;
 
     // Create catalog + book
-    let cat_id = catalogs::insert(
-        &pool,
-        None,
-        "/test",
-        "test",
-        CatType::Normal,
-        0,
-        "",
-        backend,
-    )
-    .await
-    .unwrap();
+    let cat_id = catalogs::insert(&pool, None, "/test", "test", CatType::Normal, 0, "")
+        .await
+        .unwrap();
     let book_id = books::insert(
         &pool,
         cat_id,
@@ -148,12 +130,8 @@ async fn pg_bookshelf_upsert_dedup() {
     .unwrap();
 
     // Upsert twice -- should not duplicate
-    bookshelf::upsert(&pool, user_id, book_id, backend)
-        .await
-        .unwrap();
-    bookshelf::upsert(&pool, user_id, book_id, backend)
-        .await
-        .unwrap();
+    bookshelf::upsert(&pool, user_id, book_id).await.unwrap();
+    bookshelf::upsert(&pool, user_id, book_id).await.unwrap();
     let count = bookshelf::count_by_user(&pool, user_id).await.unwrap();
     assert_eq!(count, 1);
 }
@@ -166,12 +144,12 @@ async fn pg_bookshelf_upsert_dedup() {
 /// replaces the name rather than creating a duplicate.
 #[tokio::test]
 async fn pg_genre_upsert_translations() {
-    let (_container, pool, backend) = start_postgres().await;
+    let (_container, pool) = start_postgres().await;
     let section_id = genres::create_section(&pool, "test_section").await.unwrap();
-    genres::upsert_section_translation(&pool, section_id, "en", "Test Section", backend)
+    genres::upsert_section_translation(&pool, section_id, "en", "Test Section")
         .await
         .unwrap();
-    genres::upsert_section_translation(&pool, section_id, "en", "Updated Section", backend)
+    genres::upsert_section_translation(&pool, section_id, "en", "Updated Section")
         .await
         .unwrap();
     let translations = genres::get_section_translations(&pool, section_id)
@@ -190,7 +168,7 @@ async fn pg_genre_upsert_translations() {
 #[tokio::test]
 async fn pg_scanner_finds_books_and_metadata() {
     let _lock = SCAN_MUTEX.lock().await;
-    let (_container, pool, backend) = start_postgres().await;
+    let (_container, pool) = start_postgres().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config_with_url(
@@ -203,7 +181,7 @@ async fn pg_scanner_finds_books_and_metadata() {
 
     copy_test_files(lib_dir.path(), &["test_book.fb2"]);
 
-    let stats = scanner::run_scan(&pool, &config, backend).await.unwrap();
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
     assert!(stats.books_added >= 1);
 
     // Verify book was found
@@ -223,7 +201,7 @@ async fn pg_scanner_finds_books_and_metadata() {
 #[tokio::test]
 async fn pg_scanner_skips_existing_books() {
     let _lock = SCAN_MUTEX.lock().await;
-    let (_container, pool, backend) = start_postgres().await;
+    let (_container, pool) = start_postgres().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config_with_url(
@@ -234,10 +212,10 @@ async fn pg_scanner_skips_existing_books() {
 
     copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
 
-    let stats1 = scanner::run_scan(&pool, &config, backend).await.unwrap();
+    let stats1 = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats1.books_added, 2);
 
-    let stats2 = scanner::run_scan(&pool, &config, backend).await.unwrap();
+    let stats2 = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats2.books_added, 0, "no new books on second scan");
     assert_eq!(stats2.books_skipped, 2, "both books should be skipped");
 }
@@ -249,19 +227,10 @@ async fn pg_scanner_skips_existing_books() {
 /// Title search works correctly on PostgreSQL (LIKE with UPPER).
 #[tokio::test]
 async fn pg_book_title_search() {
-    let (_container, pool, backend) = start_postgres().await;
-    let cat_id = catalogs::insert(
-        &pool,
-        None,
-        "/search",
-        "search",
-        CatType::Normal,
-        0,
-        "",
-        backend,
-    )
-    .await
-    .unwrap();
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/search", "search", CatType::Normal, 0, "")
+        .await
+        .unwrap();
 
     books::insert(
         &pool,
@@ -321,19 +290,10 @@ async fn pg_book_title_search() {
 /// Author linking and orphan cleanup work on PostgreSQL.
 #[tokio::test]
 async fn pg_author_link_and_orphan_cleanup() {
-    let (_container, pool, backend) = start_postgres().await;
-    let cat_id = catalogs::insert(
-        &pool,
-        None,
-        "/link",
-        "link",
-        CatType::Normal,
-        0,
-        "",
-        backend,
-    )
-    .await
-    .unwrap();
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/link", "link", CatType::Normal, 0, "")
+        .await
+        .unwrap();
     let book_id = books::insert(
         &pool,
         cat_id,
@@ -354,22 +314,16 @@ async fn pg_author_link_and_orphan_cleanup() {
     .await
     .unwrap();
 
-    let alice_id = authors::insert(&pool, "Alice", "ALICE", 2, backend)
-        .await
-        .unwrap();
-    let bob_id = authors::insert(&pool, "Bob", "BOB", 2, backend)
-        .await
-        .unwrap();
+    let alice_id = authors::insert(&pool, "Alice", "ALICE", 2).await.unwrap();
+    let bob_id = authors::insert(&pool, "Bob", "BOB", 2).await.unwrap();
 
-    authors::link_book(&pool, book_id, alice_id, backend)
-        .await
-        .unwrap();
+    authors::link_book(&pool, book_id, alice_id).await.unwrap();
     let linked = authors::get_for_book(&pool, book_id).await.unwrap();
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0].id, alice_id);
 
     // Replace Alice with Bob -- Alice becomes orphaned and should be deleted.
-    authors::set_book_authors(&pool, book_id, &[bob_id], backend)
+    authors::set_book_authors(&pool, book_id, &[bob_id])
         .await
         .unwrap();
     let linked = authors::get_for_book(&pool, book_id).await.unwrap();

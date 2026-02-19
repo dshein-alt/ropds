@@ -7,7 +7,7 @@ use super::*;
 #[tokio::test]
 async fn search_series_by_name() {
     let _lock = SCAN_MUTEX.lock().await;
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -16,9 +16,7 @@ async fn search_series_by_name() {
         lib_dir.path(),
         &["test_book.fb2", "no_cover.fb2", "series_no_genre.fb2"],
     );
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);
@@ -34,7 +32,7 @@ async fn search_series_by_name() {
 #[tokio::test]
 async fn browse_series_by_lang_and_prefix() {
     let _lock = SCAN_MUTEX.lock().await;
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -43,9 +41,7 @@ async fn browse_series_by_lang_and_prefix() {
         lib_dir.path(),
         &["test_book.fb2", "no_cover.fb2", "series_no_genre.fb2"],
     );
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool.clone(), config.clone());
 
@@ -74,15 +70,13 @@ async fn browse_series_by_lang_and_prefix() {
 #[tokio::test]
 async fn search_cyrillic_series() {
     let _lock = SCAN_MUTEX.lock().await;
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);
@@ -105,15 +99,13 @@ async fn search_cyrillic_series() {
 #[tokio::test]
 async fn browse_cyrillic_series() {
     let _lock = SCAN_MUTEX.lock().await;
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let state = test_app_state(pool, config);
     let app = test_router(state);

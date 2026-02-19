@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 use tower::ServiceExt;
 
 use ropds::config::Config;
-use ropds::db::{DbBackend, DbPool};
+use ropds::db::DbPool;
 use ropds::state::AppState;
 use ropds::web::auth::sign_session;
 use ropds::web::context::{generate_csrf_token, register_filters};
@@ -35,12 +35,13 @@ pub async fn start_postgres() -> (
         testcontainers_modules::postgres::Postgres,
     >,
     DbPool,
-    DbBackend,
 ) {
     use testcontainers_modules::postgres::Postgres;
+    use testcontainers_modules::testcontainers::ImageExt;
     use testcontainers_modules::testcontainers::runners::AsyncRunner;
 
     let container = Postgres::default()
+        .with_tag("latest")
         .start()
         .await
         .expect("Failed to start PostgreSQL container");
@@ -51,8 +52,8 @@ pub async fn start_postgres() -> (
         .expect("Failed to get PG port");
 
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
-    let (pool, backend) = ropds::db::create_test_pool_for(&url).await;
-    (container, pool, backend)
+    let pool = ropds::db::create_test_pool_for(&url).await;
+    (container, pool)
 }
 
 #[cfg(feature = "test-mysql")]
@@ -61,12 +62,13 @@ pub async fn start_mysql() -> (
         testcontainers_modules::mariadb::Mariadb,
     >,
     DbPool,
-    DbBackend,
 ) {
     use testcontainers_modules::mariadb::Mariadb;
+    use testcontainers_modules::testcontainers::ImageExt;
     use testcontainers_modules::testcontainers::runners::AsyncRunner;
 
     let container = Mariadb::default()
+        .with_tag("latest")
         .start()
         .await
         .expect("Failed to start MariaDB container");
@@ -78,8 +80,8 @@ pub async fn start_mysql() -> (
 
     // MariaDB default: root user with no password, "test" database
     let url = format!("mysql://root@127.0.0.1:{port}/test");
-    let (pool, backend) = ropds::db::create_test_pool_for(&url).await;
-    (container, pool, backend)
+    let pool = ropds::db::create_test_pool_for(&url).await;
+    (container, pool)
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +117,7 @@ auth_required = false
 }
 
 /// Build an AppState with real Tera templates and translations.
-pub fn test_app_state(pool: DbPool, backend: DbBackend, config: Config) -> AppState {
+pub fn test_app_state(pool: DbPool, config: Config) -> AppState {
     let templates_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates/**/*.html");
     let mut tera = tera::Tera::new(templates_dir.to_str().unwrap()).expect("templates should load");
     register_filters(&mut tera);
@@ -123,7 +125,7 @@ pub fn test_app_state(pool: DbPool, backend: DbBackend, config: Config) -> AppSt
     let locales_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
     let translations = i18n::load_translations(&locales_dir).expect("translations should load");
 
-    AppState::new(config, pool, backend, tera, translations, false, false)
+    AppState::new(config, pool, tera, translations, false, false)
 }
 
 /// Build a full Router from an AppState.
@@ -140,22 +142,24 @@ pub async fn create_test_user(
 ) -> i64 {
     let password_hash = ropds::password::hash(password);
     let su = if is_superuser { 1 } else { 0 };
-    sqlx::query(
+    let sql = pool.sql(
         "INSERT INTO users (username, password_hash, is_superuser, display_name, password_change_required, allow_upload) \
          VALUES (?, ?, ?, ?, 0, ?)",
-    )
-    .bind(username)
-    .bind(&password_hash)
-    .bind(su)
-    .bind(username)
-    .bind(su)
-    .execute(pool)
-    .await
-    .expect("should create test user");
-
-    let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+    );
+    sqlx::query(&sql)
         .bind(username)
-        .fetch_one(pool)
+        .bind(&password_hash)
+        .bind(su)
+        .bind(username)
+        .bind(su)
+        .execute(pool.inner())
+        .await
+        .expect("should create test user");
+
+    let sql = pool.sql("SELECT id FROM users WHERE username = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
+        .bind(username)
+        .fetch_one(pool.inner())
         .await
         .expect("should find created user");
     row.0

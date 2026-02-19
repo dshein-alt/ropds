@@ -10,7 +10,7 @@ use super::*;
 async fn scan_adds_books_from_files() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -25,9 +25,7 @@ async fn scan_adds_books_from_files() {
         ],
     );
 
-    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats.books_added, 4, "should add 4 books");
     assert_eq!(stats.books_skipped, 0, "nothing to skip on first scan");
 
@@ -43,22 +41,20 @@ async fn scan_adds_books_from_files() {
 async fn scan_adds_books_from_zip() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2.zip", "test_book.pdf.zip"]);
 
-    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats.books_added, 2, "should extract books from 2 ZIPs");
     assert_eq!(stats.archives_scanned, 2);
 
     // Verify the extracted books have cat_type = Zip (1)
     let all_books: Vec<_> = sqlx::query_as::<_, (i32,)>("SELECT cat_type FROM books")
-        .fetch_all(&pool)
+        .fetch_all(pool.inner())
         .await
         .unwrap();
     assert!(
@@ -72,21 +68,17 @@ async fn scan_adds_books_from_zip() {
 async fn scan_skips_existing_books() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
 
-    let stats1 = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats1 = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats1.books_added, 2);
 
-    let stats2 = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats2 = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats2.books_added, 0, "no new books on second scan");
     assert_eq!(stats2.books_skipped, 2, "both books should be skipped");
 }
@@ -96,28 +88,24 @@ async fn scan_skips_existing_books() {
 async fn scan_deletes_removed_books() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     // Remove one file
     std::fs::remove_file(lib_dir.path().join("test_book.fb2")).unwrap();
 
-    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats.books_deleted, 1, "one book should be deleted");
     assert_eq!(stats.books_skipped, 1, "one book should remain");
 
     // The deleted book should have avail=0
     let deleted: Vec<(i32,)> = sqlx::query_as("SELECT avail FROM books WHERE avail = 0")
-        .fetch_all(&pool)
+        .fetch_all(pool.inner())
         .await
         .unwrap();
     assert_eq!(deleted.len(), 1);
@@ -128,7 +116,7 @@ async fn scan_deletes_removed_books() {
 async fn scan_handles_metadata_variants() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -144,9 +132,7 @@ async fn scan_handles_metadata_variants() {
         ],
     );
 
-    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats.books_added, 5);
 
     // test_book.fb2 — full metadata
@@ -203,23 +189,19 @@ async fn scan_handles_metadata_variants() {
 async fn scan_duplicate_path_detection() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2"]);
 
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM books WHERE filename = 'test_book.fb2'")
-            .fetch_one(&pool)
+            .fetch_one(pool.inner())
             .await
             .unwrap();
     assert_eq!(count.0, 1, "should have exactly one row, not a duplicate");
@@ -230,16 +212,14 @@ async fn scan_duplicate_path_detection() {
 async fn scan_epub_metadata() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.epub"]);
 
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let book = books::find_by_path_and_filename(&pool, "", "test_book.epub")
         .await
@@ -262,7 +242,7 @@ async fn scan_epub_metadata() {
 async fn scan_lang_code_variants() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
@@ -277,9 +257,7 @@ async fn scan_lang_code_variants() {
         ],
     );
 
-    let stats = scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
     assert_eq!(stats.books_added, 4);
 
     // Latin title → lang_code=2
@@ -331,15 +309,13 @@ async fn scan_lang_code_variants() {
 async fn scan_books_have_confirmed_status() {
     let _lock = SCAN_MUTEX.lock().await;
 
-    let (pool, _) = db::create_test_pool().await;
+    let pool = db::create_test_pool().await;
     let lib_dir = tempfile::tempdir().unwrap();
     let covers_dir = tempfile::tempdir().unwrap();
     let config = test_config(lib_dir.path(), covers_dir.path());
 
     copy_test_files(lib_dir.path(), &["test_book.fb2"]);
-    scanner::run_scan(&pool, &config, ropds::db::DbBackend::Sqlite)
-        .await
-        .unwrap();
+    scanner::run_scan(&pool, &config).await.unwrap();
 
     let book = books::find_by_path_and_filename(&pool, "", "test_book.fb2")
         .await

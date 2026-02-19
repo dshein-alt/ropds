@@ -19,7 +19,7 @@ use tower::ServiceExt;
 pub static SCAN_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 use ropds::config::Config;
-use ropds::db::{DbBackend, DbPool};
+use ropds::db::DbPool;
 use ropds::state::AppState;
 use ropds::web::auth::sign_session;
 use ropds::web::context::{generate_csrf_token, register_filters};
@@ -89,15 +89,7 @@ pub fn test_app_state(pool: DbPool, config: Config) -> AppState {
     let locales_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
     let translations = i18n::load_translations(&locales_dir).expect("translations should load");
 
-    AppState::new(
-        config,
-        pool,
-        DbBackend::Sqlite,
-        tera,
-        translations,
-        false,
-        false,
-    )
+    AppState::new(config, pool, tera, translations, false, false)
 }
 
 /// Build a full Router from an AppState.
@@ -123,13 +115,13 @@ pub async fn create_test_user(
     .bind(su)
     .bind(username)
     .bind(su) // superusers get upload permission
-    .execute(pool)
+    .execute(pool.inner())
     .await
     .expect("should create test user");
 
     let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = ?")
         .bind(username)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await
         .expect("should find created user");
     row.0
