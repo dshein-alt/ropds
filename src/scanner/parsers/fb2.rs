@@ -316,3 +316,77 @@ fn guess_image_mime(data: &[u8]) -> String {
         "image/jpeg".to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_parse_fb2_metadata_and_cover() {
+        let cover_bytes = b"\x89PNGtest-cover";
+        let cover_b64 = base64::engine::general_purpose::STANDARD.encode(cover_bytes);
+        let fb2 = format!(
+            r##"<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <genre>sf</genre>
+      <genre> adventure </genre>
+      <author><first-name>Isaac</first-name><last-name>Asimov</last-name></author>
+      <book-title> Foundation </book-title>
+      <annotation><p>Line one</p><p>Line two</p></annotation>
+      <sequence name="Series Name" number="3"/>
+      <lang>en</lang>
+      <coverpage><image l:href="#COVERID"/></coverpage>
+    </title-info>
+    <document-info><date>1951</date></document-info>
+  </description>
+  <binary id="coverid" content-type="image/png">{cover_b64}</binary>
+</FictionBook>"##
+        );
+
+        let meta = parse(Cursor::new(fb2.as_bytes())).unwrap();
+        assert_eq!(meta.title, "Foundation");
+        assert_eq!(meta.authors, vec!["Isaac Asimov".to_string()]);
+        assert_eq!(meta.genres, vec!["sf".to_string(), "adventure".to_string()]);
+        assert_eq!(meta.annotation, "Line one\nLine two");
+        assert_eq!(meta.lang, "en");
+        assert_eq!(meta.series_title, Some("Series Name".to_string()));
+        assert_eq!(meta.series_index, 3);
+        assert_eq!(meta.docdate, "1951");
+        assert_eq!(meta.cover_type, "image/png");
+        assert_eq!(meta.cover_data.unwrap(), cover_bytes);
+    }
+
+    #[test]
+    fn test_extract_cover_from_bytes() {
+        let jpg = b"\xFF\xD8\xFFabc";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(jpg);
+        let xml = format!(r#"<binary id="img1">{b64}</binary>"#);
+        let result = extract_cover_from_bytes(xml.as_bytes(), "IMG1").unwrap();
+        assert_eq!(result.0, jpg);
+        assert_eq!(result.1, "image/jpeg");
+    }
+
+    #[test]
+    fn test_local_and_path_helpers() {
+        assert_eq!(local_name(b"xlink:image"), "image");
+        assert_eq!(local_name(b"image"), "image");
+
+        let path = vec![
+            "description".to_string(),
+            "title-info".to_string(),
+            "author".to_string(),
+        ];
+        assert!(matches_path(&path, &["title-info", "author"]));
+        assert!(matches_path_with(
+            &["description".to_string(), "title-info".to_string()],
+            "sequence",
+            &["description", "title-info", "sequence"]
+        ));
+        assert!(path_contains(&path, "author"));
+        assert!(!path_contains(&path, "binary"));
+    }
+}

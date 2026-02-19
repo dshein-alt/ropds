@@ -83,3 +83,36 @@ pub fn normalise_author_name(name: &str) -> String {
     let rest = &parts[..parts.len() - 1];
     format!("{} {}", last, rest.join(" "))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_meta_and_quotes() {
+        assert_eq!(strip_meta("  --Title.;  "), "Title");
+        assert_eq!(strip_meta("'Quoted'"), "Quoted");
+        assert_eq!(strip_meta("\"Quoted\""), "Quoted");
+        assert_eq!(strip_meta("«Quoted»"), "Quoted");
+    }
+
+    #[test]
+    fn test_detect_lang_code() {
+        assert_eq!(detect_lang_code("Alpha"), 2);
+        assert_eq!(detect_lang_code("9lives"), 3);
+        assert_eq!(detect_lang_code("Журнал"), 1);
+        assert_eq!(detect_lang_code(""), 9);
+        assert_eq!(detect_lang_code("🙂"), 9);
+    }
+
+    #[test]
+    fn test_normalise_author_name() {
+        assert_eq!(
+            normalise_author_name("John Ronald Tolkien"),
+            "Tolkien John Ronald"
+        );
+        assert_eq!(normalise_author_name("Asimov, Isaac"), "Asimov Isaac");
+        assert_eq!(normalise_author_name("  Single  "), "Single");
+        assert_eq!(normalise_author_name(""), "");
+    }
+}

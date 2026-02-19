@@ -161,3 +161,101 @@ pub enum InpxError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn make_inpx_zip(entries: &[(&str, &str)]) -> Vec<u8> {
+        let cursor = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, content) in entries {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn inpx_line(
+        author: &str,
+        genre: &str,
+        title: &str,
+        series: &str,
+        ser_no: &str,
+        file: &str,
+        size: &str,
+        del: &str,
+        ext: &str,
+        date: &str,
+        lang: &str,
+    ) -> String {
+        let sep = INPX_SEPARATOR as char;
+        format!(
+            "{author}{sep}{genre}{sep}{title}{sep}{series}{sep}{ser_no}{sep}{file}{sep}{size}{sep}lib{sep}{del}{sep}{ext}{sep}{date}{sep}{lang}"
+        )
+    }
+
+    #[test]
+    fn test_parse_inpx_archive_records() {
+        let good = inpx_line(
+            "Asimov,Isaac:Clarke,Arthur",
+            "sf:space_opera",
+            "Foundation",
+            "Series:Ignored",
+            "2",
+            "foundation",
+            "12345",
+            "0",
+            "fb2",
+            "1951",
+            "en",
+        );
+        let deleted = inpx_line(
+            "Nobody", "sf", "Deleted", "", "0", "deleted", "1", "1", "fb2", "", "en",
+        );
+        let zip_data = make_inpx_zip(&[(
+            "pack-0001.inp",
+            &format!(
+                "{good}\n{deleted}\nshort{sep}\n",
+                sep = INPX_SEPARATOR as char
+            ),
+        )]);
+
+        let records = parse(std::io::Cursor::new(zip_data)).unwrap();
+        assert_eq!(records.len(), 1);
+
+        let r = &records[0];
+        assert_eq!(r.filename, "foundation.fb2");
+        assert_eq!(r.folder, "pack-0001.zip");
+        assert_eq!(r.format, "fb2");
+        assert_eq!(r.size, 12345);
+        assert_eq!(r.meta.title, "Foundation");
+        assert_eq!(
+            r.meta.authors,
+            vec!["Asimov Isaac".to_string(), "Clarke Arthur".to_string()]
+        );
+        assert_eq!(
+            r.meta.genres,
+            vec!["sf".to_string(), "space_opera".to_string()]
+        );
+        assert_eq!(r.meta.series_title, Some("Series".to_string()));
+        assert_eq!(r.meta.series_index, 2);
+        assert_eq!(r.meta.docdate, "1951");
+        assert_eq!(r.meta.lang, "en");
+    }
+
+    #[test]
+    fn test_default_folder() {
+        assert_eq!(default_folder("fb2-000001.inp"), "fb2-000001.zip");
+        assert_eq!(default_folder("nested/file.inp"), "file.zip");
+    }
+
+    #[test]
+    fn test_parse_invalid_zip_error() {
+        let err = parse(std::io::Cursor::new(b"not-a-zip".to_vec())).unwrap_err();
+        assert!(matches!(err, InpxError::Zip(_)));
+    }
+}

@@ -1382,3 +1382,161 @@ pub enum ScanError {
     #[error("internal error: {0}")]
     Internal(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn test_scan_result_store_and_take() {
+        store_scan_result(ScanResult {
+            ok: true,
+            stats: Some(ScanStatsSnapshot::default()),
+            error: None,
+        });
+        assert!(take_last_scan_result().is_some());
+        assert!(take_last_scan_result().is_none());
+        assert!(!is_scanning());
+    }
+
+    #[test]
+    fn test_parse_book_bytes_fallback_for_unknown_ext() {
+        let meta = parse_book_bytes(b"ignored", "txt", "my-file.txt").unwrap();
+        assert_eq!(meta.title, "my-file");
+    }
+
+    #[test]
+    fn test_parse_book_file_fallback_for_unknown_ext() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("book.unknown");
+        fs::write(&path, b"data").unwrap();
+        let meta = parse_book_file(&path, "unknown").unwrap();
+        assert_eq!(meta.title, "book");
+    }
+
+    #[test]
+    fn test_read_zip_entries_and_validate_integrity() {
+        let dir = tempdir().unwrap();
+        let zip_path = dir.path().join("books.zip");
+        make_zip(
+            &zip_path,
+            &[
+                ("a.fb2", b"one"),
+                ("b.txt", b"two"),
+                ("nested/c.epub", b"three"),
+            ],
+        );
+
+        let mut exts = HashSet::new();
+        exts.insert("fb2".to_string());
+        exts.insert("epub".to_string());
+
+        let entries = read_zip_entries(&zip_path, &exts, false).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|e| e.filename == "a.fb2"));
+        assert!(entries.iter().any(|e| e.filename == "c.epub"));
+        assert!(validate_zip_integrity(&zip_path).unwrap());
+    }
+
+    #[test]
+    fn test_zip_helpers_invalid_archive_errors() {
+        let dir = tempdir().unwrap();
+        let bad = dir.path().join("bad.zip");
+        fs::write(&bad, b"not-a-zip").unwrap();
+
+        let exts = HashSet::from(["fb2".to_string()]);
+        assert!(matches!(
+            read_zip_entries(&bad, &exts, false),
+            Err(ScanError::Zip(_))
+        ));
+        assert!(matches!(
+            validate_zip_integrity(&bad),
+            Err(ScanError::Zip(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_ensure_catalog_author_series() {
+        let pool = create_test_pool().await;
+        let cat_id = ensure_catalog(&pool, "a/b", CatType::Normal).await.unwrap();
+        assert!(cat_id > 0);
+
+        let parent: Option<(i64,)> = sqlx::query_as("SELECT id FROM catalogs WHERE path = 'a'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert!(parent.is_some());
+
+        let a1 = ensure_author(&pool, "Isaac Asimov").await.unwrap();
+        let a2 = ensure_author(&pool, "Isaac Asimov").await.unwrap();
+        assert_eq!(a1, a2);
+
+        let s1 = ensure_series(&pool, "Foundation").await.unwrap();
+        let s2 = ensure_series(&pool, "Foundation").await.unwrap();
+        assert_eq!(s1, s2);
+    }
+
+    #[tokio::test]
+    async fn test_run_scan_already_running() {
+        let pool = create_test_pool().await;
+        let cfg: crate::config::Config = toml::from_str(
+            r#"
+[server]
+[library]
+root_path = "/tmp"
+[database]
+[opds]
+[scanner]
+"#,
+        )
+        .unwrap();
+
+        SCAN_LOCK.store(true, Ordering::SeqCst);
+        let res = run_scan(&pool, &cfg).await;
+        SCAN_LOCK.store(false, Ordering::SeqCst);
+        assert!(matches!(res, Err(ScanError::AlreadyRunning)));
+    }
+
+    #[test]
+    fn test_cover_helpers_and_rel_path() {
+        let dir = tempdir().unwrap();
+        save_cover(dir.path(), 42, b"cover", "image/png").unwrap();
+        let png = dir.path().join("42.png");
+        assert!(png.exists());
+
+        // Also create another extension to ensure cleanup scans all known files.
+        fs::write(dir.path().join("42.jpg"), b"x").unwrap();
+        delete_cover(dir.path(), 42);
+        assert!(!png.exists());
+        assert!(!dir.path().join("42.jpg").exists());
+
+        assert_eq!(mime_to_ext("image/png"), "png");
+        assert_eq!(mime_to_ext("image/gif"), "gif");
+        assert_eq!(mime_to_ext("image/jpeg"), "jpg");
+
+        let root = Path::new("/tmp/root");
+        let file = Path::new("/tmp/root/sub/book.fb2");
+        assert_eq!(rel_path(root, file), "sub/book.fb2");
+    }
+
+    #[test]
+    fn test_parse_book_bytes_invalid_epub_returns_parse_error() {
+        let err = parse_book_bytes(b"not-an-epub", "epub", "bad.epub").unwrap_err();
+        assert!(matches!(err, ScanError::Parse(_)));
+    }
+}

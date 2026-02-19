@@ -404,3 +404,114 @@ pub enum EpubError {
     #[error("multiple OPF files found in EPUB")]
     MultipleOpf,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    fn make_epub(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn test_parse_container_xml_selection() {
+        let xml = br#"
+            <container>
+              <rootfiles>
+                <rootfile full-path="a.opf" media-type="text/plain"/>
+                <rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+        "#;
+        assert_eq!(
+            parse_container_xml(xml),
+            Some("OPS/content.opf".to_string())
+        );
+
+        let xml_single =
+            br#"<container><rootfiles><rootfile full-path="single.opf"/></rootfiles></container>"#;
+        assert_eq!(
+            parse_container_xml(xml_single),
+            Some("single.opf".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_epub_metadata_and_cover() {
+        let opf = br#"
+            <package xmlns:dc="http://purl.org/dc/elements/1.1/">
+              <metadata>
+                <dc:title>Test Book</dc:title>
+                <dc:creator opf:role="aut">Jane Doe</dc:creator>
+                <dc:language>en</dc:language>
+                <dc:subject>sf</dc:subject>
+                <dc:description>Anno</dc:description>
+                <dc:date>2024</dc:date>
+                <meta name="calibre:series" content="Saga"/>
+                <meta name="calibre:series_index" content="2"/>
+                <meta name="cover" content="cover-id"/>
+              </metadata>
+              <manifest>
+                <item id="cover-id" href="images/cover.jpg" media-type="image/jpeg"/>
+              </manifest>
+            </package>
+        "#;
+        let cover = b"\xFF\xD8\xFFcover";
+        let epub = make_epub(&[
+            (
+                "META-INF/container.xml",
+                br#"<container><rootfiles><rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#,
+            ),
+            ("OPS/content.opf", opf),
+            ("OPS/images/cover.jpg", cover),
+        ]);
+
+        let meta = parse(Cursor::new(epub)).unwrap();
+        assert_eq!(meta.title, "Test Book");
+        assert_eq!(meta.authors, vec!["Jane Doe".to_string()]);
+        assert_eq!(meta.genres, vec!["sf".to_string()]);
+        assert_eq!(meta.annotation, "Anno");
+        assert_eq!(meta.lang, "en");
+        assert_eq!(meta.docdate, "2024");
+        assert_eq!(meta.series_title, Some("Saga".to_string()));
+        assert_eq!(meta.series_index, 2);
+        assert_eq!(meta.cover_type, "image/jpeg");
+        assert_eq!(meta.cover_data.unwrap(), cover);
+    }
+
+    #[test]
+    fn test_parse_multiple_opf_error() {
+        let epub = make_epub(&[("a.opf", b"<package/>"), ("b.opf", b"<package/>")]);
+        let err = parse(Cursor::new(epub)).unwrap_err();
+        assert!(matches!(err, EpubError::MultipleOpf));
+    }
+
+    #[test]
+    fn test_parse_no_opf_error() {
+        let epub = make_epub(&[("META-INF/container.xml", b"<container/>")]);
+        let err = parse(Cursor::new(epub)).unwrap_err();
+        assert!(matches!(err, EpubError::NoOpf));
+    }
+
+    #[test]
+    fn test_helper_functions() {
+        assert_eq!(resolve_path("OPS/", "img/c.jpg"), "OPS/img/c.jpg");
+        assert_eq!(resolve_path("OPS/", "/img/c.jpg"), "img/c.jpg");
+        assert_eq!(local_name(b"dc:title"), "title");
+        assert_eq!(local_name(b"title"), "title");
+        assert!(path_in_metadata(&[
+            "package".to_string(),
+            "metadata".to_string(),
+            "title".to_string()
+        ]));
+    }
+}
