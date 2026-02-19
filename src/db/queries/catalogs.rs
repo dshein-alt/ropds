@@ -101,3 +101,133 @@ pub async fn delete_empty(pool: &DbPool) -> Result<u64, sqlx::Error> {
     }
     Ok(total)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+
+    async fn insert_test_book(pool: &DbPool, catalog_id: i64, title: &str, avail: i32) -> i64 {
+        let search_title = title.to_uppercase();
+        sqlx::query(
+            "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
+             lang, lang_code, size, avail, cat_type, cover, cover_type) \
+             VALUES (?, ?, '/catalogs', 'fb2', ?, ?, 'en', 2, 100, ?, ?, 0, '')",
+        )
+        .bind(catalog_id)
+        .bind(format!("{title}.fb2"))
+        .bind(title)
+        .bind(search_title)
+        .bind(avail)
+        .bind(CatType::Normal as i32)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE catalog_id = ? AND title = ?")
+            .bind(catalog_id)
+            .bind(title)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_lookup_hierarchy() {
+        let pool = create_test_pool().await;
+
+        let root_id = insert(&pool, None, "/root", "root", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+        let child_id = insert(
+            &pool,
+            Some(root_id),
+            "/root/child",
+            "child",
+            CatType::Normal,
+            0,
+            "",
+        )
+        .await
+        .unwrap();
+
+        let root = get_by_id(&pool, root_id).await.unwrap().unwrap();
+        assert_eq!(root.path, "/root");
+
+        let child = find_by_path(&pool, "/root/child").await.unwrap().unwrap();
+        assert_eq!(child.id, child_id);
+        assert_eq!(child.parent_id, Some(root_id));
+
+        let roots = get_root_catalogs(&pool).await.unwrap();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].id, root_id);
+
+        let children = get_children(&pool, root_id).await.unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].id, child_id);
+    }
+
+    #[tokio::test]
+    async fn test_insert_duplicate_returns_same_id() {
+        let pool = create_test_pool().await;
+
+        let id1 = insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+        let id2 = insert(&pool, None, "/dup", "dup2", CatType::Zip, 42, "mtime")
+            .await
+            .unwrap();
+
+        assert_eq!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn test_update_archive_meta() {
+        let pool = create_test_pool().await;
+
+        let id = insert(
+            &pool,
+            None,
+            "/archive.zip",
+            "archive.zip",
+            CatType::Zip,
+            10,
+            "old",
+        )
+        .await
+        .unwrap();
+        update_archive_meta(&pool, id, CatType::Inpx, 99, "2026-02-19 10:30:00")
+            .await
+            .unwrap();
+
+        let cat = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(cat.cat_type, CatType::Inpx as i32);
+        assert_eq!(cat.cat_size, 99);
+        assert_eq!(cat.cat_mtime, "2026-02-19 10:30:00");
+    }
+
+    #[tokio::test]
+    async fn test_delete_empty_prunes_tree_and_keeps_non_empty() {
+        let pool = create_test_pool().await;
+
+        let a = insert(&pool, None, "/a", "a", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+        let _b = insert(&pool, Some(a), "/a/b", "b", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+
+        let keep = insert(&pool, None, "/keep", "keep", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+        let _book_id = insert_test_book(&pool, keep, "Live Book", 2).await;
+
+        let deleted = delete_empty(&pool).await.unwrap();
+        assert_eq!(deleted, 2);
+
+        assert!(find_by_path(&pool, "/a").await.unwrap().is_none());
+        assert!(find_by_path(&pool, "/a/b").await.unwrap().is_none());
+        assert!(find_by_path(&pool, "/keep").await.unwrap().is_some());
+    }
+}

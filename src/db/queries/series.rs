@@ -156,3 +156,104 @@ pub async fn get_name_prefix_groups(
     .await?;
     Ok(rows)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+
+    async fn ensure_catalog(pool: &DbPool) -> i64 {
+        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/series', 'series')")
+            .execute(pool)
+            .await
+            .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/series'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    async fn insert_test_book(pool: &DbPool, catalog_id: i64, title: &str) -> i64 {
+        let search_title = title.to_uppercase();
+        sqlx::query(
+            "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
+             lang, lang_code, size, avail, cat_type, cover, cover_type) \
+             VALUES (?, ?, '/series', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
+        )
+        .bind(catalog_id)
+        .bind(format!("{title}.fb2"))
+        .bind(title)
+        .bind(search_title)
+        .execute(pool)
+        .await
+        .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE catalog_id = ? AND title = ?")
+            .bind(catalog_id)
+            .bind(title)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    #[tokio::test]
+    async fn test_insert_search_count_and_prefix_groups() {
+        let pool = create_test_pool().await;
+
+        let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2).await.unwrap();
+        let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2).await.unwrap();
+        let _cyr = insert(&pool, "Альфа", "АЛЬФА", 1).await.unwrap();
+
+        let found = get_by_id(&pool, alpha).await.unwrap().unwrap();
+        assert_eq!(found.ser_name, "Alpha Saga");
+
+        let by_name = find_by_name(&pool, "Alpha Saga").await.unwrap().unwrap();
+        assert_eq!(by_name.id, alpha);
+
+        let search = search_by_name(&pool, "ALP", 100, 0).await.unwrap();
+        assert_eq!(search.len(), 2);
+
+        let count = count_by_name_search(&pool, "ALP").await.unwrap();
+        assert_eq!(count, 2);
+
+        let prefix = get_by_lang_code_prefix(&pool, 2, "AL", 100, 0)
+            .await
+            .unwrap();
+        assert_eq!(prefix.len(), 2);
+
+        let groups = get_name_prefix_groups(&pool, 2, "A").await.unwrap();
+        assert_eq!(groups, vec![("AL".to_string(), 2)]);
+    }
+
+    #[tokio::test]
+    async fn test_insert_duplicate_returns_same_id() {
+        let pool = create_test_pool().await;
+
+        let id1 = insert(&pool, "Shared Series", "SHARED SERIES", 2)
+            .await
+            .unwrap();
+        let id2 = insert(&pool, "Shared Series", "OTHER", 1).await.unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn test_link_book_and_get_for_book() {
+        let pool = create_test_pool().await;
+        let catalog_id = ensure_catalog(&pool).await;
+        let book_id = insert_test_book(&pool, catalog_id, "Linked Book").await;
+
+        let z_id = insert(&pool, "Zeta", "ZETA", 2).await.unwrap();
+        let a_id = insert(&pool, "Alpha", "ALPHA", 2).await.unwrap();
+        link_book(&pool, book_id, z_id, 7).await.unwrap();
+        link_book(&pool, book_id, a_id, 3).await.unwrap();
+
+        let linked = get_for_book(&pool, book_id).await.unwrap();
+        assert_eq!(linked.len(), 2);
+        // Ordered by series name in SQL: Alpha, then Zeta.
+        assert_eq!(linked[0].0.id, a_id);
+        assert_eq!(linked[0].1, 3);
+        assert_eq!(linked[1].0.id, z_id);
+        assert_eq!(linked[1].1, 7);
+    }
+}

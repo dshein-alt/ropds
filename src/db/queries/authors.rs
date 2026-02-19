@@ -185,3 +185,114 @@ pub async fn get_name_prefix_groups(
     .await?;
     Ok(rows)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+
+    async fn ensure_catalog(pool: &DbPool) -> i64 {
+        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/authors', 'authors')")
+            .execute(pool)
+            .await
+            .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/authors'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    async fn insert_test_book(pool: &DbPool, catalog_id: i64, title: &str) -> i64 {
+        let search_title = title.to_uppercase();
+        sqlx::query(
+            "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
+             lang, lang_code, size, avail, cat_type, cover, cover_type) \
+             VALUES (?, ?, '/authors', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
+        )
+        .bind(catalog_id)
+        .bind(format!("{title}.fb2"))
+        .bind(title)
+        .bind(search_title)
+        .execute(pool)
+        .await
+        .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE catalog_id = ? AND title = ?")
+            .bind(catalog_id)
+            .bind(title)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    #[tokio::test]
+    async fn test_insert_search_count_and_prefix_groups() {
+        let pool = create_test_pool().await;
+
+        let alice = insert(&pool, "Alice Smith", "ALICE SMITH", 2)
+            .await
+            .unwrap();
+        let _alina = insert(&pool, "Alina West", "ALINA WEST", 2).await.unwrap();
+        let _cyr = insert(&pool, "Алиса", "АЛИСА", 1).await.unwrap();
+
+        let found = get_by_id(&pool, alice).await.unwrap().unwrap();
+        assert_eq!(found.full_name, "Alice Smith");
+
+        let by_name = find_by_name(&pool, "Alice Smith").await.unwrap().unwrap();
+        assert_eq!(by_name.id, alice);
+
+        let search = search_by_name(&pool, "ALI", 100, 0).await.unwrap();
+        assert_eq!(search.len(), 2);
+
+        let count = count_by_name_search(&pool, "ALI").await.unwrap();
+        assert_eq!(count, 2);
+
+        let prefix = get_by_lang_code_prefix(&pool, 2, "AL", 100, 0)
+            .await
+            .unwrap();
+        assert_eq!(prefix.len(), 2);
+
+        let groups = get_name_prefix_groups(&pool, 2, "A").await.unwrap();
+        assert_eq!(groups, vec![("AL".to_string(), 2)]);
+    }
+
+    #[tokio::test]
+    async fn test_insert_duplicate_returns_same_id() {
+        let pool = create_test_pool().await;
+
+        let id1 = insert(&pool, "Same Name", "SAME NAME", 2).await.unwrap();
+        let id2 = insert(&pool, "Same Name", "DIFFERENT SEARCH", 1)
+            .await
+            .unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn test_link_and_set_book_authors_with_orphan_cleanup() {
+        let pool = create_test_pool().await;
+        let catalog_id = ensure_catalog(&pool).await;
+        let book_id = insert_test_book(&pool, catalog_id, "Book One").await;
+
+        let alice_id = insert(&pool, "Alice", "ALICE", 2).await.unwrap();
+        let bob_id = insert(&pool, "Bob", "BOB", 2).await.unwrap();
+
+        link_book(&pool, book_id, alice_id).await.unwrap();
+        let linked = get_for_book(&pool, book_id).await.unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].id, alice_id);
+
+        set_book_authors(&pool, book_id, &[bob_id]).await.unwrap();
+        let linked = get_for_book(&pool, book_id).await.unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].id, bob_id);
+
+        // Alice became orphaned and should have been deleted.
+        assert!(find_by_name(&pool, "Alice").await.unwrap().is_none());
+        assert!(find_by_name(&pool, "Bob").await.unwrap().is_some());
+
+        // Bob is still linked, so explicit orphan cleanup must keep him.
+        delete_if_orphaned(&pool, bob_id).await.unwrap();
+        assert!(find_by_name(&pool, "Bob").await.unwrap().is_some());
+    }
+}
