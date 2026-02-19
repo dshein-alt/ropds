@@ -767,6 +767,20 @@ pub async fn publish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let cursor = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
 
     #[test]
     fn test_validate_extension_valid() {
@@ -836,5 +850,117 @@ mod tests {
         let t1 = generate_token(secret);
         let t2 = generate_token(secret);
         assert_ne!(t1, t2);
+    }
+
+    #[test]
+    fn test_extract_book_from_zip_success() {
+        let allowed = vec!["fb2".to_string(), "epub".to_string()];
+        let zip_data = make_zip(&[
+            ("nested/archive.zip", b"not-a-book"),
+            ("books/test-book.fb2", b"book-bytes"),
+        ]);
+
+        let (data, ext, filename) = extract_book_from_zip(&zip_data, &allowed, 10_000).unwrap();
+        assert_eq!(data, b"book-bytes");
+        assert_eq!(ext, "fb2");
+        assert_eq!(filename, "test-book.fb2");
+    }
+
+    #[test]
+    fn test_extract_book_from_zip_multiple_books_rejected() {
+        let allowed = vec!["fb2".to_string(), "epub".to_string()];
+        let zip_data = make_zip(&[("a.fb2", b"one"), ("b.epub", b"two")]);
+        let err = extract_book_from_zip(&zip_data, &allowed, 10_000).unwrap_err();
+        assert_eq!(err, "error_unsupported");
+    }
+
+    #[test]
+    fn test_extract_book_from_zip_too_large_rejected() {
+        let allowed = vec!["fb2".to_string()];
+        let data = vec![b'x'; 32];
+        let zip_data = make_zip(&[("large.fb2", &data)]);
+        let err = extract_book_from_zip(&zip_data, &allowed, 16).unwrap_err();
+        assert_eq!(err, "error_too_large");
+    }
+
+    #[test]
+    fn test_extract_book_from_zip_no_supported_file() {
+        let allowed = vec!["fb2".to_string()];
+        let zip_data = make_zip(&[("notes.txt", b"text only")]);
+        let err = extract_book_from_zip(&zip_data, &allowed, 10_000).unwrap_err();
+        assert_eq!(err, "error_unsupported");
+    }
+
+    #[test]
+    fn test_cleanup_stale_uploads_removes_old_files() {
+        let dir = tempdir().unwrap();
+        let temp_book = dir.path().join("upload_old.fb2");
+        let temp_cover = dir.path().join("upload_old.jpg");
+        let state_path = dir.path().join("upload_old.json");
+
+        std::fs::write(&temp_book, b"book").unwrap();
+        std::fs::write(&temp_cover, b"cover").unwrap();
+
+        let state = UploadState {
+            temp_path: temp_book.to_string_lossy().to_string(),
+            original_filename: "old.fb2".to_string(),
+            extension: "fb2".to_string(),
+            size: 4,
+            title: "Old".to_string(),
+            authors: vec![],
+            genres: vec![],
+            annotation: String::new(),
+            docdate: String::new(),
+            lang: "en".to_string(),
+            series_title: None,
+            series_index: 0,
+            has_cover: true,
+            cover_type: "jpg".to_string(),
+            cover_path: Some(temp_cover.to_string_lossy().to_string()),
+            user_id: 1,
+            created_at: (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339(),
+        };
+        std::fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+
+        cleanup_stale_uploads(dir.path(), 60);
+
+        assert!(!temp_book.exists());
+        assert!(!temp_cover.exists());
+        assert!(!state_path.exists());
+    }
+
+    #[test]
+    fn test_cleanup_stale_uploads_keeps_recent_files() {
+        let dir = tempdir().unwrap();
+        let temp_book = dir.path().join("upload_new.fb2");
+        let state_path = dir.path().join("upload_new.json");
+
+        std::fs::write(&temp_book, b"book").unwrap();
+
+        let state = UploadState {
+            temp_path: temp_book.to_string_lossy().to_string(),
+            original_filename: "new.fb2".to_string(),
+            extension: "fb2".to_string(),
+            size: 4,
+            title: "New".to_string(),
+            authors: vec![],
+            genres: vec![],
+            annotation: String::new(),
+            docdate: String::new(),
+            lang: "en".to_string(),
+            series_title: None,
+            series_index: 0,
+            has_cover: false,
+            cover_type: String::new(),
+            cover_path: None,
+            user_id: 1,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        std::fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+
+        cleanup_stale_uploads(dir.path(), 3_600);
+
+        assert!(temp_book.exists());
+        assert!(state_path.exists());
     }
 }

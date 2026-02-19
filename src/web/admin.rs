@@ -1154,3 +1154,68 @@ fn format_uptime(total_secs: u64, ctx: &tera::Context) -> String {
     parts.push(format!("{minutes} {}", label("uptime_minutes", "min")));
     parts.join(" ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::web::auth::sign_session;
+    use axum_extra::extract::cookie::{Cookie, CookieJar};
+
+    #[test]
+    fn test_is_valid_password_boundaries() {
+        assert!(!is_valid_password("1234567"));
+        assert!(is_valid_password("12345678"));
+        assert!(is_valid_password(&"x".repeat(32)));
+        assert!(!is_valid_password(&"x".repeat(33)));
+    }
+
+    #[test]
+    fn test_validate_book_title_rules() {
+        assert_eq!(
+            validate_book_title("  The Title  ").unwrap(),
+            "The Title".to_string()
+        );
+        assert_eq!(validate_book_title("   ").unwrap_err(), "title_empty");
+        assert_eq!(
+            validate_book_title(&"a".repeat(257)).unwrap_err(),
+            "title_too_long"
+        );
+        assert_eq!(
+            validate_book_title("abc\u{0007}def").unwrap_err(),
+            "title_invalid"
+        );
+    }
+
+    #[test]
+    fn test_get_session_user_id_valid_and_invalid() {
+        let secret = b"session-secret-for-tests";
+        let token = sign_session(42, secret, 1);
+        let jar = CookieJar::new().add(Cookie::new("session", token));
+        assert_eq!(get_session_user_id(&jar, secret), Some(42));
+
+        let invalid = CookieJar::new().add(Cookie::new("session", "bad-token"));
+        assert_eq!(get_session_user_id(&invalid, secret), None);
+    }
+
+    #[test]
+    fn test_format_uptime_with_translations() {
+        let mut ctx = tera::Context::new();
+        let t = serde_json::json!({
+            "admin": {
+                "uptime_days": "days",
+                "uptime_hours": "hours",
+                "uptime_minutes": "mins"
+            }
+        });
+        ctx.insert("t", &t);
+
+        assert_eq!(format_uptime(90_061, &ctx), "1 days 1 hours 1 mins");
+        assert_eq!(format_uptime(3_600, &ctx), "1 hours 0 mins");
+    }
+
+    #[test]
+    fn test_format_uptime_fallback_labels() {
+        let ctx = tera::Context::new();
+        assert_eq!(format_uptime(172_920, &ctx), "2 d 2 min");
+    }
+}

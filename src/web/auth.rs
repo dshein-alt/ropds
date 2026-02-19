@@ -255,6 +255,7 @@ async fn get_user_id(pool: &crate::db::DbPool, username: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::create_test_pool;
 
     #[test]
     fn test_sign_and_verify_session() {
@@ -297,5 +298,25 @@ mod tests {
         assert_eq!(verify_session("garbage", b"secret"), None);
         assert_eq!(verify_session("", b"secret"), None);
         assert_eq!(verify_session("a:b", b"secret"), None);
+    }
+
+    #[tokio::test]
+    async fn test_verify_credentials_and_get_user_id() {
+        let pool = create_test_pool().await;
+        let hash = crate::password::hash("password123");
+        sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)")
+            .bind("alice")
+            .bind(hash)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(verify_credentials(&pool, "alice", "password123").await);
+        assert!(!verify_credentials(&pool, "alice", "wrong-password").await);
+        assert!(!verify_credentials(&pool, "missing-user", "password123").await);
+
+        let uid = get_user_id(&pool, "alice").await;
+        assert!(uid.is_some());
+        assert_eq!(get_user_id(&pool, "missing-user").await, None);
     }
 }

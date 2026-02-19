@@ -86,3 +86,76 @@ pub fn router(state: AppState) -> Router<AppState> {
             auth::session_auth_layer,
         ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{
+        Config, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig, ServerConfig,
+        UploadConfig, WebConfig,
+    };
+    use crate::db::create_test_pool;
+    use crate::web::i18n::Translations;
+    use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn test_router_builds() {
+        let config = Config {
+            server: ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 8080,
+                log_level: "info".to_string(),
+                session_secret: "test-secret".to_string(),
+                session_ttl_hours: 24,
+            },
+            library: LibraryConfig {
+                root_path: PathBuf::from("/tmp/books"),
+                covers_path: PathBuf::from("/tmp/covers"),
+                book_extensions: vec!["fb2".to_string(), "epub".to_string(), "zip".to_string()],
+                scan_zip: true,
+                zip_codepage: "cp866".to_string(),
+                inpx_enable: false,
+            },
+            database: DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+            },
+            opds: OpdsConfig {
+                title: "ROPDS".to_string(),
+                subtitle: String::new(),
+                max_items: 30,
+                split_items: 300,
+                auth_required: true,
+                show_covers: true,
+                alphabet_menu: true,
+                hide_doubles: false,
+            },
+            scanner: ScannerConfig {
+                schedule_minutes: vec![0],
+                schedule_hours: vec![0],
+                schedule_day_of_week: vec![],
+                delete_logical: true,
+                skip_unchanged: false,
+                test_zip: false,
+                test_files: false,
+                workers_num: 1,
+            },
+            web: WebConfig {
+                language: "en".to_string(),
+                theme: "light".to_string(),
+            },
+            upload: UploadConfig {
+                allow_upload: true,
+                upload_path: PathBuf::from("/tmp/uploads"),
+                max_upload_size_mb: 10,
+            },
+        };
+
+        let pool = create_test_pool().await;
+        let tera = tera::Tera::default();
+        let mut translations = Translations::new();
+        translations.insert("en".to_string(), serde_json::json!({"admin": {}}));
+
+        let state = AppState::new(config, pool, tera, translations, false, false);
+        let _router = router(state);
+    }
+}

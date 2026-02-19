@@ -79,3 +79,69 @@ pub enum TranslationError {
     #[error("no locale files found in {path}")]
     Empty { path: std::path::PathBuf },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_load_translations_success_and_get_locale_fallback() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("en.toml"),
+            "[admin]\nhello = \"Hello\"\n[web]\nlang = \"en\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("ru.toml"),
+            "[admin]\nhello = \"Привет\"\n[web]\nlang = \"ru\"\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("README.txt"), "ignored").unwrap();
+
+        let translations = load_translations(dir.path()).unwrap();
+        assert!(translations.contains_key("en"));
+        assert!(translations.contains_key("ru"));
+        assert_eq!(translations.len(), 2);
+
+        let ru = get_locale(&translations, "ru");
+        assert_eq!(ru["admin"]["hello"], "Привет");
+
+        let fallback = get_locale(&translations, "de");
+        assert_eq!(fallback["admin"]["hello"], "Hello");
+    }
+
+    #[test]
+    fn test_load_translations_empty_dir_error() {
+        let dir = tempdir().unwrap();
+        let err = load_translations(dir.path()).unwrap_err();
+        match err {
+            TranslationError::Empty { path } => assert_eq!(path, dir.path()),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_load_translations_invalid_toml_error() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("en.toml"), "not = [valid toml").unwrap();
+
+        let err = load_translations(dir.path()).unwrap_err();
+        match err {
+            TranslationError::Parse { path, .. } => assert_eq!(path, dir.path().join("en.toml")),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_load_translations_missing_dir_io_error() {
+        let missing = std::path::PathBuf::from("/definitely-missing-locale-dir-for-tests");
+        let err = load_translations(&missing).unwrap_err();
+        match err {
+            TranslationError::Io { path, .. } => assert_eq!(path, missing),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+}
