@@ -171,6 +171,93 @@ async fn browse_books_by_lang_and_prefix() {
     );
 }
 
+/// Browse Cyrillic books (lang_code=1).
+#[tokio::test]
+async fn browse_books_cyrillic() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool.clone(), config.clone());
+
+    // lang=1 (Cyrillic) — should show alphabet groups
+    let app = test_router(state.clone());
+    let resp = get(app, "/web/books?lang=1").await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+    assert!(html.contains("Т"), "should have Cyrillic 'Т' letter group");
+
+    // Drill into prefix
+    let app2 = test_router(state);
+    let resp2 = get(app2, "/web/books?lang=1&chars=%D0%A2").await;
+    assert_eq!(resp2.status(), 200);
+    let html2 = body_string(resp2).await;
+    assert!(
+        html2.contains("Тайна старого дома") || html2.contains("ТА"),
+        "should show Cyrillic books or sub-groups starting with Т"
+    );
+}
+
+/// Browse digit-prefixed books (lang_code=3).
+#[tokio::test]
+async fn browse_books_digit_prefix() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["digit_title.fb2"]);
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    let resp = get(app, "/web/books?lang=3").await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+    assert!(
+        html.contains("4") || html.contains("451 Degree"),
+        "should show digit-prefixed books"
+    );
+}
+
+/// Search Cyrillic book by title substring.
+#[tokio::test]
+async fn search_cyrillic_book_by_title() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    let resp = get(
+        app,
+        "/web/search/books?type=m&q=%D0%A2%D0%B0%D0%B9%D0%BD%D0%B0",
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+    assert!(
+        html.contains("Тайна старого дома"),
+        "should find Cyrillic book by title search"
+    );
+}
+
 /// Single book lookup by ID (type=i).
 #[tokio::test]
 async fn search_single_book_by_id() {

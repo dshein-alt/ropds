@@ -63,3 +63,56 @@ async fn browse_authors_by_lang_and_prefix() {
         "should show authors or sub-groups starting with D"
     );
 }
+
+/// Search Cyrillic author by name.
+#[tokio::test]
+async fn search_cyrillic_author() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    // Search by Cyrillic name substring "Иванов"
+    let resp = get(
+        app,
+        "/web/search/authors?type=m&q=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2",
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+    assert!(
+        html.contains("Иванов"),
+        "should find Cyrillic author 'Иванов'"
+    );
+}
+
+/// Browse Cyrillic authors (lang=1).
+#[tokio::test]
+async fn browse_cyrillic_authors() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["cyrillic_book.fb2"]);
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    let resp = get(app, "/web/authors?lang=1").await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+    assert!(
+        html.contains("И"),
+        "should show Cyrillic 'И' letter group for Иванов"
+    );
+}

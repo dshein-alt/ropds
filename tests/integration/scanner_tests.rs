@@ -237,6 +237,73 @@ async fn scan_epub_metadata() {
     assert_eq!(book_series[0].1, 2); // series index
 }
 
+/// Cyrillic, digit-prefixed, and symbol-prefixed titles get correct lang_code.
+#[tokio::test]
+async fn scan_lang_code_variants() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(
+        lib_dir.path(),
+        &[
+            "test_book.fb2",     // Latin title → lang_code=2
+            "cyrillic_book.fb2", // Cyrillic title → lang_code=1
+            "digit_title.fb2",   // Digit-prefixed title → lang_code=3
+            "quoted_title.fb2",  // Symbol-prefixed title → lang_code=9
+        ],
+    );
+
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    assert_eq!(stats.books_added, 4);
+
+    // Latin title → lang_code=2
+    let latin = books::find_by_path_and_filename(&pool, "", "test_book.fb2")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(latin.lang_code, 2, "Latin title should have lang_code=2");
+
+    // Cyrillic title → lang_code=1
+    let cyrillic = books::find_by_path_and_filename(&pool, "", "cyrillic_book.fb2")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(cyrillic.title, "Тайна старого дома");
+    assert_eq!(
+        cyrillic.lang_code, 1,
+        "Cyrillic title should have lang_code=1"
+    );
+    let cyr_authors = authors::get_for_book(&pool, cyrillic.id).await.unwrap();
+    assert_eq!(cyr_authors.len(), 1);
+    assert_eq!(cyr_authors[0].full_name, "Иванов Пётр");
+    let cyr_series = series::get_for_book(&pool, cyrillic.id).await.unwrap();
+    assert_eq!(cyr_series.len(), 1);
+    assert_eq!(cyr_series[0].0.ser_name, "Серия расследований");
+
+    // Digit-prefixed title → lang_code=3
+    let digit = books::find_by_path_and_filename(&pool, "", "digit_title.fb2")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(digit.title, "451 Degree");
+    assert_eq!(digit.lang_code, 3, "digit title should have lang_code=3");
+
+    // Symbol-prefixed title → lang_code=9
+    let quoted = books::find_by_path_and_filename(&pool, "", "quoted_title.fb2")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(quoted.title, "\"Цитата\" и другие рассказы");
+    assert_eq!(
+        quoted.lang_code, 9,
+        "symbol-prefixed title should have lang_code=9"
+    );
+}
+
 /// Books added by scan have avail = Confirmed (2).
 #[tokio::test]
 async fn scan_books_have_confirmed_status() {
