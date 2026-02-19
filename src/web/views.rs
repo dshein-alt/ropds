@@ -379,10 +379,7 @@ pub async fn search_books(
             if let Some(src_q) = params.src_q.as_deref().filter(|s| !s.trim().is_empty()) {
                 ctx.insert(
                     "back_url",
-                    &format!(
-                        "/web/search/series?type=b&q={}",
-                        urlencoding::encode(src_q)
-                    ),
+                    &format!("/web/search/series?type=b&q={}", urlencoding::encode(src_q)),
                 );
             } else {
                 ctx.insert("back_url", "/web/series");
@@ -401,9 +398,7 @@ pub async fn search_books(
                 ctx.insert("search_label", &genre.subsection);
                 // Back navigation to the genre's section
                 if let Some(section_id) = genre.section_id {
-                    if let Ok(Some(code)) =
-                        genres::get_section_code(&state.db, section_id).await
-                    {
+                    if let Ok(Some(code)) = genres::get_section_code(&state.db, section_id).await {
                         ctx.insert(
                             "back_url",
                             &format!("/web/genres?section={}", urlencoding::encode(&code)),

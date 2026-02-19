@@ -538,11 +538,10 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
-        let row: (i64,) =
-            sqlx::query_as("SELECT id FROM catalogs WHERE path = '/test'")
-                .fetch_one(pool)
-                .await
-                .unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/test'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
         row.0
     }
 
@@ -556,14 +555,14 @@ mod tests {
             "fb2",
             title,
             &search_title,
-            "",             // annotation
-            "",             // docdate
-            "ru",           // lang
+            "",   // annotation
+            "",   // docdate
+            "ru", // lang
             lang_code,
-            1000,           // size
-            0,              // cat_type
-            0,              // cover
-            "",             // cover_type
+            1000, // size
+            0,    // cat_type
+            0,    // cover
+            "",   // cover_type
         )
         .await
         .unwrap()
@@ -595,9 +594,9 @@ mod tests {
     async fn test_title_prefix_groups_lang_filter() {
         let pool = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
-        insert_test_book(&pool, cat, "Альфа", 1).await;    // Cyrillic
-        insert_test_book(&pool, cat, "Бета", 1).await;     // Cyrillic
-        insert_test_book(&pool, cat, "Alpha", 2).await;    // Latin
+        insert_test_book(&pool, cat, "Альфа", 1).await; // Cyrillic
+        insert_test_book(&pool, cat, "Бета", 1).await; // Cyrillic
+        insert_test_book(&pool, cat, "Alpha", 2).await; // Latin
 
         // lang_code=1 (Cyrillic) — only 2 groups
         let groups = get_title_prefix_groups(&pool, 1, "").await.unwrap();

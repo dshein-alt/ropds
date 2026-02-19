@@ -406,13 +406,10 @@ pub async fn books_feed(
             );
             let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            let groups = books::get_title_prefix_groups(
-                &state.db,
-                lang_code,
-                &prefix.to_uppercase(),
-            )
-            .await
-            .unwrap_or_default();
+            let groups =
+                books::get_title_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
+                    .await
+                    .unwrap_or_default();
 
             for (prefix_str, count) in &groups {
                 if *count >= split_items {
@@ -428,10 +425,7 @@ pub async fn books_feed(
                         DEFAULT_UPDATED,
                     );
                 } else {
-                    let href = format!(
-                        "/opds/search/books/b/{}/",
-                        urlencoding::encode(prefix_str)
-                    );
+                    let href = format!("/opds/search/books/b/{}/", urlencoding::encode(prefix_str));
                     let _ = fb.write_nav_entry(
                         &format!("bp:{prefix_str}"),
                         prefix_str,

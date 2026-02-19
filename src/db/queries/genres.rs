@@ -28,12 +28,14 @@ pub async fn get_by_id(pool: &DbPool, id: i64, lang: &str) -> Result<Option<Genr
 }
 
 /// Section code for a given section ID.
-pub async fn get_section_code(pool: &DbPool, section_id: i64) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT code FROM genre_sections WHERE id = ?")
-            .bind(section_id)
-            .fetch_optional(pool)
-            .await?;
+pub async fn get_section_code(
+    pool: &DbPool,
+    section_id: i64,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT code FROM genre_sections WHERE id = ?")
+        .bind(section_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.map(|r| r.0))
 }
 
