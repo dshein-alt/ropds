@@ -51,10 +51,13 @@ fn find_opf_path<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Str
 }
 
 /// Parse META-INF/container.xml to find the rootfile full-path.
+/// If there is only one rootfile, return it regardless of media-type.
+/// If there are several, return the first one with media-type="application/oebps-package+xml".
 fn parse_container_xml(data: &[u8]) -> Option<String> {
     let mut xml = Reader::from_reader(data);
     xml.config_mut().trim_text(true);
     let mut buf = Vec::new();
+    let mut rootfiles: Vec<(String, bool)> = Vec::new();
 
     loop {
         match xml.read_event_into(&mut buf) {
@@ -74,11 +77,8 @@ fn parse_container_xml(data: &[u8]) -> Option<String> {
                             is_opf = true;
                         }
                     }
-                    // Accept if media-type matches, or if it's the only rootfile
                     if let Some(path) = full_path {
-                        if is_opf || true {
-                            return Some(path);
-                        }
+                        rootfiles.push((path, is_opf));
                     }
                 }
             }
@@ -86,7 +86,15 @@ fn parse_container_xml(data: &[u8]) -> Option<String> {
         }
         buf.clear();
     }
-    None
+
+    match rootfiles.len() {
+        0 => None,
+        1 => Some(rootfiles.remove(0).0),
+        _ => rootfiles
+            .into_iter()
+            .find(|(_, is_opf)| *is_opf)
+            .map(|(path, _)| path),
+    }
 }
 
 /// Parse OPF XML and extract book metadata.
