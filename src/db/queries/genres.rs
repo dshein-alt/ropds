@@ -7,7 +7,7 @@ use crate::db::{DbBackend, DbPool};
 
 /// Translated genre by ID.
 pub async fn get_by_id(pool: &DbPool, id: i64, lang: &str) -> Result<Option<Genre>, sqlx::Error> {
-    sqlx::query_as::<_, Genre>(
+    let sql = pool.sql(
         "SELECT g.id, g.code, \
                COALESCE(gst.name, gst_en.name, g.section) AS section, \
                COALESCE(gt.name, gt_en.name, g.subsection) AS subsection, \
@@ -19,12 +19,13 @@ pub async fn get_by_id(pool: &DbPool, id: i64, lang: &str) -> Result<Option<Genr
          LEFT JOIN genre_translations gt ON gt.genre_id = g.id AND gt.lang = ? \
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          WHERE g.id = ?",
-    )
-    .bind(lang)
-    .bind(lang)
-    .bind(id)
-    .fetch_optional(pool)
-    .await
+    );
+    sqlx::query_as::<_, Genre>(&sql)
+        .bind(lang)
+        .bind(lang)
+        .bind(id)
+        .fetch_optional(pool.inner())
+        .await
 }
 
 /// Section code for a given section ID.
@@ -32,33 +33,36 @@ pub async fn get_section_code(
     pool: &DbPool,
     section_id: i64,
 ) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT code FROM genre_sections WHERE id = ?")
+    let sql = pool.sql("SELECT code FROM genre_sections WHERE id = ?");
+    let row: Option<(String,)> = sqlx::query_as(&sql)
         .bind(section_id)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await?;
     Ok(row.map(|r| r.0))
 }
 
 /// Genre by code (no translations needed — used by scanner for linking).
 pub async fn get_by_code(pool: &DbPool, code: &str) -> Result<Option<Genre>, sqlx::Error> {
-    sqlx::query_as::<_, Genre>("SELECT * FROM genres WHERE code = ?")
+    let sql = pool.sql("SELECT * FROM genres WHERE code = ?");
+    sqlx::query_as::<_, Genre>(&sql)
         .bind(code)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await
 }
 
 /// All section codes with translated names. Returns `(code, name)`.
 pub async fn get_sections(pool: &DbPool, lang: &str) -> Result<Vec<(String, String)>, sqlx::Error> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT gs.code, COALESCE(gst.name, gst_en.name, gs.code) AS name \
          FROM genre_sections gs \
          LEFT JOIN genre_section_translations gst ON gst.section_id = gs.id AND gst.lang = ? \
          LEFT JOIN genre_section_translations gst_en ON gst_en.section_id = gs.id AND gst_en.lang = 'en' \
          ORDER BY name",
-    )
-    .bind(lang)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows: Vec<(String, String)> = sqlx::query_as(&sql)
+        .bind(lang)
+        .fetch_all(pool.inner())
+        .await?;
     Ok(rows)
 }
 
@@ -68,7 +72,7 @@ pub async fn get_by_section(
     section_code: &str,
     lang: &str,
 ) -> Result<Vec<Genre>, sqlx::Error> {
-    sqlx::query_as::<_, Genre>(
+    let sql = pool.sql(
         "SELECT g.id, g.code, \
                COALESCE(gst.name, gst_en.name, g.section) AS section, \
                COALESCE(gt.name, gt_en.name, g.subsection) AS subsection, \
@@ -81,17 +85,18 @@ pub async fn get_by_section(
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          WHERE gs.code = ? \
          ORDER BY subsection",
-    )
-    .bind(lang)
-    .bind(lang)
-    .bind(section_code)
-    .fetch_all(pool)
-    .await
+    );
+    sqlx::query_as::<_, Genre>(&sql)
+        .bind(lang)
+        .bind(lang)
+        .bind(section_code)
+        .fetch_all(pool.inner())
+        .await
 }
 
 /// All genres with translated names, ordered by section then subsection.
 pub async fn get_all(pool: &DbPool, lang: &str) -> Result<Vec<Genre>, sqlx::Error> {
-    sqlx::query_as::<_, Genre>(
+    let sql = pool.sql(
         "SELECT g.id, g.code, \
                COALESCE(gst.name, gst_en.name, g.section) AS section, \
                COALESCE(gt.name, gt_en.name, g.subsection) AS subsection, \
@@ -103,11 +108,12 @@ pub async fn get_all(pool: &DbPool, lang: &str) -> Result<Vec<Genre>, sqlx::Erro
          LEFT JOIN genre_translations gt ON gt.genre_id = g.id AND gt.lang = ? \
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          ORDER BY section, subsection",
-    )
-    .bind(lang)
-    .bind(lang)
-    .fetch_all(pool)
-    .await
+    );
+    sqlx::query_as::<_, Genre>(&sql)
+        .bind(lang)
+        .bind(lang)
+        .fetch_all(pool.inner())
+        .await
 }
 
 /// Translated genres linked to a book.
@@ -116,7 +122,7 @@ pub async fn get_for_book(
     book_id: i64,
     lang: &str,
 ) -> Result<Vec<Genre>, sqlx::Error> {
-    sqlx::query_as::<_, Genre>(
+    let sql = pool.sql(
         "SELECT g.id, g.code, \
                COALESCE(gst.name, gst_en.name, g.section) AS section, \
                COALESCE(gt.name, gt_en.name, g.subsection) AS subsection, \
@@ -130,12 +136,13 @@ pub async fn get_for_book(
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          WHERE bg.book_id = ? \
          ORDER BY section, subsection",
-    )
-    .bind(lang)
-    .bind(lang)
-    .bind(book_id)
-    .fetch_all(pool)
-    .await
+    );
+    sqlx::query_as::<_, Genre>(&sql)
+        .bind(lang)
+        .bind(lang)
+        .bind(book_id)
+        .fetch_all(pool.inner())
+        .await
 }
 
 /// Section codes with translated names and book counts. Returns `(code, name, count)`.
@@ -143,7 +150,7 @@ pub async fn get_sections_with_counts(
     pool: &DbPool,
     lang: &str,
 ) -> Result<Vec<(String, String, i64)>, sqlx::Error> {
-    let rows: Vec<(String, String, i64)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT gs.code, \
                COALESCE(gst.name, gst_en.name, gs.code) AS name, \
                COUNT(DISTINCT bg.book_id) AS cnt \
@@ -155,10 +162,11 @@ pub async fn get_sections_with_counts(
          LEFT JOIN genre_section_translations gst_en ON gst_en.section_id = gs.id AND gst_en.lang = 'en' \
          GROUP BY gs.code \
          ORDER BY name",
-    )
-    .bind(lang)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows: Vec<(String, String, i64)> = sqlx::query_as(&sql)
+        .bind(lang)
+        .fetch_all(pool.inner())
+        .await?;
     Ok(rows)
 }
 
@@ -168,7 +176,7 @@ pub async fn get_by_section_with_counts(
     section_code: &str,
     lang: &str,
 ) -> Result<Vec<(Genre, i64)>, sqlx::Error> {
-    let rows: Vec<(i64, String, String, String, i64, i64)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT g.id, g.code, \
                COALESCE(gst.name, gst_en.name, g.section) AS section, \
                COALESCE(gt.name, gt_en.name, g.subsection) AS subsection, \
@@ -185,12 +193,13 @@ pub async fn get_by_section_with_counts(
          WHERE gs.code = ? \
          GROUP BY g.id, g.code \
          ORDER BY subsection",
-    )
-    .bind(lang)
-    .bind(lang)
-    .bind(section_code)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows: Vec<(i64, String, String, String, i64, i64)> = sqlx::query_as(&sql)
+        .bind(lang)
+        .bind(lang)
+        .bind(section_code)
+        .fetch_all(pool.inner())
+        .await?;
     Ok(rows
         .into_iter()
         .map(|(id, code, section, subsection, section_id, cnt)| {
@@ -212,37 +221,28 @@ pub async fn get_by_section_with_counts(
 // Link / unlink (no translations needed)
 // ---------------------------------------------------------------------------
 
-pub async fn link_book(
-    pool: &DbPool,
-    book_id: i64,
-    genre_id: i64,
-    backend: DbBackend,
-) -> Result<(), sqlx::Error> {
-    let sql = match backend {
+pub async fn link_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(), sqlx::Error> {
+    let sql = match pool.backend() {
         DbBackend::Mysql => "INSERT IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)",
         _ => {
             "INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?) \
              ON CONFLICT (book_id, genre_id) DO NOTHING"
         }
     };
-    sqlx::query(sql)
+    let sql = pool.sql(sql);
+    sqlx::query(&sql)
         .bind(book_id)
         .bind(genre_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
 
 /// Link a book to a genre by genre code. If the code doesn't match
 /// any seeded genre, the link is silently skipped.
-pub async fn link_book_by_code(
-    pool: &DbPool,
-    book_id: i64,
-    code: &str,
-    backend: DbBackend,
-) -> Result<(), sqlx::Error> {
+pub async fn link_book_by_code(pool: &DbPool, book_id: i64, code: &str) -> Result<(), sqlx::Error> {
     if let Some(genre) = get_by_code(pool, code).await? {
-        link_book(pool, book_id, genre.id, backend).await?;
+        link_book(pool, book_id, genre.id).await?;
     }
     Ok(())
 }
@@ -252,24 +252,25 @@ pub async fn set_book_genres(
     pool: &DbPool,
     book_id: i64,
     genre_ids: &[i64],
-    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM book_genres WHERE book_id = ?")
+    let del = pool.sql("DELETE FROM book_genres WHERE book_id = ?");
+    sqlx::query(&del)
         .bind(book_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
-    let sql = match backend {
+    let sql = match pool.backend() {
         DbBackend::Mysql => "INSERT IGNORE INTO book_genres (book_id, genre_id) VALUES (?, ?)",
         _ => {
             "INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?) \
              ON CONFLICT (book_id, genre_id) DO NOTHING"
         }
     };
+    let sql = pool.sql(sql);
     for &genre_id in genre_ids {
-        sqlx::query(sql)
+        sqlx::query(&sql)
             .bind(book_id)
             .bind(genre_id)
-            .execute(pool)
+            .execute(pool.inner())
             .await?;
     }
     Ok(())
@@ -280,30 +281,31 @@ pub async fn set_book_genres(
 // ---------------------------------------------------------------------------
 
 pub async fn get_all_sections(pool: &DbPool) -> Result<Vec<GenreSection>, sqlx::Error> {
-    sqlx::query_as::<_, GenreSection>("SELECT * FROM genre_sections ORDER BY code")
-        .fetch_all(pool)
+    let sql = pool.sql("SELECT * FROM genre_sections ORDER BY code");
+    sqlx::query_as::<_, GenreSection>(&sql)
+        .fetch_all(pool.inner())
         .await
 }
 
 pub async fn create_section(pool: &DbPool, code: &str) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query("INSERT INTO genre_sections (code) VALUES (?)")
-        .bind(code)
-        .execute(pool)
-        .await?;
+    let sql = pool.sql("INSERT INTO genre_sections (code) VALUES (?)");
+    let result = sqlx::query(&sql).bind(code).execute(pool.inner()).await?;
     if let Some(id) = result.last_insert_id() {
         return Ok(id);
     }
-    let row: (i64,) = sqlx::query_as("SELECT id FROM genre_sections WHERE code = ?")
+    let sql = pool.sql("SELECT id FROM genre_sections WHERE code = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(code)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
 
 pub async fn delete_section(pool: &DbPool, section_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM genre_sections WHERE id = ?")
+    let sql = pool.sql("DELETE FROM genre_sections WHERE id = ?");
+    sqlx::query(&sql)
         .bind(section_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -316,12 +318,12 @@ pub async fn get_section_translations(
     pool: &DbPool,
     section_id: i64,
 ) -> Result<Vec<GenreSectionTranslation>, sqlx::Error> {
-    sqlx::query_as::<_, GenreSectionTranslation>(
-        "SELECT * FROM genre_section_translations WHERE section_id = ? ORDER BY lang",
-    )
-    .bind(section_id)
-    .fetch_all(pool)
-    .await
+    let sql =
+        pool.sql("SELECT * FROM genre_section_translations WHERE section_id = ? ORDER BY lang");
+    sqlx::query_as::<_, GenreSectionTranslation>(&sql)
+        .bind(section_id)
+        .fetch_all(pool.inner())
+        .await
 }
 
 pub async fn upsert_section_translation(
@@ -329,9 +331,8 @@ pub async fn upsert_section_translation(
     section_id: i64,
     lang: &str,
     name: &str,
-    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    let sql = match backend {
+    let sql = match pool.backend() {
         DbBackend::Mysql => {
             "INSERT INTO genre_section_translations (section_id, lang, name) VALUES (?, ?, ?) \
              ON DUPLICATE KEY UPDATE name = VALUES(name)"
@@ -341,11 +342,12 @@ pub async fn upsert_section_translation(
              ON CONFLICT (section_id, lang) DO UPDATE SET name = excluded.name"
         }
     };
-    sqlx::query(sql)
+    let sql = pool.sql(sql);
+    sqlx::query(&sql)
         .bind(section_id)
         .bind(lang)
         .bind(name)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -355,10 +357,11 @@ pub async fn delete_section_translation(
     section_id: i64,
     lang: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM genre_section_translations WHERE section_id = ? AND lang = ?")
+    let sql = pool.sql("DELETE FROM genre_section_translations WHERE section_id = ? AND lang = ?");
+    sqlx::query(&sql)
         .bind(section_id)
         .bind(lang)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -368,27 +371,29 @@ pub async fn delete_section_translation(
 // ---------------------------------------------------------------------------
 
 pub async fn create_genre(pool: &DbPool, code: &str, section_id: i64) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
-        "INSERT INTO genres (code, section, subsection, section_id) VALUES (?, '', '', ?)",
-    )
-    .bind(code)
-    .bind(section_id)
-    .execute(pool)
-    .await?;
+    let sql = pool
+        .sql("INSERT INTO genres (code, section, subsection, section_id) VALUES (?, '', '', ?)");
+    let result = sqlx::query(&sql)
+        .bind(code)
+        .bind(section_id)
+        .execute(pool.inner())
+        .await?;
     if let Some(id) = result.last_insert_id() {
         return Ok(id);
     }
-    let row: (i64,) = sqlx::query_as("SELECT id FROM genres WHERE code = ?")
+    let sql = pool.sql("SELECT id FROM genres WHERE code = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(code)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
 
 pub async fn delete_genre(pool: &DbPool, genre_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM genres WHERE id = ?")
+    let sql = pool.sql("DELETE FROM genres WHERE id = ?");
+    sqlx::query(&sql)
         .bind(genre_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -401,12 +406,11 @@ pub async fn get_genre_translations(
     pool: &DbPool,
     genre_id: i64,
 ) -> Result<Vec<GenreTranslation>, sqlx::Error> {
-    sqlx::query_as::<_, GenreTranslation>(
-        "SELECT * FROM genre_translations WHERE genre_id = ? ORDER BY lang",
-    )
-    .bind(genre_id)
-    .fetch_all(pool)
-    .await
+    let sql = pool.sql("SELECT * FROM genre_translations WHERE genre_id = ? ORDER BY lang");
+    sqlx::query_as::<_, GenreTranslation>(&sql)
+        .bind(genre_id)
+        .fetch_all(pool.inner())
+        .await
 }
 
 pub async fn upsert_genre_translation(
@@ -414,9 +418,8 @@ pub async fn upsert_genre_translation(
     genre_id: i64,
     lang: &str,
     name: &str,
-    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    let sql = match backend {
+    let sql = match pool.backend() {
         DbBackend::Mysql => {
             "INSERT INTO genre_translations (genre_id, lang, name) VALUES (?, ?, ?) \
              ON DUPLICATE KEY UPDATE name = VALUES(name)"
@@ -426,11 +429,12 @@ pub async fn upsert_genre_translation(
              ON CONFLICT (genre_id, lang) DO UPDATE SET name = excluded.name"
         }
     };
-    sqlx::query(sql)
+    let sql = pool.sql(sql);
+    sqlx::query(&sql)
         .bind(genre_id)
         .bind(lang)
         .bind(name)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -440,10 +444,11 @@ pub async fn delete_genre_translation(
     genre_id: i64,
     lang: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM genre_translations WHERE genre_id = ? AND lang = ?")
+    let sql = pool.sql("DELETE FROM genre_translations WHERE genre_id = ? AND lang = ?");
+    sqlx::query(&sql)
         .bind(genre_id)
         .bind(lang)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -454,15 +459,14 @@ pub async fn delete_genre_translation(
 
 /// Languages that have at least one genre or section translation.
 pub async fn get_available_languages(pool: &DbPool) -> Result<Vec<String>, sqlx::Error> {
-    let rows: Vec<(String,)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT DISTINCT lang FROM ( \
              SELECT lang FROM genre_section_translations \
              UNION \
              SELECT lang FROM genre_translations \
          ) ORDER BY lang",
-    )
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows: Vec<(String,)> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
@@ -472,14 +476,13 @@ pub async fn get_all_admin(
     pool: &DbPool,
 ) -> Result<Vec<(i64, String, String, Vec<GenreTranslation>)>, sqlx::Error> {
     // Fetch genres with section code
-    let genres: Vec<(i64, String, String)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT g.id, g.code, COALESCE(gs.code, '') AS section_code \
          FROM genres g \
          LEFT JOIN genre_sections gs ON gs.id = g.section_id \
          ORDER BY section_code, g.code",
-    )
-    .fetch_all(pool)
-    .await?;
+    );
+    let genres: Vec<(i64, String, String)> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
 
     let mut result = Vec::with_capacity(genres.len());
     for (id, code, section_code) in genres {
@@ -497,14 +500,11 @@ mod tests {
     use crate::db::queries::books;
 
     async fn ensure_catalog(pool: &DbPool) -> i64 {
-        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/genres-test', 'genres-test')")
-            .execute(pool)
-            .await
-            .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/genres-test'")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+        let sql = pool
+            .sql("INSERT INTO catalogs (path, cat_name) VALUES ('/genres-test', 'genres-test')");
+        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/genres-test'");
+        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
         row.0
     }
 
@@ -532,32 +532,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_display_queries_and_count_queries() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
 
         let section_id = create_section(&pool, "ut_section_a").await.unwrap();
         let genre_id = create_genre(&pool, "ut_genre_a", section_id).await.unwrap();
-        upsert_section_translation(&pool, section_id, "en", "Section A", DbBackend::Sqlite)
+        upsert_section_translation(&pool, section_id, "en", "Section A")
             .await
             .unwrap();
-        upsert_section_translation(&pool, section_id, "ru", "Раздел А", DbBackend::Sqlite)
+        upsert_section_translation(&pool, section_id, "ru", "Раздел А")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "en", "Genre A", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, genre_id, "en", "Genre A")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "ru", "Жанр А", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр А")
             .await
             .unwrap();
 
         let b1 = insert_test_book(&pool, cat, "genre-a-1.fb2").await;
         let b2 = insert_test_book(&pool, cat, "genre-a-2.fb2").await;
-        link_book(&pool, b1, genre_id, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        link_book(&pool, b2, genre_id, DbBackend::Sqlite)
-            .await
-            .unwrap();
+        link_book(&pool, b1, genre_id).await.unwrap();
+        link_book(&pool, b2, genre_id).await.unwrap();
 
         assert_eq!(
             get_section_code(&pool, section_id).await.unwrap(),
@@ -611,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_linking_and_set_book_genres() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
 
         let section_id = create_section(&pool, "ut_section_b").await.unwrap();
@@ -621,18 +617,18 @@ mod tests {
         let g2 = create_genre(&pool, "ut_genre_b2", section_id)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g1, "en", "Genre B1", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, g1, "en", "Genre B1")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g2, "en", "Genre B2", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, g2, "en", "Genre B2")
             .await
             .unwrap();
 
         let book_id = insert_test_book(&pool, cat, "linking.fb2").await;
-        link_book_by_code(&pool, book_id, "ut_genre_b1", DbBackend::Sqlite)
+        link_book_by_code(&pool, book_id, "ut_genre_b1")
             .await
             .unwrap();
-        link_book_by_code(&pool, book_id, "missing_genre_code", DbBackend::Sqlite)
+        link_book_by_code(&pool, book_id, "missing_genre_code")
             .await
             .unwrap();
 
@@ -640,15 +636,11 @@ mod tests {
         assert_eq!(linked.len(), 1);
         assert_eq!(linked[0].code, "ut_genre_b1");
 
-        link_book(&pool, book_id, g1, DbBackend::Sqlite)
-            .await
-            .unwrap();
+        link_book(&pool, book_id, g1).await.unwrap();
         let linked = get_for_book(&pool, book_id, "en").await.unwrap();
         assert_eq!(linked.len(), 1);
 
-        set_book_genres(&pool, book_id, &[g1, g2], DbBackend::Sqlite)
-            .await
-            .unwrap();
+        set_book_genres(&pool, book_id, &[g1, g2]).await.unwrap();
         let mut linked_codes: Vec<String> = get_for_book(&pool, book_id, "en")
             .await
             .unwrap()
@@ -664,7 +656,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_admin_crud_translations_and_languages() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
         let section_id = create_section(&pool, "ut_section_c").await.unwrap();
         assert!(
@@ -675,21 +667,15 @@ mod tests {
                 .any(|s| s.id == section_id && s.code == "ut_section_c")
         );
 
-        upsert_section_translation(&pool, section_id, "en", "Section C", DbBackend::Sqlite)
+        upsert_section_translation(&pool, section_id, "en", "Section C")
             .await
             .unwrap();
-        upsert_section_translation(&pool, section_id, "ru", "Раздел C", DbBackend::Sqlite)
+        upsert_section_translation(&pool, section_id, "ru", "Раздел C")
             .await
             .unwrap();
-        upsert_section_translation(
-            &pool,
-            section_id,
-            "en",
-            "Section C Updated",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        upsert_section_translation(&pool, section_id, "en", "Section C Updated")
+            .await
+            .unwrap();
         let section_translations = get_section_translations(&pool, section_id).await.unwrap();
         assert_eq!(section_translations.len(), 2);
         assert!(
@@ -699,13 +685,13 @@ mod tests {
         );
 
         let genre_id = create_genre(&pool, "ut_genre_c", section_id).await.unwrap();
-        upsert_genre_translation(&pool, genre_id, "en", "Genre C", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, genre_id, "en", "Genre C")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C Updated", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, genre_id, "ru", "Жанр C Updated")
             .await
             .unwrap();
         let genre_translations = get_genre_translations(&pool, genre_id).await.unwrap();
@@ -748,7 +734,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_admin_contains_created_genres() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
         let section_id = create_section(&pool, "ut_section_d").await.unwrap();
         let g1 = create_genre(&pool, "ut_genre_d1", section_id)
@@ -757,13 +743,13 @@ mod tests {
         let g2 = create_genre(&pool, "ut_genre_d2", section_id)
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g1, "en", "Genre D1", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, g1, "en", "Genre D1")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g1, "ru", "Жанр D1", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, g1, "ru", "Жанр D1")
             .await
             .unwrap();
-        upsert_genre_translation(&pool, g2, "en", "Genre D2", DbBackend::Sqlite)
+        upsert_genre_translation(&pool, g2, "en", "Genre D2")
             .await
             .unwrap();
 

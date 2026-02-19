@@ -18,30 +18,31 @@ pub struct UserView {
 
 /// Get all users for admin panel listing (excludes password_hash).
 pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> {
-    let users: Vec<UserView> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT id, username, is_superuser, created_at, last_login, password_change_required, display_name, allow_upload FROM users ORDER BY id"
-    )
-    .fetch_all(pool)
-    .await?;
+    );
+    let users: Vec<UserView> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
     Ok(users)
 }
 
 /// Get a single user by ID.
 pub async fn get_by_id(pool: &DbPool, user_id: i64) -> Result<Option<User>, sqlx::Error> {
-    let user: Option<User> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required, display_name, allow_upload FROM users WHERE id = ?"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    );
+    let user: Option<User> = sqlx::query_as(&sql)
+        .bind(user_id)
+        .fetch_optional(pool.inner())
+        .await?;
     Ok(user)
 }
 
 /// Get `is_superuser` flag for a given user ID.
 pub async fn is_superuser(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
-    let row: Option<(i32,)> = sqlx::query_as("SELECT is_superuser FROM users WHERE id = ?")
+    let sql = pool.sql("SELECT is_superuser FROM users WHERE id = ?");
+    let row: Option<(i32,)> = sqlx::query_as(&sql)
         .bind(user_id)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await?;
     Ok(row.map(|(v,)| v == 1).unwrap_or(false))
 }
@@ -54,20 +55,22 @@ pub async fn create(
     is_superuser: i32,
     display_name: &str,
 ) -> Result<i64, sqlx::Error> {
-    sqlx::query(
+    let sql = pool.sql(
         "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) VALUES (?, ?, ?, 1, ?)"
-    )
-    .bind(username)
-    .bind(password_hash)
-    .bind(is_superuser)
-    .bind(display_name)
-    .execute(pool)
-    .await?;
+    );
+    sqlx::query(&sql)
+        .bind(username)
+        .bind(password_hash)
+        .bind(is_superuser)
+        .bind(display_name)
+        .execute(pool.inner())
+        .await?;
 
     // AnyPool last_insert_id() can return None — fallback query
-    let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+    let sql = pool.sql("SELECT id FROM users WHERE username = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(username)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
@@ -78,19 +81,21 @@ pub async fn update_password(
     user_id: i64,
     password_hash: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+    let sql = pool.sql("UPDATE users SET password_hash = ? WHERE id = ?");
+    sqlx::query(&sql)
         .bind(password_hash)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
 
 /// Delete a user by ID.
 pub async fn delete(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM users WHERE id = ?")
+    let sql = pool.sql("DELETE FROM users WHERE id = ?");
+    sqlx::query(&sql)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -101,10 +106,11 @@ pub async fn update_last_login(
     user_id: i64,
     timestamp: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET last_login = ? WHERE id = ?")
+    let sql = pool.sql("UPDATE users SET last_login = ? WHERE id = ?");
+    sqlx::query(&sql)
         .bind(timestamp)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -115,10 +121,11 @@ pub async fn update_allow_upload(
     user_id: i64,
     allow_upload: i32,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET allow_upload = ? WHERE id = ?")
+    let sql = pool.sql("UPDATE users SET allow_upload = ? WHERE id = ?");
+    sqlx::query(&sql)
         .bind(allow_upload)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -129,30 +136,32 @@ pub async fn update_display_name(
     user_id: i64,
     display_name: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
+    let sql = pool.sql("UPDATE users SET display_name = ? WHERE id = ?");
+    sqlx::query(&sql)
         .bind(display_name)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
 
 /// Get display name for a user. Returns empty string if not found.
 pub async fn get_username(pool: &DbPool, user_id: i64) -> Result<String, sqlx::Error> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT username FROM users WHERE id = ?")
+    let sql = pool.sql("SELECT username FROM users WHERE id = ?");
+    let row: Option<(String,)> = sqlx::query_as(&sql)
         .bind(user_id)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await?;
     Ok(row.map(|(v,)| v).unwrap_or_default())
 }
 
 /// Check if user must change password before accessing the app.
 pub async fn password_change_required(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
-    let row: Option<(i32,)> =
-        sqlx::query_as("SELECT password_change_required FROM users WHERE id = ?")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
+    let sql = pool.sql("SELECT password_change_required FROM users WHERE id = ?");
+    let row: Option<(i32,)> = sqlx::query_as(&sql)
+        .bind(user_id)
+        .fetch_optional(pool.inner())
+        .await?;
     Ok(row.map(|(v,)| v == 1).unwrap_or(false))
 }
 
@@ -161,9 +170,10 @@ pub async fn clear_password_change_required(
     pool: &DbPool,
     user_id: i64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET password_change_required = 0 WHERE id = ?")
+    let sql = pool.sql("UPDATE users SET password_change_required = 0 WHERE id = ?");
+    sqlx::query(&sql)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -175,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_and_get_all_views() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "alice", "hash123", 0, "Alice").await.unwrap();
         assert!(id > 0);
 
@@ -188,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_duplicate_username() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         create(&pool, "bob", "hash1", 0, "").await.unwrap();
         let result = create(&pool, "bob", "hash2", 0, "").await;
         assert!(result.is_err());
@@ -196,7 +206,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_superuser() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "admin", "hash", 1, "Administrator")
             .await
             .unwrap();
@@ -208,13 +218,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_superuser_nonexistent() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         assert!(!is_superuser(&pool, 9999).await.unwrap());
     }
 
     #[tokio::test]
     async fn test_update_password() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "carol", "old_hash", 0, "").await.unwrap();
         update_password(&pool, id, "new_hash").await.unwrap();
 
@@ -224,7 +234,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_password_hash_verify() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let old_hash = crate::password::hash("old_password");
         let id = create(&pool, "frank", &old_hash, 0, "").await.unwrap();
 
@@ -247,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "dave", "hash", 0, "").await.unwrap();
         delete(&pool, id).await.unwrap();
 
@@ -257,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_last_login() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "eve", "hash", 0, "").await.unwrap();
 
         update_last_login(&pool, id, "2026-01-15 10:30:00")
@@ -269,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_sets_password_change_required() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "newuser", "hash", 0, "").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -279,7 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_password_change_required() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "testuser", "hash", 0, "").await.unwrap();
         assert!(password_change_required(&pool, id).await.unwrap());
 
@@ -292,7 +302,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_display_name() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "jane", "hash", 0, "Jane Doe").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -305,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_display_name_default_empty() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let id = create(&pool, "noname", "hash", 0, "").await.unwrap();
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();

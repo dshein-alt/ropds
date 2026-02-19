@@ -1,5 +1,5 @@
+use crate::db::DbPool;
 use crate::db::models::Book;
-use crate::db::{DbBackend, DbPool};
 
 /// Bookshelf sort column.
 pub enum SortColumn {
@@ -10,14 +10,9 @@ pub enum SortColumn {
 
 /// Add or update a book on the user's bookshelf.
 /// Uses ON CONFLICT to update read_time on re-download.
-pub async fn upsert(
-    pool: &DbPool,
-    user_id: i64,
-    book_id: i64,
-    backend: DbBackend,
-) -> Result<(), sqlx::Error> {
-    let sql = match backend {
-        DbBackend::Mysql => {
+pub async fn upsert(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
+    let raw = match pool.backend() {
+        crate::db::DbBackend::Mysql => {
             "INSERT INTO bookshelf (user_id, book_id, read_time) VALUES (?, ?, CURRENT_TIMESTAMP) \
              ON DUPLICATE KEY UPDATE read_time = CURRENT_TIMESTAMP"
         }
@@ -26,10 +21,11 @@ pub async fn upsert(
              ON CONFLICT(user_id, book_id) DO UPDATE SET read_time = CURRENT_TIMESTAMP"
         }
     };
-    sqlx::query(sql)
+    let sql = pool.sql(raw);
+    sqlx::query(&sql)
         .bind(user_id)
         .bind(book_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -42,10 +38,9 @@ pub async fn get_by_user(
     ascending: bool,
     limit: i32,
     offset: i32,
-    backend: DbBackend,
 ) -> Result<Vec<Book>, sqlx::Error> {
     let dir = if ascending { "ASC" } else { "DESC" };
-    let sql = match sort {
+    let raw = match sort {
         SortColumn::Date => format!(
             "SELECT b.* FROM books b \
              JOIN bookshelf bs ON bs.book_id = b.id \
@@ -54,8 +49,8 @@ pub async fn get_by_user(
              LIMIT ? OFFSET ?"
         ),
         SortColumn::Title => {
-            let order_expr = match backend {
-                DbBackend::Sqlite => format!("b.title COLLATE NOCASE {dir}"),
+            let order_expr = match pool.backend() {
+                crate::db::DbBackend::Sqlite => format!("b.title COLLATE NOCASE {dir}"),
                 _ => format!("LOWER(b.title) {dir}"),
             };
             format!(
@@ -67,8 +62,8 @@ pub async fn get_by_user(
             )
         }
         SortColumn::Author => {
-            let order_expr = match backend {
-                DbBackend::Sqlite => {
+            let order_expr = match pool.backend() {
+                crate::db::DbBackend::Sqlite => {
                     format!("COALESCE(MIN(a.full_name), '') COLLATE NOCASE {dir}")
                 }
                 _ => format!("LOWER(COALESCE(MIN(a.full_name), '')) {dir}"),
@@ -85,11 +80,12 @@ pub async fn get_by_user(
             )
         }
     };
+    let sql = pool.sql(&raw);
     sqlx::query_as::<_, Book>(&sql)
         .bind(user_id)
         .bind(limit)
         .bind(offset)
-        .fetch_all(pool)
+        .fetch_all(pool.inner())
         .await
 }
 
@@ -98,31 +94,32 @@ pub async fn get_read_times(
     pool: &DbPool,
     user_id: i64,
 ) -> Result<std::collections::HashMap<i64, String>, sqlx::Error> {
-    let rows: Vec<(i64, String)> =
-        sqlx::query_as("SELECT book_id, read_time FROM bookshelf WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?;
+    let sql = pool.sql("SELECT book_id, read_time FROM bookshelf WHERE user_id = ?");
+    let rows: Vec<(i64, String)> = sqlx::query_as(&sql)
+        .bind(user_id)
+        .fetch_all(pool.inner())
+        .await?;
     Ok(rows.into_iter().collect())
 }
 
 /// Count books on user's bookshelf.
 pub async fn count_by_user(pool: &DbPool, user_id: i64) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM bookshelf WHERE user_id = ?")
+    let sql = pool.sql("SELECT COUNT(*) FROM bookshelf WHERE user_id = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(user_id)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
 
 /// Check if a specific book is on the user's bookshelf.
 pub async fn is_on_shelf(pool: &DbPool, user_id: i64, book_id: i64) -> Result<bool, sqlx::Error> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM bookshelf WHERE user_id = ? AND book_id = ?")
-            .bind(user_id)
-            .bind(book_id)
-            .fetch_one(pool)
-            .await?;
+    let sql = pool.sql("SELECT COUNT(*) FROM bookshelf WHERE user_id = ? AND book_id = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
+        .bind(user_id)
+        .bind(book_id)
+        .fetch_one(pool.inner())
+        .await?;
     Ok(row.0 > 0)
 }
 
@@ -131,28 +128,31 @@ pub async fn get_book_ids_for_user(
     pool: &DbPool,
     user_id: i64,
 ) -> Result<std::collections::HashSet<i64>, sqlx::Error> {
-    let rows: Vec<(i64,)> = sqlx::query_as("SELECT book_id FROM bookshelf WHERE user_id = ?")
+    let sql = pool.sql("SELECT book_id FROM bookshelf WHERE user_id = ?");
+    let rows: Vec<(i64,)> = sqlx::query_as(&sql)
         .bind(user_id)
-        .fetch_all(pool)
+        .fetch_all(pool.inner())
         .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 /// Remove a single book from the user's bookshelf.
 pub async fn delete_one(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM bookshelf WHERE user_id = ? AND book_id = ?")
+    let sql = pool.sql("DELETE FROM bookshelf WHERE user_id = ? AND book_id = ?");
+    sqlx::query(&sql)
         .bind(user_id)
         .bind(book_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
 
 /// Clear all books from the user's bookshelf.
 pub async fn clear_all(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM bookshelf WHERE user_id = ?")
+    let sql = pool.sql("DELETE FROM bookshelf WHERE user_id = ?");
+    sqlx::query(&sql)
         .bind(user_id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -163,49 +163,51 @@ mod tests {
     use crate::db::create_test_pool;
 
     async fn insert_user(pool: &DbPool, username: &str) -> i64 {
-        sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, 'h', 0)")
+        let sql = pool
+            .sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, 'h', 0)");
+        sqlx::query(&sql)
             .bind(username)
-            .execute(pool)
+            .execute(pool.inner())
             .await
             .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+        let sql = pool.sql("SELECT id FROM users WHERE username = ?");
+        let row: (i64,) = sqlx::query_as(&sql)
             .bind(username)
-            .fetch_one(pool)
+            .fetch_one(pool.inner())
             .await
             .unwrap();
         row.0
     }
 
     async fn ensure_catalog(pool: &DbPool) -> i64 {
-        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/bookshelf', 'bookshelf')")
-            .execute(pool)
-            .await
-            .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/bookshelf'")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+        let sql =
+            pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/bookshelf', 'bookshelf')");
+        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/bookshelf'");
+        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
         row.0
     }
 
     async fn insert_book(pool: &DbPool, catalog_id: i64, title: &str) -> i64 {
         let search_title = title.to_uppercase();
-        sqlx::query(
+        let sql = pool.sql(
             "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/bookshelf', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
-        )
-        .bind(catalog_id)
-        .bind(format!("{title}.fb2"))
-        .bind(title)
-        .bind(search_title)
-        .execute(pool)
-        .await
-        .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE catalog_id = ? AND title = ?")
+        );
+        sqlx::query(&sql)
+            .bind(catalog_id)
+            .bind(format!("{title}.fb2"))
+            .bind(title)
+            .bind(search_title)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+        let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
+        let row: (i64,) = sqlx::query_as(&sql)
             .bind(catalog_id)
             .bind(title)
-            .fetch_one(pool)
+            .fetch_one(pool.inner())
             .await
             .unwrap();
         row.0
@@ -213,15 +215,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_bookshelf_lifecycle_and_upsert_dedup() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let user_id = insert_user(&pool, "shelf_user").await;
         let catalog_id = ensure_catalog(&pool).await;
         let b1 = insert_book(&pool, catalog_id, "Book One").await;
         let b2 = insert_book(&pool, catalog_id, "Book Two").await;
 
-        upsert(&pool, user_id, b1, DbBackend::Sqlite).await.unwrap();
-        upsert(&pool, user_id, b1, DbBackend::Sqlite).await.unwrap(); // should not duplicate
-        upsert(&pool, user_id, b2, DbBackend::Sqlite).await.unwrap();
+        upsert(&pool, user_id, b1).await.unwrap();
+        upsert(&pool, user_id, b1).await.unwrap(); // should not duplicate
+        upsert(&pool, user_id, b2).await.unwrap();
 
         assert_eq!(count_by_user(&pool, user_id).await.unwrap(), 2);
         assert!(is_on_shelf(&pool, user_id, b1).await.unwrap());
@@ -245,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_user_sorting_variants() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let user_id = insert_user(&pool, "sort_user").await;
         let catalog_id = ensure_catalog(&pool).await;
 
@@ -253,91 +255,59 @@ mod tests {
         let b_zulu = insert_book(&pool, catalog_id, "Zulu Book").await;
 
         // Author links for author sorting.
-        sqlx::query(
+        let sql = pool.sql(
             "INSERT INTO authors (full_name, search_full_name, lang_code) VALUES \
              ('Charlie', 'CHARLIE', 2), ('Alice', 'ALICE', 2)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let a_charlie: (i64,) =
-            sqlx::query_as("SELECT id FROM authors WHERE full_name = 'Charlie'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        let a_alice: (i64,) = sqlx::query_as("SELECT id FROM authors WHERE full_name = 'Alice'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?), (?, ?)")
+        );
+        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        let sql = pool.sql("SELECT id FROM authors WHERE full_name = 'Charlie'");
+        let a_charlie: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let sql = pool.sql("SELECT id FROM authors WHERE full_name = 'Alice'");
+        let a_alice: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let sql = pool.sql("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?), (?, ?)");
+        sqlx::query(&sql)
             .bind(b_alpha)
             .bind(a_charlie.0)
             .bind(b_zulu)
             .bind(a_alice.0)
-            .execute(&pool)
+            .execute(pool.inner())
             .await
             .unwrap();
 
-        upsert(&pool, user_id, b_alpha, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        upsert(&pool, user_id, b_zulu, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?")
+        upsert(&pool, user_id, b_alpha).await.unwrap();
+        upsert(&pool, user_id, b_zulu).await.unwrap();
+        let sql = pool.sql("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?");
+        sqlx::query(&sql)
             .bind("2026-01-01 00:00:00")
             .bind(user_id)
             .bind(b_alpha)
-            .execute(&pool)
+            .execute(pool.inner())
             .await
             .unwrap();
-        sqlx::query("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?")
+        let sql = pool.sql("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?");
+        sqlx::query(&sql)
             .bind("2026-01-02 00:00:00")
             .bind(user_id)
             .bind(b_zulu)
-            .execute(&pool)
+            .execute(pool.inner())
             .await
             .unwrap();
 
-        let by_title = get_by_user(
-            &pool,
-            user_id,
-            &SortColumn::Title,
-            true,
-            10,
-            0,
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let by_title = get_by_user(&pool, user_id, &SortColumn::Title, true, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(by_title[0].id, b_alpha);
         assert_eq!(by_title[1].id, b_zulu);
 
-        let by_author = get_by_user(
-            &pool,
-            user_id,
-            &SortColumn::Author,
-            true,
-            10,
-            0,
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let by_author = get_by_user(&pool, user_id, &SortColumn::Author, true, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(by_author[0].id, b_zulu); // Alice
         assert_eq!(by_author[1].id, b_alpha); // Charlie
 
-        let by_date_desc = get_by_user(
-            &pool,
-            user_id,
-            &SortColumn::Date,
-            false,
-            10,
-            0,
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let by_date_desc = get_by_user(&pool, user_id, &SortColumn::Date, false, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(by_date_desc[0].id, b_zulu);
         assert_eq!(by_date_desc[1].id, b_alpha);
     }

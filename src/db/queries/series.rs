@@ -3,9 +3,10 @@ use crate::db::{DbBackend, DbPool};
 use crate::db::models::Series;
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Series>, sqlx::Error> {
-    sqlx::query_as::<_, Series>("SELECT * FROM series WHERE id = ?")
+    let sql = pool.sql("SELECT * FROM series WHERE id = ?");
+    sqlx::query_as::<_, Series>(&sql)
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await
 }
 
@@ -16,15 +17,16 @@ pub async fn search_by_name(
     offset: i32,
 ) -> Result<Vec<Series>, sqlx::Error> {
     let pattern = format!("%{term}%");
-    sqlx::query_as::<_, Series>(
+    let sql = pool.sql(
         "SELECT * FROM series WHERE search_ser LIKE ? \
          ORDER BY search_ser LIMIT ? OFFSET ?",
-    )
-    .bind(&pattern)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    );
+    sqlx::query_as::<_, Series>(&sql)
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool.inner())
+        .await
 }
 
 pub async fn get_by_lang_code_prefix(
@@ -35,22 +37,24 @@ pub async fn get_by_lang_code_prefix(
     offset: i32,
 ) -> Result<Vec<Series>, sqlx::Error> {
     let pattern = format!("{prefix}%");
-    sqlx::query_as::<_, Series>(
+    let sql = pool.sql(
         "SELECT * FROM series WHERE lang_code = ? AND search_ser LIKE ? \
          ORDER BY search_ser LIMIT ? OFFSET ?",
-    )
-    .bind(lang_code)
-    .bind(&pattern)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
+    );
+    sqlx::query_as::<_, Series>(&sql)
+        .bind(lang_code)
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool.inner())
+        .await
 }
 
 pub async fn find_by_name(pool: &DbPool, ser_name: &str) -> Result<Option<Series>, sqlx::Error> {
-    sqlx::query_as::<_, Series>("SELECT * FROM series WHERE ser_name = ?")
+    let sql = pool.sql("SELECT * FROM series WHERE ser_name = ?");
+    sqlx::query_as::<_, Series>(&sql)
         .bind(ser_name)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await
 }
 
@@ -59,9 +63,8 @@ pub async fn insert(
     ser_name: &str,
     search_ser: &str,
     lang_code: i32,
-    backend: DbBackend,
 ) -> Result<i64, sqlx::Error> {
-    let sql = match backend {
+    let sql = match pool.backend() {
         DbBackend::Mysql => {
             "INSERT IGNORE INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)"
         }
@@ -70,11 +73,12 @@ pub async fn insert(
              ON CONFLICT (ser_name) DO NOTHING"
         }
     };
-    let result = sqlx::query(sql)
+    let sql = pool.sql(sql);
+    let result = sqlx::query(&sql)
         .bind(ser_name)
         .bind(search_ser)
         .bind(lang_code)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     if let Some(id) = result.last_insert_id()
         && id > 0
@@ -82,9 +86,10 @@ pub async fn insert(
         return Ok(id);
     }
     // Fallback: query back by name (INSERT OR IGNORE returns 0 on conflict)
-    let row: (i64,) = sqlx::query_as("SELECT id FROM series WHERE ser_name = ?")
+    let sql = pool.sql("SELECT id FROM series WHERE ser_name = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(ser_name)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
@@ -94,9 +99,8 @@ pub async fn link_book(
     book_id: i64,
     series_id: i64,
     ser_no: i32,
-    backend: DbBackend,
 ) -> Result<(), sqlx::Error> {
-    let sql = match backend {
+    let sql = match pool.backend() {
         DbBackend::Mysql => {
             "INSERT IGNORE INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)"
         }
@@ -105,24 +109,26 @@ pub async fn link_book(
              ON CONFLICT (book_id, series_id) DO NOTHING"
         }
     };
-    sqlx::query(sql)
+    let sql = pool.sql(sql);
+    sqlx::query(&sql)
         .bind(book_id)
         .bind(series_id)
         .bind(ser_no)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
 
 pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<(Series, i32)>, sqlx::Error> {
-    let rows: Vec<(i64, String, String, i32, i32)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT s.id, s.ser_name, s.search_ser, s.lang_code, bs.ser_no \
          FROM series s JOIN book_series bs ON bs.series_id = s.id \
          WHERE bs.book_id = ? ORDER BY s.ser_name",
-    )
-    .bind(book_id)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows: Vec<(i64, String, String, i32, i32)> = sqlx::query_as(&sql)
+        .bind(book_id)
+        .fetch_all(pool.inner())
+        .await?;
 
     Ok(rows
         .into_iter()
@@ -143,9 +149,10 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<(Series, i3
 /// Count series matching a name search (contains).
 pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM series WHERE search_ser LIKE ?")
+    let sql = pool.sql("SELECT COUNT(*) FROM series WHERE search_ser LIKE ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(&pattern)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
@@ -158,20 +165,21 @@ pub async fn get_name_prefix_groups(
 ) -> Result<Vec<(String, i64)>, sqlx::Error> {
     let prefix_len = (current_prefix.chars().count() + 1) as i32;
     let like_pattern = format!("{}%", current_prefix);
-    let rows: Vec<(String, i64)> = sqlx::query_as(
+    let sql = pool.sql(
         "SELECT SUBSTR(search_ser, 1, ?) as prefix, COUNT(*) as cnt \
          FROM series \
          WHERE (? = 0 OR lang_code = ?) AND search_ser LIKE ? \
          GROUP BY SUBSTR(search_ser, 1, ?) \
          ORDER BY prefix",
-    )
-    .bind(prefix_len)
-    .bind(lang_code)
-    .bind(lang_code)
-    .bind(&like_pattern)
-    .bind(prefix_len)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
+        .bind(prefix_len)
+        .bind(lang_code)
+        .bind(lang_code)
+        .bind(&like_pattern)
+        .bind(prefix_len)
+        .fetch_all(pool.inner())
+        .await?;
     Ok(rows)
 }
 
@@ -181,35 +189,33 @@ mod tests {
     use crate::db::create_test_pool;
 
     async fn ensure_catalog(pool: &DbPool) -> i64 {
-        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/series', 'series')")
-            .execute(pool)
-            .await
-            .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/series'")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+        let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/series', 'series')");
+        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/series'");
+        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
         row.0
     }
 
     async fn insert_test_book(pool: &DbPool, catalog_id: i64, title: &str) -> i64 {
         let search_title = title.to_uppercase();
-        sqlx::query(
+        let sql = pool.sql(
             "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/series', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
-        )
-        .bind(catalog_id)
-        .bind(format!("{title}.fb2"))
-        .bind(title)
-        .bind(search_title)
-        .execute(pool)
-        .await
-        .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE catalog_id = ? AND title = ?")
+        );
+        sqlx::query(&sql)
+            .bind(catalog_id)
+            .bind(format!("{title}.fb2"))
+            .bind(title)
+            .bind(search_title)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+        let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
+        let row: (i64,) = sqlx::query_as(&sql)
             .bind(catalog_id)
             .bind(title)
-            .fetch_one(pool)
+            .fetch_one(pool.inner())
             .await
             .unwrap();
         row.0
@@ -217,17 +223,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_search_count_and_prefix_groups() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
-        let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        let _cyr = insert(&pool, "Альфа", "АЛЬФА", 1, DbBackend::Sqlite)
-            .await
-            .unwrap();
+        let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2).await.unwrap();
+        let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2).await.unwrap();
+        let _cyr = insert(&pool, "Альфа", "АЛЬФА", 1).await.unwrap();
 
         let found = get_by_id(&pool, alpha).await.unwrap().unwrap();
         assert_eq!(found.ser_name, "Alpha Saga");
@@ -252,41 +252,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_duplicate_returns_same_id() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
-        let id1 = insert(
-            &pool,
-            "Shared Series",
-            "SHARED SERIES",
-            2,
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
-        let id2 = insert(&pool, "Shared Series", "OTHER", 1, DbBackend::Sqlite)
+        let id1 = insert(&pool, "Shared Series", "SHARED SERIES", 2)
             .await
             .unwrap();
+        let id2 = insert(&pool, "Shared Series", "OTHER", 1).await.unwrap();
         assert_eq!(id1, id2);
     }
 
     #[tokio::test]
     async fn test_link_book_and_get_for_book() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let catalog_id = ensure_catalog(&pool).await;
         let book_id = insert_test_book(&pool, catalog_id, "Linked Book").await;
 
-        let z_id = insert(&pool, "Zeta", "ZETA", 2, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        let a_id = insert(&pool, "Alpha", "ALPHA", 2, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        link_book(&pool, book_id, z_id, 7, DbBackend::Sqlite)
-            .await
-            .unwrap();
-        link_book(&pool, book_id, a_id, 3, DbBackend::Sqlite)
-            .await
-            .unwrap();
+        let z_id = insert(&pool, "Zeta", "ZETA", 2).await.unwrap();
+        let a_id = insert(&pool, "Alpha", "ALPHA", 2).await.unwrap();
+        link_book(&pool, book_id, z_id, 7).await.unwrap();
+        link_book(&pool, book_id, a_id, 3).await.unwrap();
 
         let linked = get_for_book(&pool, book_id).await.unwrap();
         assert_eq!(linked.len(), 2);

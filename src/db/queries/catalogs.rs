@@ -1,31 +1,35 @@
-use crate::db::{DbBackend, DbPool};
+use crate::db::DbPool;
 
 use crate::db::models::{CatType, Catalog};
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Catalog>, sqlx::Error> {
-    sqlx::query_as::<_, Catalog>("SELECT * FROM catalogs WHERE id = ?")
+    let sql = pool.sql("SELECT * FROM catalogs WHERE id = ?");
+    sqlx::query_as::<_, Catalog>(&sql)
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await
 }
 
 pub async fn get_children(pool: &DbPool, parent_id: i64) -> Result<Vec<Catalog>, sqlx::Error> {
-    sqlx::query_as::<_, Catalog>("SELECT * FROM catalogs WHERE parent_id = ? ORDER BY cat_name")
+    let sql = pool.sql("SELECT * FROM catalogs WHERE parent_id = ? ORDER BY cat_name");
+    sqlx::query_as::<_, Catalog>(&sql)
         .bind(parent_id)
-        .fetch_all(pool)
+        .fetch_all(pool.inner())
         .await
 }
 
 pub async fn get_root_catalogs(pool: &DbPool) -> Result<Vec<Catalog>, sqlx::Error> {
-    sqlx::query_as::<_, Catalog>("SELECT * FROM catalogs WHERE parent_id IS NULL ORDER BY cat_name")
-        .fetch_all(pool)
+    let sql = pool.sql("SELECT * FROM catalogs WHERE parent_id IS NULL ORDER BY cat_name");
+    sqlx::query_as::<_, Catalog>(&sql)
+        .fetch_all(pool.inner())
         .await
 }
 
 pub async fn find_by_path(pool: &DbPool, path: &str) -> Result<Option<Catalog>, sqlx::Error> {
-    sqlx::query_as::<_, Catalog>("SELECT * FROM catalogs WHERE path = ?")
+    let sql = pool.sql("SELECT * FROM catalogs WHERE path = ?");
+    sqlx::query_as::<_, Catalog>(&sql)
         .bind(path)
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await
 }
 
@@ -37,10 +41,9 @@ pub async fn insert(
     cat_type: CatType,
     cat_size: i64,
     cat_mtime: &str,
-    backend: DbBackend,
 ) -> Result<i64, sqlx::Error> {
-    let sql = match backend {
-        DbBackend::Mysql => {
+    let raw = match pool.backend() {
+        crate::db::DbBackend::Mysql => {
             "INSERT IGNORE INTO catalogs (parent_id, path, cat_name, cat_type, cat_size, cat_mtime) \
              VALUES (?, ?, ?, ?, ?, ?)"
         }
@@ -49,14 +52,15 @@ pub async fn insert(
              VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (path) DO NOTHING"
         }
     };
-    let result = sqlx::query(sql)
+    let sql = pool.sql(raw);
+    let result = sqlx::query(&sql)
         .bind(parent_id)
         .bind(path)
         .bind(cat_name)
         .bind(cat_type as i32)
         .bind(cat_size)
         .bind(cat_mtime)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     if let Some(id) = result.last_insert_id()
         && id > 0
@@ -64,9 +68,10 @@ pub async fn insert(
         return Ok(id);
     }
     // Fallback: query back by path (INSERT OR IGNORE returns 0 on conflict)
-    let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = ?")
+    let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
         .bind(path)
-        .fetch_one(pool)
+        .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
 }
@@ -78,12 +83,14 @@ pub async fn update_archive_meta(
     cat_size: i64,
     cat_mtime: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE catalogs SET cat_type = ?, cat_size = ?, cat_mtime = ? WHERE id = ?")
+    let sql =
+        pool.sql("UPDATE catalogs SET cat_type = ?, cat_size = ?, cat_mtime = ? WHERE id = ?");
+    sqlx::query(&sql)
         .bind(cat_type as i32)
         .bind(cat_size)
         .bind(cat_mtime)
         .bind(id)
-        .execute(pool)
+        .execute(pool.inner())
         .await?;
     Ok(())
 }
@@ -91,16 +98,15 @@ pub async fn update_archive_meta(
 /// Delete catalogs that have no live books and no child catalogs.
 /// Repeats until no more empty catalogs are found (prunes leaf-up).
 pub async fn delete_empty(pool: &DbPool) -> Result<u64, sqlx::Error> {
+    let sql = pool.sql(
+        "DELETE FROM catalogs WHERE id NOT IN \
+         (SELECT DISTINCT catalog_id FROM books WHERE avail > 0) \
+         AND id NOT IN \
+         (SELECT DISTINCT parent_id FROM catalogs WHERE parent_id IS NOT NULL)",
+    );
     let mut total = 0u64;
     loop {
-        let result = sqlx::query(
-            "DELETE FROM catalogs WHERE id NOT IN \
-             (SELECT DISTINCT catalog_id FROM books WHERE avail > 0) \
-             AND id NOT IN \
-             (SELECT DISTINCT parent_id FROM catalogs WHERE parent_id IS NOT NULL)",
-        )
-        .execute(pool)
-        .await?;
+        let result = sqlx::query(&sql).execute(pool.inner()).await?;
         let deleted = result.rows_affected();
         if deleted == 0 {
             break;
@@ -117,25 +123,27 @@ mod tests {
 
     async fn insert_test_book(pool: &DbPool, catalog_id: i64, title: &str, avail: i32) -> i64 {
         let search_title = title.to_uppercase();
-        sqlx::query(
+        let sql = pool.sql(
             "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/catalogs', 'fb2', ?, ?, 'en', 2, 100, ?, ?, 0, '')",
-        )
-        .bind(catalog_id)
-        .bind(format!("{title}.fb2"))
-        .bind(title)
-        .bind(search_title)
-        .bind(avail)
-        .bind(CatType::Normal as i32)
-        .execute(pool)
-        .await
-        .unwrap();
+        );
+        sqlx::query(&sql)
+            .bind(catalog_id)
+            .bind(format!("{title}.fb2"))
+            .bind(title)
+            .bind(search_title)
+            .bind(avail)
+            .bind(CatType::Normal as i32)
+            .execute(pool.inner())
+            .await
+            .unwrap();
 
-        let row: (i64,) = sqlx::query_as("SELECT id FROM books WHERE catalog_id = ? AND title = ?")
+        let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
+        let row: (i64,) = sqlx::query_as(&sql)
             .bind(catalog_id)
             .bind(title)
-            .fetch_one(pool)
+            .fetch_one(pool.inner())
             .await
             .unwrap();
         row.0
@@ -143,20 +151,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_lookup_hierarchy() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
-        let root_id = insert(
-            &pool,
-            None,
-            "/root",
-            "root",
-            CatType::Normal,
-            0,
-            "",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let root_id = insert(&pool, None, "/root", "root", CatType::Normal, 0, "")
+            .await
+            .unwrap();
         let child_id = insert(
             &pool,
             Some(root_id),
@@ -165,7 +164,6 @@ mod tests {
             CatType::Normal,
             0,
             "",
-            DbBackend::Sqlite,
         )
         .await
         .unwrap();
@@ -188,39 +186,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_duplicate_returns_same_id() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
-        let id1 = insert(
-            &pool,
-            None,
-            "/dup",
-            "dup",
-            CatType::Normal,
-            0,
-            "",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
-        let id2 = insert(
-            &pool,
-            None,
-            "/dup",
-            "dup2",
-            CatType::Zip,
-            42,
-            "mtime",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let id1 = insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+        let id2 = insert(&pool, None, "/dup", "dup2", CatType::Zip, 42, "mtime")
+            .await
+            .unwrap();
 
         assert_eq!(id1, id2);
     }
 
     #[tokio::test]
     async fn test_update_archive_meta() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
         let id = insert(
             &pool,
@@ -230,7 +210,6 @@ mod tests {
             CatType::Zip,
             10,
             "old",
-            DbBackend::Sqlite,
         )
         .await
         .unwrap();
@@ -246,45 +225,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_empty_prunes_tree_and_keeps_non_empty() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
 
-        let a = insert(
-            &pool,
-            None,
-            "/a",
-            "a",
-            CatType::Normal,
-            0,
-            "",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
-        let _b = insert(
-            &pool,
-            Some(a),
-            "/a/b",
-            "b",
-            CatType::Normal,
-            0,
-            "",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let a = insert(&pool, None, "/a", "a", CatType::Normal, 0, "")
+            .await
+            .unwrap();
+        let _b = insert(&pool, Some(a), "/a/b", "b", CatType::Normal, 0, "")
+            .await
+            .unwrap();
 
-        let keep = insert(
-            &pool,
-            None,
-            "/keep",
-            "keep",
-            CatType::Normal,
-            0,
-            "",
-            DbBackend::Sqlite,
-        )
-        .await
-        .unwrap();
+        let keep = insert(&pool, None, "/keep", "keep", CatType::Normal, 0, "")
+            .await
+            .unwrap();
         let _book_id = insert_test_book(&pool, keep, "Live Book", 2).await;
 
         let deleted = delete_empty(&pool).await.unwrap();
