@@ -1,117 +1,162 @@
--- Core schema for ropds (Rust OPDS server) — PostgreSQL version
+-- SOPDS: initial schema (PostgreSQL)
 
+-- Genre sections (language-independent)
+CREATE TABLE IF NOT EXISTS genre_sections (
+    id   BIGSERIAL PRIMARY KEY,
+    code TEXT      NOT NULL UNIQUE
+);
+
+-- Genre section translations
+CREATE TABLE IF NOT EXISTS genre_section_translations (
+    id         BIGSERIAL PRIMARY KEY,
+    section_id BIGINT NOT NULL REFERENCES genre_sections(id) ON DELETE CASCADE,
+    lang       TEXT   NOT NULL,
+    name       TEXT   NOT NULL,
+    UNIQUE(section_id, lang)
+);
+CREATE INDEX idx_gst_lang ON genre_section_translations(lang);
+
+-- Catalogs (filesystem directories and archives)
 CREATE TABLE IF NOT EXISTS catalogs (
-    id          BIGSERIAL PRIMARY KEY,
-    parent_id   BIGINT REFERENCES catalogs(id) ON DELETE CASCADE,
-    path        TEXT    NOT NULL DEFAULT '',
-    cat_name    TEXT    NOT NULL DEFAULT '',
-    cat_type    INTEGER NOT NULL DEFAULT 0  -- 0=normal, 1=zip, 2=inpx, 3=inp
+    id        BIGSERIAL PRIMARY KEY,
+    parent_id BIGINT REFERENCES catalogs(id) ON DELETE CASCADE,
+    path      TEXT    NOT NULL DEFAULT '',
+    cat_name  TEXT    NOT NULL DEFAULT '',
+    cat_type  INTEGER NOT NULL DEFAULT 0,  -- 0=normal, 1=zip, 2=inpx, 3=inp
+    cat_size  INTEGER NOT NULL DEFAULT 0,
+    cat_mtime TEXT    NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_catalogs_parent ON catalogs(parent_id);
-CREATE INDEX idx_catalogs_path   ON catalogs(path);
+CREATE INDEX        idx_catalogs_parent ON catalogs(parent_id);
+CREATE UNIQUE INDEX idx_catalogs_path   ON catalogs(path);
 
+-- Books
 CREATE TABLE IF NOT EXISTS books (
-    id              BIGSERIAL PRIMARY KEY,
-    catalog_id      BIGINT    NOT NULL REFERENCES catalogs(id) ON DELETE CASCADE,
-    filename        TEXT      NOT NULL DEFAULT '',
-    path            TEXT      NOT NULL DEFAULT '',
-    format          TEXT      NOT NULL DEFAULT '',
-    title           TEXT      NOT NULL DEFAULT '',
-    search_title    TEXT      NOT NULL DEFAULT '',
-    annotation      TEXT      NOT NULL DEFAULT '',
-    docdate         TEXT      NOT NULL DEFAULT '',
-    lang            TEXT      NOT NULL DEFAULT 'un',
-    lang_code       INTEGER   NOT NULL DEFAULT 9,  -- 1=Cyrillic, 2=Latin, 3=Digit, 9=Other
-    size            INTEGER   NOT NULL DEFAULT 0,
-    avail           INTEGER   NOT NULL DEFAULT 1,  -- 0=deleted, 1=unverified, 2=confirmed
-    cat_type        INTEGER   NOT NULL DEFAULT 0,
-    cover           INTEGER   NOT NULL DEFAULT 0,
-    cover_type      TEXT      NOT NULL DEFAULT '',
-    reg_date        TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id           BIGSERIAL PRIMARY KEY,
+    catalog_id   BIGINT  NOT NULL REFERENCES catalogs(id) ON DELETE CASCADE,
+    filename     TEXT    NOT NULL DEFAULT '',
+    path         TEXT    NOT NULL DEFAULT '',
+    format       TEXT    NOT NULL DEFAULT '',
+    title        TEXT    NOT NULL DEFAULT '',
+    search_title TEXT    NOT NULL DEFAULT '',
+    annotation   TEXT    NOT NULL DEFAULT '',
+    docdate      TEXT    NOT NULL DEFAULT '',
+    lang         TEXT    NOT NULL DEFAULT 'un',
+    lang_code    INTEGER NOT NULL DEFAULT 9,  -- 1=Cyrillic, 2=Latin, 3=Digit, 9=Other
+    size         INTEGER NOT NULL DEFAULT 0,
+    avail        INTEGER NOT NULL DEFAULT 1,  -- 0=deleted, 1=unverified, 2=confirmed
+    cat_type     INTEGER NOT NULL DEFAULT 0,
+    cover        INTEGER NOT NULL DEFAULT 0,
+    cover_type   TEXT    NOT NULL DEFAULT '',
+    reg_date     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_books_catalog    ON books(catalog_id);
-CREATE INDEX idx_books_search     ON books(search_title);
-CREATE INDEX idx_books_lang_code  ON books(lang_code);
-CREATE INDEX idx_books_avail      ON books(avail);
-CREATE INDEX idx_books_format     ON books(format);
-CREATE INDEX idx_books_path_file  ON books(path, filename);
+CREATE INDEX idx_books_catalog   ON books(catalog_id);
+CREATE INDEX idx_books_search    ON books(search_title);
+CREATE INDEX idx_books_lang_code ON books(lang_code);
+CREATE INDEX idx_books_avail     ON books(avail);
+CREATE INDEX idx_books_format    ON books(format);
+CREATE INDEX idx_books_path_file ON books(path, filename);
 
+-- Authors
 CREATE TABLE IF NOT EXISTS authors (
-    id                  BIGSERIAL PRIMARY KEY,
-    full_name           TEXT    NOT NULL DEFAULT '',
-    search_full_name    TEXT    NOT NULL DEFAULT '',
-    lang_code           INTEGER NOT NULL DEFAULT 9
+    id               BIGSERIAL PRIMARY KEY,
+    full_name        TEXT    NOT NULL DEFAULT '',
+    search_full_name TEXT    NOT NULL DEFAULT '',
+    lang_code        INTEGER NOT NULL DEFAULT 9
 );
-CREATE INDEX idx_authors_search    ON authors(search_full_name);
-CREATE INDEX idx_authors_lang_code ON authors(lang_code);
+CREATE INDEX        idx_authors_search      ON authors(search_full_name);
+CREATE INDEX        idx_authors_lang_code   ON authors(lang_code);
+CREATE UNIQUE INDEX idx_authors_name_unique ON authors(full_name);
 
+-- Genres
 CREATE TABLE IF NOT EXISTS genres (
-    id          BIGSERIAL PRIMARY KEY,
-    code        TEXT    NOT NULL UNIQUE,
-    section     TEXT    NOT NULL DEFAULT '',
-    subsection  TEXT    NOT NULL DEFAULT ''
+    id         BIGSERIAL PRIMARY KEY,
+    code       TEXT    NOT NULL UNIQUE,
+    section    TEXT    NOT NULL DEFAULT '',
+    subsection TEXT    NOT NULL DEFAULT '',
+    section_id BIGINT REFERENCES genre_sections(id)
 );
 CREATE INDEX idx_genres_code    ON genres(code);
 CREATE INDEX idx_genres_section ON genres(section);
 
-CREATE TABLE IF NOT EXISTS series (
-    id          BIGSERIAL PRIMARY KEY,
-    ser_name    TEXT    NOT NULL DEFAULT '',
-    search_ser  TEXT    NOT NULL DEFAULT '',
-    lang_code   INTEGER NOT NULL DEFAULT 9
+-- Genre translations
+CREATE TABLE IF NOT EXISTS genre_translations (
+    id       BIGSERIAL PRIMARY KEY,
+    genre_id BIGINT NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
+    lang     TEXT   NOT NULL,
+    name     TEXT   NOT NULL,
+    UNIQUE(genre_id, lang)
 );
-CREATE INDEX idx_series_search    ON series(search_ser);
-CREATE INDEX idx_series_lang_code ON series(lang_code);
+CREATE INDEX idx_gt_lang ON genre_translations(lang);
 
+-- Series
+CREATE TABLE IF NOT EXISTS series (
+    id         BIGSERIAL PRIMARY KEY,
+    ser_name   TEXT    NOT NULL DEFAULT '',
+    search_ser TEXT    NOT NULL DEFAULT '',
+    lang_code  INTEGER NOT NULL DEFAULT 9
+);
+CREATE INDEX        idx_series_search      ON series(search_ser);
+CREATE INDEX        idx_series_lang_code   ON series(lang_code);
+CREATE UNIQUE INDEX idx_series_name_unique ON series(ser_name);
+
+-- Junction: book <-> author
 CREATE TABLE IF NOT EXISTS book_authors (
-    id          BIGSERIAL PRIMARY KEY,
-    book_id     BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    author_id   BIGINT NOT NULL REFERENCES authors(id) ON DELETE CASCADE
+    id        BIGSERIAL PRIMARY KEY,
+    book_id   BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    author_id BIGINT NOT NULL REFERENCES authors(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX idx_book_authors_unique ON book_authors(book_id, author_id);
-CREATE INDEX idx_book_authors_author        ON book_authors(author_id);
+CREATE INDEX        idx_book_authors_author ON book_authors(author_id);
 
+-- Junction: book <-> genre
 CREATE TABLE IF NOT EXISTS book_genres (
-    id          BIGSERIAL PRIMARY KEY,
-    book_id     BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    genre_id    BIGINT NOT NULL REFERENCES genres(id) ON DELETE CASCADE
+    id       BIGSERIAL PRIMARY KEY,
+    book_id  BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    genre_id BIGINT NOT NULL REFERENCES genres(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX idx_book_genres_unique ON book_genres(book_id, genre_id);
-CREATE INDEX idx_book_genres_genre         ON book_genres(genre_id);
+CREATE INDEX        idx_book_genres_genre  ON book_genres(genre_id);
 
+-- Junction: book <-> series
 CREATE TABLE IF NOT EXISTS book_series (
-    id          BIGSERIAL PRIMARY KEY,
-    book_id     BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    series_id   BIGINT NOT NULL REFERENCES series(id) ON DELETE CASCADE,
-    ser_no      INTEGER NOT NULL DEFAULT 0
+    id        BIGSERIAL PRIMARY KEY,
+    book_id   BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    series_id BIGINT NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+    ser_no    INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX idx_book_series_unique ON book_series(book_id, series_id);
-CREATE INDEX idx_book_series_series        ON book_series(series_id);
+CREATE INDEX        idx_book_series_series ON book_series(series_id);
 
+-- Users
 CREATE TABLE IF NOT EXISTS users (
-    id              BIGSERIAL PRIMARY KEY,
-    username        TEXT      NOT NULL UNIQUE,
-    password_hash   TEXT      NOT NULL DEFAULT '',
-    is_superuser    INTEGER   NOT NULL DEFAULT 0,
-    created_at      TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                       BIGSERIAL PRIMARY KEY,
+    username                 TEXT    NOT NULL UNIQUE,
+    password_hash            TEXT    NOT NULL DEFAULT '',
+    is_superuser             INTEGER NOT NULL DEFAULT 0,
+    created_at               TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login               TEXT    NOT NULL DEFAULT '',
+    password_change_required INTEGER NOT NULL DEFAULT 0,
+    display_name             TEXT    NOT NULL DEFAULT '',
+    allow_upload             INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS bookshelves (
-    id          BIGSERIAL PRIMARY KEY,
-    user_id     BIGINT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    book_id     BIGINT    NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    read_time   TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- Bookshelf (user's reading list)
+CREATE TABLE IF NOT EXISTS bookshelf (
+    id        BIGSERIAL PRIMARY KEY,
+    user_id   BIGINT NOT NULL,
+    book_id   BIGINT NOT NULL,
+    read_time TEXT   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, book_id)
 );
-CREATE UNIQUE INDEX idx_bookshelves_unique ON bookshelves(user_id, book_id);
-CREATE INDEX idx_bookshelves_user          ON bookshelves(user_id);
+CREATE INDEX idx_bookshelf_user ON bookshelf(user_id, read_time);
 
+-- Counters (aggregate statistics)
 CREATE TABLE IF NOT EXISTS counters (
-    name        TEXT      PRIMARY KEY,
-    value       INTEGER   NOT NULL DEFAULT 0,
-    updated_at  TEXT      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    name       TEXT    PRIMARY KEY,
+    value      INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Initialize default counters
 INSERT INTO counters (name, value) VALUES ('allbooks', 0);
 INSERT INTO counters (name, value) VALUES ('allcatalogs', 0);
 INSERT INTO counters (name, value) VALUES ('allauthors', 0);

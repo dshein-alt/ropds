@@ -94,7 +94,7 @@ INSERT INTO genre_translations (genre_id, lang, name) VALUES
     (59, 'en', 'OS, Networking & Internet'),
     (60, 'en', 'Programming & Databases'),
     (61, 'en', 'Tutorials & Self-Study'),
-    -- 8. Children's Literature (children)
+    -- 8. Children''s Literature (children)
     (62, 'en', 'Children''s Literature'),
     (63, 'en', 'Children''s Educational Literature'),
     (64, 'en', 'Children''s Adventure & Thriller'),

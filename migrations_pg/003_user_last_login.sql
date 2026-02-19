@@ -1,1 +1,0 @@
-ALTER TABLE users ADD COLUMN last_login TEXT NOT NULL DEFAULT '';
