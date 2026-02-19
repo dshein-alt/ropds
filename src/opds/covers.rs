@@ -418,3 +418,165 @@ fn image_response(data: &[u8], mime: &str) -> Response {
     )
         .into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn test_ext_and_mime_mappings() {
+        assert_eq!(ext_to_mime("png"), "image/png");
+        assert_eq!(ext_to_mime("gif"), "image/gif");
+        assert_eq!(ext_to_mime("jpg"), "image/jpeg");
+
+        assert_eq!(mime_to_ext("image/png"), "png");
+        assert_eq!(mime_to_ext("image/gif"), "gif");
+        assert_eq!(mime_to_ext("image/jpeg"), "jpg");
+    }
+
+    #[test]
+    fn test_find_cover_file_prefers_known_extensions() {
+        let dir = tempdir().unwrap();
+        let jpg_path = dir.path().join("42.jpg");
+        std::fs::write(&jpg_path, b"jpg-bytes").unwrap();
+
+        let found = find_cover_file(dir.path(), 42).unwrap();
+        assert_eq!(found.0, b"jpg-bytes");
+        assert_eq!(found.1, "image/jpeg");
+    }
+
+    #[test]
+    fn test_parse_container_rootfile_and_path_helpers() {
+        let xml = br#"
+            <container version="1.0">
+              <rootfiles>
+                <rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+        "#;
+        assert_eq!(
+            parse_container_rootfile(xml),
+            Some("OPS/content.opf".to_string())
+        );
+        assert_eq!(parse_container_rootfile(b"<container/>"), None);
+
+        assert_eq!(local_name(b"opf:item"), "item");
+        assert_eq!(local_name(b"item"), "item");
+        assert_eq!(resolve_path("OPS/", "images/c.jpg"), "OPS/images/c.jpg");
+        assert_eq!(resolve_path("OPS/", "/images/c.jpg"), "images/c.jpg");
+    }
+
+    #[test]
+    fn test_find_fb2_cover_ref() {
+        let fb2 = br##"
+            <FictionBook>
+              <description>
+                <title-info>
+                  <coverpage><image l:href="#CoverImage"/></coverpage>
+                </title-info>
+              </description>
+            </FictionBook>
+        "##;
+        assert_eq!(find_fb2_cover_ref(fb2), Some("coverimage".to_string()));
+        assert_eq!(find_fb2_cover_ref(b"<FictionBook/>"), None);
+    }
+
+    #[test]
+    fn test_find_epub_opf_from_container_and_fallback_scan() {
+        let zip_data = make_zip(&[
+            (
+                "META-INF/container.xml",
+                br#"<container><rootfiles><rootfile full-path="OPS/content.opf"/></rootfiles></container>"#,
+            ),
+            ("OPS/content.opf", b"<package/>"),
+        ]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(zip_data)).unwrap();
+        assert_eq!(
+            find_epub_opf(&mut archive),
+            Some("OPS/content.opf".to_string())
+        );
+
+        let zip_data = make_zip(&[("book.opf", b"<package/>")]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(zip_data)).unwrap();
+        assert_eq!(find_epub_opf(&mut archive), Some("book.opf".to_string()));
+    }
+
+    #[test]
+    fn test_extract_epub_cover_properties_strategy() {
+        let cover = b"cover-bytes";
+        let zip_data = make_zip(&[("OPS/images/cover.jpg", cover)]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(zip_data)).unwrap();
+
+        let opf = br#"
+            <package xmlns="http://www.idpf.org/2007/opf">
+              <manifest>
+                <item id="img1" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>
+              </manifest>
+            </package>
+        "#;
+        let result = extract_epub_cover(opf, "OPS/content.opf", &mut archive).unwrap();
+        assert_eq!(result.0, cover);
+        assert_eq!(result.1, "image/jpeg");
+    }
+
+    #[test]
+    fn test_extract_epub_cover_meta_cover_strategy() {
+        let cover = b"meta-cover";
+        let zip_data = make_zip(&[("OPS/img/c.png", cover)]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(zip_data)).unwrap();
+
+        let opf = br#"
+            <package xmlns="http://www.idpf.org/2007/opf">
+              <metadata>
+                <meta name="cover" content="cover-img"/>
+              </metadata>
+              <manifest>
+                <item id="cover-img" href="img/c.png" media-type="image/png"/>
+              </manifest>
+            </package>
+        "#;
+        let result = extract_epub_cover(opf, "OPS/content.opf", &mut archive).unwrap();
+        assert_eq!(result.0, cover);
+        assert_eq!(result.1, "image/png");
+    }
+
+    #[test]
+    fn test_make_thumbnail_success_and_invalid_input() {
+        let image = image::DynamicImage::new_rgb8(2, 2);
+        let mut png = Cursor::new(Vec::new());
+        image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let thumb = make_thumbnail(&png.into_inner(), 32).unwrap();
+        assert!(!thumb.is_empty());
+        assert_eq!(
+            image::guess_format(&thumb).unwrap(),
+            image::ImageFormat::Jpeg
+        );
+
+        assert!(make_thumbnail(b"not-an-image", 32).is_err());
+    }
+
+    #[test]
+    fn test_image_response_headers() {
+        let response = image_response(b"abc", "image/jpeg");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/jpeg"
+        );
+        assert_eq!(response.headers().get(header::CONTENT_LENGTH).unwrap(), "3");
+    }
+}

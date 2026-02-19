@@ -102,3 +102,65 @@ fn unauthorized_response() -> Response {
     )
         .into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::create_test_pool;
+    use axum::http::HeaderMap;
+
+    fn auth_header(username: &str, password: &str) -> String {
+        let raw = format!("{username}:{password}");
+        format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(raw.as_bytes())
+        )
+    }
+
+    #[tokio::test]
+    async fn test_verify_credentials_and_get_user_id_from_headers() {
+        let pool = create_test_pool().await;
+        let hash = crate::password::hash("secret123");
+        sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)")
+            .bind("alice")
+            .bind(hash)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(verify_credentials(&pool, "alice", "secret123").await);
+        assert!(!verify_credentials(&pool, "alice", "wrong").await);
+        assert!(!verify_credentials(&pool, "missing", "secret123").await);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            auth_header("alice", "secret123").parse().unwrap(),
+        );
+        assert!(get_user_id_from_headers(&pool, &headers).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_user_id_from_headers_invalid_inputs() {
+        let pool = create_test_pool().await;
+        let mut headers = HeaderMap::new();
+
+        assert_eq!(get_user_id_from_headers(&pool, &headers).await, None);
+
+        headers.insert(header::AUTHORIZATION, "Bearer abc".parse().unwrap());
+        assert_eq!(get_user_id_from_headers(&pool, &headers).await, None);
+
+        headers.insert(header::AUTHORIZATION, "Basic ???".parse().unwrap());
+        assert_eq!(get_user_id_from_headers(&pool, &headers).await, None);
+    }
+
+    #[test]
+    fn test_unauthorized_response() {
+        let response = unauthorized_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            "Basic realm=\"OPDS\""
+        );
+    }
+}

@@ -164,3 +164,95 @@ pub fn file_response(data: &[u8], filename: &str, mime: &str) -> Response {
     )
         .into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::models::CatType;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    fn make_zip_with_file(path: &std::path::Path, name: &str, data: &[u8]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(name, opts).unwrap();
+        zip.write_all(data).unwrap();
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn test_wrap_in_zip_roundtrip() {
+        let bytes = b"hello-book";
+        let zipped = wrap_in_zip("book.fb2", bytes).unwrap();
+        let reader = std::io::Cursor::new(zipped);
+        let mut archive = zip::ZipArchive::new(reader).unwrap();
+        assert_eq!(archive.len(), 1);
+        let mut file = archive.by_name("book.fb2").unwrap();
+        let mut out = Vec::new();
+        use std::io::Read;
+        file.read_to_end(&mut out).unwrap();
+        assert_eq!(out, bytes);
+    }
+
+    #[test]
+    fn test_title_to_filename_sanitization_and_fallback() {
+        assert_eq!(
+            title_to_filename("  A  Title / Name ", "fb2", "orig.fb2"),
+            "A_Title_Name.fb2"
+        );
+        assert_eq!(title_to_filename("***", "epub", "orig.epub"), "orig.epub");
+    }
+
+    #[test]
+    fn test_file_response_headers() {
+        let resp = file_response(b"abc", "book.fb2", "application/fb2+xml");
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CONTENT_DISPOSITION).unwrap(),
+            "attachment; filename=\"book.fb2\""
+        );
+        assert_eq!(resp.headers().get(header::CONTENT_LENGTH).unwrap(), "3");
+        assert_eq!(
+            resp.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/fb2+xml; name=\"book.fb2\""
+        );
+    }
+
+    #[test]
+    fn test_read_book_file_normal() {
+        let dir = tempdir().unwrap();
+        let book_dir = dir.path().join("sub");
+        std::fs::create_dir_all(&book_dir).unwrap();
+        let full = book_dir.join("book.fb2");
+        std::fs::write(&full, b"plain-data").unwrap();
+
+        let data =
+            read_book_file(dir.path(), "sub", "book.fb2", i32::from(CatType::Normal)).unwrap();
+        assert_eq!(data, b"plain-data");
+    }
+
+    #[test]
+    fn test_read_book_file_from_zip_archive() {
+        let dir = tempdir().unwrap();
+        let zip_path = dir.path().join("books.zip");
+        make_zip_with_file(&zip_path, "inside.fb2", b"zip-data");
+
+        let data = read_book_file(
+            dir.path(),
+            "books.zip",
+            "inside.fb2",
+            i32::from(CatType::Zip),
+        )
+        .unwrap();
+        assert_eq!(data, b"zip-data");
+    }
+
+    #[test]
+    fn test_read_book_file_unknown_cat_type() {
+        let dir = tempdir().unwrap();
+        let err = read_book_file(dir.path(), "", "book.fb2", 999).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+    }
+}

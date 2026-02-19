@@ -938,3 +938,82 @@ async fn write_book_entry(
 
     let _ = fb.end_entry();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use axum::http::HeaderMap;
+
+    fn test_config(default_lang: &str) -> crate::config::Config {
+        let cfg = format!(
+            r#"
+[server]
+session_secret = "s"
+[library]
+root_path = "/tmp"
+[database]
+[opds]
+[scanner]
+[web]
+language = "{default_lang}"
+"#
+        );
+        toml::from_str(&cfg).unwrap()
+    }
+
+    #[test]
+    fn test_detect_opds_lang_parses_primary_language() {
+        let cfg = test_config("en");
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept-language",
+            "fr-CA,fr;q=0.9,en;q=0.8".parse().unwrap(),
+        );
+        assert_eq!(detect_opds_lang(&headers, &cfg), "fr");
+
+        headers.insert("accept-language", "RU;q=0.8,en".parse().unwrap());
+        assert_eq!(detect_opds_lang(&headers, &cfg), "ru");
+    }
+
+    #[test]
+    fn test_detect_opds_lang_fallback_to_config() {
+        let cfg = test_config("de");
+        let headers = HeaderMap::new();
+        assert_eq!(detect_opds_lang(&headers, &cfg), "de");
+    }
+
+    #[tokio::test]
+    async fn test_atom_and_error_response() {
+        let atom = atom_response(b"<feed/>".to_vec());
+        assert_eq!(atom.status(), StatusCode::OK);
+        assert_eq!(
+            atom.headers().get(header::CONTENT_TYPE).unwrap(),
+            xml::ATOM_XML
+        );
+        let atom_body = to_bytes(atom.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(atom_body.as_ref(), b"<feed/>");
+
+        let err = error_response(StatusCode::BAD_REQUEST, "bad");
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
+        let err_body = to_bytes(err.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(err_body.as_ref(), b"bad");
+    }
+
+    #[tokio::test]
+    async fn test_lang_selection_feed_contains_expected_entries() {
+        let response = lang_selection_feed("By Authors", "/opds/authors/").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            xml::ATOM_XML
+        );
+
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let xml = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(xml.contains("By Authors"));
+        assert!(xml.contains("/opds/authors/1/"));
+        assert!(xml.contains("Cyrillic"));
+        assert!(xml.contains("Digits"));
+    }
+}

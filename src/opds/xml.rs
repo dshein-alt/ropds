@@ -295,3 +295,107 @@ impl FeedBuilder {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mime_helpers() {
+        assert_eq!(mime_for_format("fb2"), "application/fb2+xml");
+        assert_eq!(mime_for_format("unknown"), "application/octet-stream");
+        assert!(is_nozip_format("epub"));
+        assert!(!is_nozip_format("fb2"));
+        assert_eq!(mime_for_zip("fb2"), "application/fb2+zip");
+        assert_eq!(mime_for_zip("pdf"), "application/pdf+zip");
+    }
+
+    #[test]
+    fn test_feed_builder_basic_feed_and_entries() {
+        let mut fb = FeedBuilder::new();
+        fb.begin_feed(
+            "tag:test",
+            "Test Feed",
+            "Subtitle",
+            "2024-01-01T00:00:00Z",
+            "/opds/test/",
+            "/opds/",
+        )
+        .unwrap();
+        fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/")
+            .unwrap();
+        fb.write_nav_entry("n:1", "Node", "/opds/node/", "Desc", "2024-01-01T00:00:00Z")
+            .unwrap();
+        fb.write_pagination(Some("/opds/test/1/"), Some("/opds/test/3/"))
+            .unwrap();
+        let xml = String::from_utf8(fb.finish().unwrap()).unwrap();
+
+        assert!(xml.contains("<feed"));
+        assert!(xml.contains("Test Feed"));
+        assert!(xml.contains("rel=\"self\""));
+        assert!(xml.contains("rel=\"start\""));
+        assert!(xml.contains("rel=\"search\""));
+        assert!(xml.contains("rel=\"prev\""));
+        assert!(xml.contains("rel=\"next\""));
+        assert!(xml.contains("Node"));
+    }
+
+    #[test]
+    fn test_feed_builder_book_entry_helpers() {
+        let mut fb = FeedBuilder::new();
+        fb.begin_feed(
+            "tag:books",
+            "Books",
+            "",
+            "2024-01-01T00:00:00Z",
+            "/opds/",
+            "/opds/",
+        )
+        .unwrap();
+        fb.begin_entry("b:1", "Book One", "2024-01-01T00:00:00Z")
+            .unwrap();
+        fb.write_acquisition_links(1, "fb2", true).unwrap();
+        fb.write_author_obj(&Author {
+            name: "Author A".to_string(),
+        })
+        .unwrap();
+        fb.write_category_obj(&Category {
+            term: "sf".to_string(),
+            label: "Sci-Fi".to_string(),
+        })
+        .unwrap();
+        fb.write_content_html("<p>anno</p>").unwrap();
+        fb.end_entry().unwrap();
+        let xml = String::from_utf8(fb.finish().unwrap()).unwrap();
+
+        assert!(xml.contains("/opds/download/1/0/"));
+        assert!(xml.contains("/opds/download/1/1/"));
+        assert!(xml.contains(REL_IMAGE));
+        assert!(xml.contains(REL_THUMBNAIL));
+        assert!(xml.contains("Author A"));
+        assert!(xml.contains("term=\"sf\""));
+        assert!(xml.contains("type=\"text/html\""));
+        assert!(xml.contains("anno"));
+    }
+
+    #[test]
+    fn test_write_acquisition_links_skips_zip_for_nozip_formats() {
+        let mut fb = FeedBuilder::new();
+        fb.begin_feed(
+            "tag:books",
+            "Books",
+            "",
+            "2024-01-01T00:00:00Z",
+            "/opds/",
+            "/opds/",
+        )
+        .unwrap();
+        fb.begin_entry("b:2", "EPUB", "2024-01-01T00:00:00Z")
+            .unwrap();
+        fb.write_acquisition_links(2, "epub", false).unwrap();
+        fb.end_entry().unwrap();
+        let xml = String::from_utf8(fb.finish().unwrap()).unwrap();
+        assert!(xml.contains("/opds/download/2/0/"));
+        assert!(!xml.contains("/opds/download/2/1/"));
+    }
+}
