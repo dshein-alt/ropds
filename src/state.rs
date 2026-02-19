@@ -2,14 +2,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::config::Config;
-use crate::db::{DbBackend, DbPool};
+use crate::db::DbPool;
 use crate::web::i18n::Translations;
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     pub db: DbPool,
-    pub backend: DbBackend,
     pub tera: Arc<tera::Tera>,
     pub translations: Arc<Translations>,
     pub started_at: Instant,
@@ -21,7 +20,6 @@ impl AppState {
     pub fn new(
         config: Config,
         db: DbPool,
-        backend: DbBackend,
         tera: tera::Tera,
         translations: Translations,
         pdf_preview_tool_available: bool,
@@ -30,7 +28,6 @@ impl AppState {
         Self {
             config: Arc::new(config),
             db,
-            backend,
             tera: Arc::new(tera),
             translations: Arc::new(translations),
             started_at: Instant::now(),

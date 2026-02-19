@@ -18,7 +18,10 @@ use tower_http::services::ServeDir;
 use crate::state::AppState;
 
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let db_ok = sqlx::query("SELECT 1").execute(&state.db).await.is_ok();
+    let db_ok = sqlx::query("SELECT 1")
+        .execute(state.db.inner())
+        .await
+        .is_ok();
     Json(serde_json::json!({
         "status": if db_ok { "ok" } else { "degraded" },
         "version": env!("CARGO_PKG_VERSION"),

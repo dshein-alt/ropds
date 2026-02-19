@@ -76,7 +76,7 @@ async fn main() {
     }
 
     // Initialize database
-    let (pool, backend) = ropds::db::create_pool(&config.database)
+    let pool = ropds::db::create_pool(&config.database)
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Failed to initialize database: {e}");
@@ -164,7 +164,7 @@ async fn main() {
     // One-shot scan mode
     if cli.scan {
         tracing::info!("Running one-shot scan...");
-        match ropds::scanner::run_scan(&pool, &config, backend).await {
+        match ropds::scanner::run_scan(&pool, &config).await {
             Ok(stats) => {
                 tracing::info!(
                     "Scan finished: added={}, skipped={}, deleted={}, archives_scanned={}, archives_skipped={}, errors={}",
@@ -242,12 +242,11 @@ async fn main() {
     tracing::info!("Listening on {addr}");
 
     // Start background scan scheduler
-    tokio::spawn(ropds::scheduler::run(pool.clone(), config.clone(), backend));
+    tokio::spawn(ropds::scheduler::run(pool.clone(), config.clone()));
 
     let state = AppState::new(
         config,
         pool,
-        backend,
         tera,
         translations,
         pdf_preview_tool_available,
@@ -277,25 +276,25 @@ async fn main() {
 /// Returns `Ok(true)` if a new user was created, `Ok(false)` if updated.
 async fn set_admin_password(pool: &ropds::db::DbPool, password: &str) -> Result<bool, sqlx::Error> {
     let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
-        .fetch_optional(pool)
+        .fetch_optional(pool.inner())
         .await?;
 
     let hashed = ropds::password::hash(password);
 
     if let Some((id,)) = existing {
-        sqlx::query("UPDATE users SET password_hash = ?, allow_upload = 1, display_name = CASE WHEN display_name = '' THEN 'Administrator' ELSE display_name END WHERE id = ?")
+        let sql = pool.sql("UPDATE users SET password_hash = ?, allow_upload = 1, display_name = CASE WHEN display_name = '' THEN 'Administrator' ELSE display_name END WHERE id = ?");
+        sqlx::query(&sql)
             .bind(&hashed)
             .bind(id)
-            .execute(pool)
+            .execute(pool.inner())
             .await?;
         Ok(false)
     } else {
-        sqlx::query(
-            "INSERT INTO users (username, password_hash, is_superuser, display_name, allow_upload) VALUES ('admin', ?, 1, 'Administrator', 1)",
-        )
-        .bind(&hashed)
-        .execute(pool)
-        .await?;
+        let sql = pool.sql("INSERT INTO users (username, password_hash, is_superuser, display_name, allow_upload) VALUES ('admin', ?, 1, 'Administrator', 1)");
+        sqlx::query(&sql)
+            .bind(&hashed)
+            .execute(pool.inner())
+            .await?;
         Ok(true)
     }
 }
