@@ -1,6 +1,6 @@
 use crate::db::DbPool;
 
-use crate::db::models::Catalog;
+use crate::db::models::{CatType, Catalog};
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Catalog>, sqlx::Error> {
     sqlx::query_as::<_, Catalog>("SELECT * FROM catalogs WHERE id = ?")
@@ -34,7 +34,7 @@ pub async fn insert(
     parent_id: Option<i64>,
     path: &str,
     cat_name: &str,
-    cat_type: i32,
+    cat_type: CatType,
     cat_size: i64,
     cat_mtime: &str,
 ) -> Result<i64, sqlx::Error> {
@@ -45,7 +45,7 @@ pub async fn insert(
     .bind(parent_id)
     .bind(path)
     .bind(cat_name)
-    .bind(cat_type)
+    .bind(cat_type as i32)
     .bind(cat_size)
     .bind(cat_mtime)
     .execute(pool)
@@ -66,12 +66,12 @@ pub async fn insert(
 pub async fn update_archive_meta(
     pool: &DbPool,
     id: i64,
-    cat_type: i32,
+    cat_type: CatType,
     cat_size: i64,
     cat_mtime: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE catalogs SET cat_type = ?, cat_size = ?, cat_mtime = ? WHERE id = ?")
-        .bind(cat_type)
+        .bind(cat_type as i32)
         .bind(cat_size)
         .bind(cat_mtime)
         .bind(id)

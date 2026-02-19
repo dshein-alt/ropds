@@ -1,6 +1,6 @@
 use crate::db::DbPool;
 
-use crate::db::models::Book;
+use crate::db::models::{AvailStatus, Book, CatType};
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Book>, sqlx::Error> {
     sqlx::query_as::<_, Book>("SELECT * FROM books WHERE id = ?")
@@ -245,7 +245,7 @@ pub async fn insert(
     lang: &str,
     lang_code: i32,
     size: i64,
-    cat_type: i32,
+    cat_type: CatType,
     cover: i32,
     cover_type: &str,
 ) -> Result<i64, sqlx::Error> {
@@ -265,7 +265,7 @@ pub async fn insert(
     .bind(lang)
     .bind(lang_code)
     .bind(size)
-    .bind(cat_type)
+    .bind(cat_type as i32)
     .bind(cover)
     .bind(cover_type)
     .execute(pool)
@@ -281,26 +281,30 @@ pub async fn insert(
     Ok(row.0)
 }
 
-pub async fn set_avail_all(pool: &DbPool, avail: i32) -> Result<u64, sqlx::Error> {
+pub async fn set_avail_all(pool: &DbPool, avail: AvailStatus) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("UPDATE books SET avail = ?")
-        .bind(avail)
+        .bind(avail as i32)
         .execute(pool)
         .await?;
     Ok(result.rows_affected())
 }
 
-pub async fn set_avail(pool: &DbPool, id: i64, avail: i32) -> Result<(), sqlx::Error> {
+pub async fn set_avail(pool: &DbPool, id: i64, avail: AvailStatus) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE books SET avail = ? WHERE id = ?")
-        .bind(avail)
+        .bind(avail as i32)
         .bind(id)
         .execute(pool)
         .await?;
     Ok(())
 }
 
-pub async fn set_avail_by_path(pool: &DbPool, path: &str, avail: i32) -> Result<u64, sqlx::Error> {
+pub async fn set_avail_by_path(
+    pool: &DbPool,
+    path: &str,
+    avail: AvailStatus,
+) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("UPDATE books SET avail = ? WHERE path = ?")
-        .bind(avail)
+        .bind(avail as i32)
         .bind(path)
         .execute(pool)
         .await?;
@@ -310,19 +314,19 @@ pub async fn set_avail_by_path(pool: &DbPool, path: &str, avail: i32) -> Result<
 pub async fn set_avail_for_inpx_dir(
     pool: &DbPool,
     inpx_dir: &str,
-    avail: i32,
+    avail: AvailStatus,
 ) -> Result<u64, sqlx::Error> {
     let result = if inpx_dir.is_empty() {
         sqlx::query("UPDATE books SET avail = ? WHERE cat_type = ?")
-            .bind(avail)
-            .bind(i32::from(crate::db::models::CatType::Inpx))
+            .bind(avail as i32)
+            .bind(CatType::Inpx as i32)
             .execute(pool)
             .await?
     } else {
         let pattern = format!("{inpx_dir}/%");
         sqlx::query("UPDATE books SET avail = ? WHERE cat_type = ? AND path LIKE ?")
-            .bind(avail)
-            .bind(i32::from(crate::db::models::CatType::Inpx))
+            .bind(avail as i32)
+            .bind(CatType::Inpx as i32)
             .bind(pattern)
             .execute(pool)
             .await?
@@ -334,8 +338,8 @@ pub async fn set_avail_for_inpx_dir(
 /// Mark unverified books as logically deleted (avail=0, hidden from queries).
 pub async fn logical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("UPDATE books SET avail = ? WHERE avail <= ?")
-        .bind(i32::from(crate::db::models::AvailStatus::Deleted))
-        .bind(i32::from(crate::db::models::AvailStatus::Unverified))
+        .bind(AvailStatus::Deleted as i32)
+        .bind(AvailStatus::Unverified as i32)
         .execute(pool)
         .await?;
     Ok(result.rows_affected())
@@ -344,7 +348,7 @@ pub async fn logical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Erro
 /// Get IDs of unavailable books (for cover cleanup before physical deletion).
 pub async fn get_unavailable_ids(pool: &DbPool) -> Result<Vec<i64>, sqlx::Error> {
     let rows: Vec<(i64,)> = sqlx::query_as("SELECT id FROM books WHERE avail <= ?")
-        .bind(i32::from(crate::db::models::AvailStatus::Unverified))
+        .bind(AvailStatus::Unverified as i32)
         .fetch_all(pool)
         .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
@@ -353,7 +357,7 @@ pub async fn get_unavailable_ids(pool: &DbPool) -> Result<Vec<i64>, sqlx::Error>
 /// Physically delete unavailable books from the database.
 pub async fn physical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("DELETE FROM books WHERE avail <= ?")
-        .bind(i32::from(crate::db::models::AvailStatus::Unverified))
+        .bind(AvailStatus::Unverified as i32)
         .execute(pool)
         .await?;
     Ok(result.rows_affected())
@@ -560,9 +564,9 @@ mod tests {
             "ru", // lang
             lang_code,
             1000, // size
-            0,    // cat_type
-            0,    // cover
-            "",   // cover_type
+            CatType::Normal,
+            0,  // cover
+            "", // cover_type
         )
         .await
         .unwrap()

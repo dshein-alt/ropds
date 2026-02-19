@@ -4,6 +4,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum_extra::extract::cookie::CookieJar;
 use serde::{Deserialize, Serialize};
 
+use crate::db::models::CatType;
 use crate::db::queries::users;
 use crate::state::AppState;
 use crate::web::auth::verify_session;
@@ -709,13 +710,7 @@ pub async fn publish(
     };
 
     // Ensure root catalog exists (empty path = root)
-    let catalog_id = match crate::scanner::ensure_catalog(
-        &state.db,
-        "",
-        i32::from(crate::db::models::CatType::Normal),
-    )
-    .await
-    {
+    let catalog_id = match crate::scanner::ensure_catalog(&state.db, "", CatType::Normal).await {
         Ok(id) => id,
         Err(e) => {
             tracing::error!("Failed to ensure catalog: {e}");
@@ -731,7 +726,7 @@ pub async fn publish(
         "", // path relative to root
         &upload_state.extension,
         upload_state.size,
-        i32::from(crate::db::models::CatType::Normal),
+        CatType::Normal,
         &meta,
         &state.config.library.covers_path,
     )

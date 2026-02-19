@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::db::DbPool;
-use crate::db::models;
+use crate::db::models::{AvailStatus, CatType};
 use crate::db::queries::{authors, books, catalogs, counters, genres, series};
 
 use parsers::{BookMeta, detect_lang_code, normalise_author_name};
@@ -158,7 +158,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
     let stats = Arc::new(ScanStats::default());
 
     // Step 1: Mark all available books as unverified (avail=1)
-    let marked = books::set_avail_all(pool, i32::from(models::AvailStatus::Unverified)).await?;
+    let marked = books::set_avail_all(pool, AvailStatus::Unverified).await?;
     info!("Marked {marked} books as unverified");
 
     // Step 2: Walk filesystem
@@ -458,12 +458,7 @@ async fn process_file(
 ) -> Result<(), ScanError> {
     // Check if already in DB
     if let Some(existing) = books::find_by_path_and_filename(&ctx.pool, rel_path, filename).await? {
-        books::set_avail(
-            &ctx.pool,
-            existing.id,
-            i32::from(models::AvailStatus::Confirmed),
-        )
-        .await?;
+        books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
         ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
         return Ok(());
     }
@@ -478,8 +473,7 @@ async fn process_file(
     .map_err(|e| ScanError::Internal(e.to_string()))??;
 
     // Ensure catalog exists
-    let catalog_id =
-        cached_ensure_catalog(ctx, rel_path, i32::from(models::CatType::Normal)).await?;
+    let catalog_id = cached_ensure_catalog(ctx, rel_path, CatType::Normal).await?;
 
     // Insert book and link metadata
     ctx_insert_book_with_meta(
@@ -489,7 +483,7 @@ async fn process_file(
         rel_path,
         extension,
         size,
-        i32::from(models::CatType::Normal),
+        CatType::Normal,
         &meta,
     )
     .await?;
@@ -535,14 +529,8 @@ async fn process_zip(
         }
     }
 
-    let catalog_id = ensure_archive_catalog(
-        &ctx.pool,
-        &rel_zip,
-        i32::from(models::CatType::Zip),
-        zip_size,
-        mtime,
-    )
-    .await?;
+    let catalog_id =
+        ensure_archive_catalog(&ctx.pool, &rel_zip, CatType::Zip, zip_size, mtime).await?;
 
     // Read ZIP contents in a blocking task
     let zip_path_buf = zip_path.to_path_buf();
@@ -560,12 +548,7 @@ async fn process_zip(
         if let Some(existing) =
             books::find_by_path_and_filename(&ctx.pool, &rel_zip, &ze.filename).await?
         {
-            books::set_avail(
-                &ctx.pool,
-                existing.id,
-                i32::from(models::AvailStatus::Confirmed),
-            )
-            .await?;
+            books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
             ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
             continue;
         }
@@ -596,7 +579,7 @@ async fn process_zip(
             &rel_zip,
             &ze.extension,
             ze.size,
-            i32::from(models::CatType::Zip),
+            CatType::Zip,
             &meta,
         )
         .await?;
@@ -636,14 +619,7 @@ async fn process_inpx(
         return Ok(());
     }
 
-    ensure_archive_catalog(
-        &ctx.pool,
-        rel_path,
-        i32::from(models::CatType::Inpx),
-        inpx_size,
-        mtime,
-    )
-    .await?;
+    ensure_archive_catalog(&ctx.pool, rel_path, CatType::Inpx, inpx_size, mtime).await?;
 
     let inpx_path_buf = inpx_path.to_path_buf();
     let records = tokio::task::spawn_blocking(move || {
@@ -668,18 +644,12 @@ async fn process_inpx(
         if let Some(existing) =
             books::find_by_path_and_filename(&ctx.pool, &book_path, &record.filename).await?
         {
-            books::set_avail(
-                &ctx.pool,
-                existing.id,
-                i32::from(models::AvailStatus::Confirmed),
-            )
-            .await?;
+            books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
             ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
             continue;
         }
 
-        let catalog_id =
-            cached_ensure_catalog(ctx, &book_path, i32::from(models::CatType::Inpx)).await?;
+        let catalog_id = cached_ensure_catalog(ctx, &book_path, CatType::Inpx).await?;
 
         ctx_insert_book_with_meta(
             ctx,
@@ -688,7 +658,7 @@ async fn process_inpx(
             &book_path,
             &record.format,
             record.size,
-            i32::from(models::CatType::Inpx),
+            CatType::Inpx,
             &record.meta,
         )
         .await?;
@@ -986,7 +956,11 @@ fn validate_zip_integrity(path: &Path) -> Result<bool, ScanError> {
 // ---------------------------------------------------------------------------
 
 /// Ensure a catalog row exists for the given path, creating it if needed.
-pub async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<i64, ScanError> {
+pub async fn ensure_catalog(
+    pool: &DbPool,
+    path: &str,
+    cat_type: CatType,
+) -> Result<i64, ScanError> {
     if let Some(cat) = catalogs::find_by_path(pool, path).await? {
         return Ok(cat.id);
     }
@@ -1016,12 +990,13 @@ pub async fn ensure_catalog(pool: &DbPool, path: &str, cat_type: i32) -> Result<
 async fn ensure_archive_catalog(
     pool: &DbPool,
     path: &str,
-    cat_type: i32,
+    cat_type: CatType,
     cat_size: i64,
     cat_mtime: &str,
 ) -> Result<i64, ScanError> {
     if let Some(cat) = catalogs::find_by_path(pool, path).await? {
-        if cat.cat_type != cat_type || cat.cat_size != cat_size || cat.cat_mtime != cat_mtime {
+        if cat.cat_type != cat_type as i32 || cat.cat_size != cat_size || cat.cat_mtime != cat_mtime
+        {
             catalogs::update_archive_meta(pool, cat.id, cat_type, cat_size, cat_mtime).await?;
         }
         return Ok(cat.id);
@@ -1032,14 +1007,7 @@ async fn ensure_archive_catalog(
     let parent_id = match parent_path {
         Some(p) if !p.as_os_str().is_empty() => {
             let pp = p.to_string_lossy().to_string();
-            Some(
-                Box::pin(ensure_catalog(
-                    pool,
-                    &pp,
-                    i32::from(models::CatType::Normal),
-                ))
-                .await?,
-            )
+            Some(Box::pin(ensure_catalog(pool, &pp, CatType::Normal)).await?)
         }
         _ => None,
     };
@@ -1086,7 +1054,7 @@ pub async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanErr
 async fn cached_ensure_catalog(
     ctx: &ScanContext,
     path: &str,
-    cat_type: i32,
+    cat_type: CatType,
 ) -> Result<i64, ScanError> {
     if let Some(id) = ctx.catalog_cache.get(path) {
         return Ok(*id);
@@ -1127,7 +1095,7 @@ async fn ctx_insert_book_with_meta(
     path: &str,
     format: &str,
     size: i64,
-    cat_type: i32,
+    cat_type: CatType,
     meta: &BookMeta,
 ) -> Result<i64, ScanError> {
     let title = if meta.title.is_empty() {
@@ -1218,7 +1186,7 @@ pub async fn insert_book_with_meta(
     path: &str,
     format: &str,
     size: i64,
-    cat_type: i32,
+    cat_type: CatType,
     meta: &BookMeta,
     covers_dir: &Path,
 ) -> Result<i64, ScanError> {
@@ -1318,7 +1286,7 @@ async fn try_skip_zip_archive(
     let Some(cat) = catalogs::find_by_path(pool, rel_zip).await? else {
         return Ok(false);
     };
-    if cat.cat_type != i32::from(models::CatType::Zip) || cat.cat_size != zip_size {
+    if CatType::try_from(cat.cat_type).ok() != Some(CatType::Zip) || cat.cat_size != zip_size {
         return Ok(false);
     }
     // When skip_unchanged is enabled, also compare mtime (skip this check if
@@ -1326,8 +1294,7 @@ async fn try_skip_zip_archive(
     if skip_unchanged && !mtime.is_empty() && !cat.cat_mtime.is_empty() && cat.cat_mtime != mtime {
         return Ok(false);
     }
-    let updated =
-        books::set_avail_by_path(pool, rel_zip, i32::from(models::AvailStatus::Confirmed)).await?;
+    let updated = books::set_avail_by_path(pool, rel_zip, AvailStatus::Confirmed).await?;
     Ok(updated > 0)
 }
 
@@ -1343,15 +1310,13 @@ async fn try_skip_inpx_archive(
     let Some(cat) = catalogs::find_by_path(pool, rel_inpx).await? else {
         return Ok(false);
     };
-    if cat.cat_type != i32::from(models::CatType::Inpx) || cat.cat_size != inpx_size {
+    if CatType::try_from(cat.cat_type).ok() != Some(CatType::Inpx) || cat.cat_size != inpx_size {
         return Ok(false);
     }
     if skip_unchanged && !mtime.is_empty() && !cat.cat_mtime.is_empty() && cat.cat_mtime != mtime {
         return Ok(false);
     }
-    let updated =
-        books::set_avail_for_inpx_dir(pool, inpx_dir, i32::from(models::AvailStatus::Confirmed))
-            .await?;
+    let updated = books::set_avail_for_inpx_dir(pool, inpx_dir, AvailStatus::Confirmed).await?;
     Ok(updated > 0)
 }
 
