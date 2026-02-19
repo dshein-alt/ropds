@@ -47,6 +47,12 @@ pub struct FeedBuilder {
     writer: Writer<Cursor<Vec<u8>>>,
 }
 
+impl Default for FeedBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A link to include in the feed or entry.
 pub struct Link {
     pub href: String,
