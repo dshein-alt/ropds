@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+  <description>
+    <title-info>
+      <genre>detective</genre>
+      <author>
+        <first-name>Cover</first-name>
+        <last-name>Less</last-name>
+      </author>
+      <book-title>No Cover Book</book-title>
+      <annotation><p>This book has all metadata except a cover image.</p></annotation>
+      <lang>en</lang>
+      <sequence name="Coverless Series" number="3"/>
+    </title-info>
+    <document-info>
+      <date>2025-06-01</date>
+    </document-info>
+  </description>
+  <body>
+    <section>
+      <title><p>Chapter 1</p></title>
+      <p>A detective story without a cover.</p>
+    </section>
+  </body>
+</FictionBook>

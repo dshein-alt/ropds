@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+  <description>
+    <title-info>
+      <author>
+        <first-name>Solo</first-name>
+        <last-name>Author</last-name>
+      </author>
+      <book-title>Book Without Genre</book-title>
+      <annotation><p>This book has an author and annotation but no genre or series.</p></annotation>
+      <lang>ru</lang>
+    </title-info>
+    <document-info>
+      <date>2024-03-15</date>
+    </document-info>
+  </description>
+  <body>
+    <section>
+      <p>Content of a book without genre metadata.</p>
+    </section>
+  </body>
+</FictionBook>
