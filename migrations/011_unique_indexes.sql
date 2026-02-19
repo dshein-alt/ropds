@@ -16,7 +16,8 @@ UPDATE book_series SET series_id = (
 DELETE FROM series WHERE id NOT IN (SELECT MIN(id) FROM series GROUP BY ser_name);
 
 -- Deduplicate catalogs (should already be unique in practice)
-DELETE FROM catalogs WHERE id NOT IN (SELECT MIN(id) FROM catalogs GROUP BY path);
+-- Note: "path" is a reserved word in MariaDB 11+, so we table-qualify it.
+DELETE FROM catalogs WHERE id NOT IN (SELECT MIN(id) FROM catalogs GROUP BY catalogs.path);
 
 -- Replace non-unique index with unique one
 DROP INDEX IF EXISTS idx_catalogs_path;

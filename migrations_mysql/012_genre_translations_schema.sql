@@ -7,7 +7,7 @@
 
 -- 1. Create genre_sections table
 CREATE TABLE IF NOT EXISTS genre_sections (
-    id   BIGINT PRIMARY KEY,
+    id   BIGINT PRIMARY KEY AUTO_INCREMENT,
     code VARCHAR(255) NOT NULL UNIQUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS genre_section_translations (
     id         BIGINT PRIMARY KEY AUTO_INCREMENT,
     section_id BIGINT NOT NULL,
     lang       VARCHAR(16) NOT NULL,
-    name       TEXT    NOT NULL,
+    name       VARCHAR(512) NOT NULL,
     UNIQUE(section_id, lang),
     FOREIGN KEY (section_id) REFERENCES genre_sections(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS genre_translations (
     id       BIGINT PRIMARY KEY AUTO_INCREMENT,
     genre_id BIGINT NOT NULL,
     lang     VARCHAR(16) NOT NULL,
-    name     TEXT    NOT NULL,
+    name     VARCHAR(512) NOT NULL,
     UNIQUE(genre_id, lang),
     FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

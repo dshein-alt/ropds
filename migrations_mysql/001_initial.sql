@@ -1,10 +1,12 @@
 -- Core schema for ropds (Rust OPDS server) — MySQL/MariaDB version
+-- Note: Use VARCHAR instead of TEXT where possible to avoid MariaDB TEXT→BLOB
+-- wire-protocol issue with sqlx. Keep annotation as TEXT (stored off-page).
 
 CREATE TABLE IF NOT EXISTS catalogs (
     id          BIGINT PRIMARY KEY AUTO_INCREMENT,
     parent_id   BIGINT,
-    path        TEXT    NOT NULL DEFAULT '',
-    cat_name    TEXT    NOT NULL DEFAULT '',
+    path        VARCHAR(2048) NOT NULL DEFAULT '',
+    cat_name    VARCHAR(255)  NOT NULL DEFAULT '',
     cat_type    INTEGER NOT NULL DEFAULT 0,  -- 0=normal, 1=zip, 2=inpx, 3=inp
     FOREIGN KEY (parent_id) REFERENCES catalogs(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -14,21 +16,21 @@ CREATE INDEX idx_catalogs_path   ON catalogs(path(255));
 CREATE TABLE IF NOT EXISTS books (
     id              BIGINT    PRIMARY KEY AUTO_INCREMENT,
     catalog_id      BIGINT    NOT NULL,
-    filename        TEXT      NOT NULL DEFAULT '',
-    path            TEXT      NOT NULL DEFAULT '',
-    format          VARCHAR(64) NOT NULL DEFAULT '',
-    title           TEXT      NOT NULL DEFAULT '',
-    search_title    TEXT      NOT NULL DEFAULT '',
-    annotation      TEXT      NOT NULL DEFAULT '',
-    docdate         TEXT      NOT NULL DEFAULT '',
-    lang            VARCHAR(16) NOT NULL DEFAULT 'un',
+    filename        VARCHAR(255)  NOT NULL DEFAULT '',
+    path            VARCHAR(2048) NOT NULL DEFAULT '',
+    format          VARCHAR(64)   NOT NULL DEFAULT '',
+    title           VARCHAR(512)  NOT NULL DEFAULT '',
+    search_title    VARCHAR(512)  NOT NULL DEFAULT '',
+    annotation      VARCHAR(8000) NOT NULL DEFAULT '',
+    docdate         VARCHAR(64)   NOT NULL DEFAULT '',
+    lang            VARCHAR(16)   NOT NULL DEFAULT 'un',
     lang_code       INTEGER   NOT NULL DEFAULT 9,  -- 1=Cyrillic, 2=Latin, 3=Digit, 9=Other
     size            INTEGER   NOT NULL DEFAULT 0,
     avail           INTEGER   NOT NULL DEFAULT 1,  -- 0=deleted, 1=unverified, 2=confirmed
     cat_type        INTEGER   NOT NULL DEFAULT 0,
     cover           INTEGER   NOT NULL DEFAULT 0,
-    cover_type      TEXT      NOT NULL DEFAULT '',
-    reg_date        TEXT      NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    cover_type      VARCHAR(64)   NOT NULL DEFAULT '',
+    reg_date        VARCHAR(64)   NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     FOREIGN KEY (catalog_id) REFERENCES catalogs(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE INDEX idx_books_catalog    ON books(catalog_id);
@@ -40,8 +42,8 @@ CREATE INDEX idx_books_path_file  ON books(path(255), filename(255));
 
 CREATE TABLE IF NOT EXISTS authors (
     id                  BIGINT PRIMARY KEY AUTO_INCREMENT,
-    full_name           TEXT    NOT NULL DEFAULT '',
-    search_full_name    TEXT    NOT NULL DEFAULT '',
+    full_name           VARCHAR(512) NOT NULL DEFAULT '',
+    search_full_name    VARCHAR(512) NOT NULL DEFAULT '',
     lang_code           INTEGER NOT NULL DEFAULT 9
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE INDEX idx_authors_search    ON authors(search_full_name(255));
@@ -50,16 +52,16 @@ CREATE INDEX idx_authors_lang_code ON authors(lang_code);
 CREATE TABLE IF NOT EXISTS genres (
     id          BIGINT PRIMARY KEY AUTO_INCREMENT,
     code        VARCHAR(255) NOT NULL UNIQUE,
-    section     TEXT    NOT NULL DEFAULT '',
-    subsection  TEXT    NOT NULL DEFAULT ''
+    section     VARCHAR(512) NOT NULL DEFAULT '',
+    subsection  VARCHAR(512) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE INDEX idx_genres_code    ON genres(code);
 CREATE INDEX idx_genres_section ON genres(section(255));
 
 CREATE TABLE IF NOT EXISTS series (
     id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-    ser_name    TEXT    NOT NULL DEFAULT '',
-    search_ser  TEXT    NOT NULL DEFAULT '',
+    ser_name    VARCHAR(512) NOT NULL DEFAULT '',
+    search_ser  VARCHAR(512) NOT NULL DEFAULT '',
     lang_code   INTEGER NOT NULL DEFAULT 9
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE INDEX idx_series_search    ON series(search_ser(255));
@@ -99,16 +101,16 @@ CREATE INDEX idx_book_series_series        ON book_series(series_id);
 CREATE TABLE IF NOT EXISTS users (
     id              BIGINT    PRIMARY KEY AUTO_INCREMENT,
     username        VARCHAR(255) NOT NULL UNIQUE,
-    password_hash   TEXT      NOT NULL DEFAULT '',
+    password_hash   VARCHAR(512) NOT NULL DEFAULT '',
     is_superuser    INTEGER   NOT NULL DEFAULT 0,
-    created_at      TEXT      NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    created_at      VARCHAR(64)  NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS bookshelves (
     id          BIGINT    PRIMARY KEY AUTO_INCREMENT,
     user_id     BIGINT    NOT NULL,
     book_id     BIGINT    NOT NULL,
-    read_time   TEXT      NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    read_time   VARCHAR(64) NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -118,7 +120,7 @@ CREATE INDEX idx_bookshelves_user          ON bookshelves(user_id);
 CREATE TABLE IF NOT EXISTS counters (
     name        VARCHAR(255) PRIMARY KEY,
     value       INTEGER   NOT NULL DEFAULT 0,
-    updated_at  TEXT      NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    updated_at  VARCHAR(64) NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Initialize default counters
