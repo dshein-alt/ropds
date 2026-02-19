@@ -37,7 +37,7 @@ pub async fn download(
 
     // Fire-and-forget bookshelf tracking
     if let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, &headers).await {
-        let _ = bookshelf::upsert(&state.db, user_id, book_id, state.backend).await;
+        let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
     }
 
     let download_name = title_to_filename(&book.title, &book.format, &book.filename);

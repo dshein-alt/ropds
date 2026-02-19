@@ -710,15 +710,14 @@ pub async fn publish(
     };
 
     // Ensure root catalog exists (empty path = root)
-    let catalog_id =
-        match crate::scanner::ensure_catalog(&state.db, "", CatType::Normal, state.backend).await {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::error!("Failed to ensure catalog: {e}");
-                let _ = std::fs::remove_file(&dest_path);
-                return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
-            }
-        };
+    let catalog_id = match crate::scanner::ensure_catalog(&state.db, "", CatType::Normal).await {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!("Failed to ensure catalog: {e}");
+            let _ = std::fs::remove_file(&dest_path);
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+        }
+    };
 
     let book_id = match crate::scanner::insert_book_with_meta(
         &state.db,
@@ -730,7 +729,6 @@ pub async fn publish(
         CatType::Normal,
         &meta,
         &state.config.library.covers_path,
-        state.backend,
     )
     .await
     {

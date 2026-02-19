@@ -765,7 +765,6 @@ pub async fn bookshelf_feed(
         false,
         max_items,
         offset,
-        state.backend,
     )
     .await
     .unwrap_or_default();

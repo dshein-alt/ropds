@@ -13,9 +13,9 @@ use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
 use crate::config::Config;
+use crate::db::DbPool;
 use crate::db::models::{AvailStatus, CatType};
 use crate::db::queries::{authors, books, catalogs, counters, genres, series};
-use crate::db::{DbBackend, DbPool};
 
 use parsers::{BookMeta, detect_lang_code, normalise_author_name};
 
@@ -99,11 +99,7 @@ pub struct ScanStatsSnapshot {
 // ---------------------------------------------------------------------------
 
 /// Run a full scan of the library directory.
-pub async fn run_scan(
-    pool: &DbPool,
-    config: &Config,
-    backend: DbBackend,
-) -> Result<ScanStatsSnapshot, ScanError> {
+pub async fn run_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, ScanError> {
     // Acquire scan lock
     if SCAN_LOCK
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -112,7 +108,7 @@ pub async fn run_scan(
         return Err(ScanError::AlreadyRunning);
     }
 
-    let result = do_scan(pool, config, backend).await;
+    let result = do_scan(pool, config).await;
 
     // Release lock
     SCAN_LOCK.store(false, Ordering::SeqCst);
@@ -126,7 +122,6 @@ pub async fn run_scan(
 
 struct ScanContext {
     pool: DbPool,
-    backend: DbBackend,
     root: PathBuf,
     covers_dir: PathBuf,
     extensions: HashSet<String>,
@@ -145,11 +140,7 @@ struct ScanContext {
 // do_scan — internal scan logic
 // ---------------------------------------------------------------------------
 
-async fn do_scan(
-    pool: &DbPool,
-    config: &Config,
-    backend: DbBackend,
-) -> Result<ScanStatsSnapshot, ScanError> {
+async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, ScanError> {
     let root = &config.library.root_path;
     let covers_dir = &config.library.covers_path;
     let extensions: HashSet<String> = config
@@ -184,7 +175,6 @@ async fn do_scan(
 
     let ctx = ScanContext {
         pool: pool.clone(),
-        backend,
         root: root.clone(),
         covers_dir: covers_dir.clone(),
         extensions,
@@ -539,15 +529,8 @@ async fn process_zip(
         }
     }
 
-    let catalog_id = ensure_archive_catalog(
-        &ctx.pool,
-        &rel_zip,
-        CatType::Zip,
-        zip_size,
-        mtime,
-        ctx.backend,
-    )
-    .await?;
+    let catalog_id =
+        ensure_archive_catalog(&ctx.pool, &rel_zip, CatType::Zip, zip_size, mtime).await?;
 
     // Read ZIP contents in a blocking task
     let zip_path_buf = zip_path.to_path_buf();
@@ -636,15 +619,7 @@ async fn process_inpx(
         return Ok(());
     }
 
-    ensure_archive_catalog(
-        &ctx.pool,
-        rel_path,
-        CatType::Inpx,
-        inpx_size,
-        mtime,
-        ctx.backend,
-    )
-    .await?;
+    ensure_archive_catalog(&ctx.pool, rel_path, CatType::Inpx, inpx_size, mtime).await?;
 
     let inpx_path_buf = inpx_path.to_path_buf();
     let records = tokio::task::spawn_blocking(move || {
@@ -985,7 +960,6 @@ pub async fn ensure_catalog(
     pool: &DbPool,
     path: &str,
     cat_type: CatType,
-    backend: DbBackend,
 ) -> Result<i64, ScanError> {
     if let Some(cat) = catalogs::find_by_path(pool, path).await? {
         return Ok(cat.id);
@@ -997,7 +971,7 @@ pub async fn ensure_catalog(
         Some(p) if !p.as_os_str().is_empty() => {
             let pp = p.to_string_lossy().to_string();
             // Recursively ensure parent exists
-            Some(Box::pin(ensure_catalog(pool, &pp, cat_type, backend)).await?)
+            Some(Box::pin(ensure_catalog(pool, &pp, cat_type)).await?)
         }
         _ => None,
     };
@@ -1008,7 +982,7 @@ pub async fn ensure_catalog(
         .to_string_lossy()
         .to_string();
 
-    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, 0, "", backend).await?;
+    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, 0, "").await?;
     Ok(id)
 }
 
@@ -1019,7 +993,6 @@ async fn ensure_archive_catalog(
     cat_type: CatType,
     cat_size: i64,
     cat_mtime: &str,
-    backend: DbBackend,
 ) -> Result<i64, ScanError> {
     if let Some(cat) = catalogs::find_by_path(pool, path).await? {
         if cat.cat_type != cat_type as i32 || cat.cat_size != cat_size || cat.cat_mtime != cat_mtime
@@ -1034,7 +1007,7 @@ async fn ensure_archive_catalog(
     let parent_id = match parent_path {
         Some(p) if !p.as_os_str().is_empty() => {
             let pp = p.to_string_lossy().to_string();
-            Some(Box::pin(ensure_catalog(pool, &pp, CatType::Normal, backend)).await?)
+            Some(Box::pin(ensure_catalog(pool, &pp, CatType::Normal)).await?)
         }
         _ => None,
     };
@@ -1046,39 +1019,31 @@ async fn ensure_archive_catalog(
         .to_string();
 
     let id = catalogs::insert(
-        pool, parent_id, path, &cat_name, cat_type, cat_size, cat_mtime, backend,
+        pool, parent_id, path, &cat_name, cat_type, cat_size, cat_mtime,
     )
     .await?;
     Ok(id)
 }
 
 /// Find or create an author by name.
-pub async fn ensure_author(
-    pool: &DbPool,
-    full_name: &str,
-    backend: DbBackend,
-) -> Result<i64, ScanError> {
+pub async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError> {
     if let Some(a) = authors::find_by_name(pool, full_name).await? {
         return Ok(a.id);
     }
     let search = full_name.to_uppercase();
     let lang_code = detect_lang_code(full_name);
-    let id = authors::insert(pool, full_name, &search, lang_code, backend).await?;
+    let id = authors::insert(pool, full_name, &search, lang_code).await?;
     Ok(id)
 }
 
 /// Find or create a series by name.
-pub async fn ensure_series(
-    pool: &DbPool,
-    ser_name: &str,
-    backend: DbBackend,
-) -> Result<i64, ScanError> {
+pub async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> {
     if let Some(s) = series::find_by_name(pool, ser_name).await? {
         return Ok(s.id);
     }
     let search = ser_name.to_uppercase();
     let lang_code = detect_lang_code(ser_name);
-    let id = series::insert(pool, ser_name, &search, lang_code, backend).await?;
+    let id = series::insert(pool, ser_name, &search, lang_code).await?;
     Ok(id)
 }
 
@@ -1094,7 +1059,7 @@ async fn cached_ensure_catalog(
     if let Some(id) = ctx.catalog_cache.get(path) {
         return Ok(*id);
     }
-    let id = ensure_catalog(&ctx.pool, path, cat_type, ctx.backend).await?;
+    let id = ensure_catalog(&ctx.pool, path, cat_type).await?;
     ctx.catalog_cache.insert(path.to_string(), id);
     Ok(id)
 }
@@ -1103,7 +1068,7 @@ async fn cached_ensure_author(ctx: &ScanContext, full_name: &str) -> Result<i64,
     if let Some(id) = ctx.author_cache.get(full_name) {
         return Ok(*id);
     }
-    let id = ensure_author(&ctx.pool, full_name, ctx.backend).await?;
+    let id = ensure_author(&ctx.pool, full_name).await?;
     ctx.author_cache.insert(full_name.to_string(), id);
     Ok(id)
 }
@@ -1112,7 +1077,7 @@ async fn cached_ensure_series(ctx: &ScanContext, ser_name: &str) -> Result<i64, 
     if let Some(id) = ctx.series_cache.get(ser_name) {
         return Ok(*id);
     }
-    let id = ensure_series(&ctx.pool, ser_name, ctx.backend).await?;
+    let id = ensure_series(&ctx.pool, ser_name).await?;
     ctx.series_cache.insert(ser_name.to_string(), id);
     Ok(id)
 }
@@ -1183,7 +1148,7 @@ async fn ctx_insert_book_with_meta(
     // Link authors
     if meta.authors.is_empty() {
         let author_id = cached_ensure_author(ctx, "Unknown").await?;
-        authors::link_book(&ctx.pool, book_id, author_id, ctx.backend).await?;
+        authors::link_book(&ctx.pool, book_id, author_id).await?;
     } else {
         for author_name in &meta.authors {
             let name = normalise_author_name(author_name);
@@ -1191,13 +1156,13 @@ async fn ctx_insert_book_with_meta(
                 continue;
             }
             let author_id = cached_ensure_author(ctx, &name).await?;
-            authors::link_book(&ctx.pool, book_id, author_id, ctx.backend).await?;
+            authors::link_book(&ctx.pool, book_id, author_id).await?;
         }
     }
 
     // Link genres
     for genre_code in &meta.genres {
-        genres::link_book_by_code(&ctx.pool, book_id, genre_code, ctx.backend).await?;
+        genres::link_book_by_code(&ctx.pool, book_id, genre_code).await?;
     }
 
     // Link series
@@ -1205,14 +1170,7 @@ async fn ctx_insert_book_with_meta(
         && !ser_title.is_empty()
     {
         let series_id = cached_ensure_series(ctx, ser_title).await?;
-        series::link_book(
-            &ctx.pool,
-            book_id,
-            series_id,
-            meta.series_index,
-            ctx.backend,
-        )
-        .await?;
+        series::link_book(&ctx.pool, book_id, series_id, meta.series_index).await?;
     }
 
     Ok(book_id)
@@ -1231,7 +1189,6 @@ pub async fn insert_book_with_meta(
     cat_type: CatType,
     meta: &BookMeta,
     covers_dir: &Path,
-    backend: DbBackend,
 ) -> Result<i64, ScanError> {
     let title = if meta.title.is_empty() {
         Path::new(filename)
@@ -1283,30 +1240,30 @@ pub async fn insert_book_with_meta(
     // Link authors
     if meta.authors.is_empty() {
         // Ensure at least one author
-        let author_id = ensure_author(pool, "Unknown", backend).await?;
-        authors::link_book(pool, book_id, author_id, backend).await?;
+        let author_id = ensure_author(pool, "Unknown").await?;
+        authors::link_book(pool, book_id, author_id).await?;
     } else {
         for author_name in &meta.authors {
             let name = normalise_author_name(author_name);
             if name.is_empty() {
                 continue;
             }
-            let author_id = ensure_author(pool, &name, backend).await?;
-            authors::link_book(pool, book_id, author_id, backend).await?;
+            let author_id = ensure_author(pool, &name).await?;
+            authors::link_book(pool, book_id, author_id).await?;
         }
     }
 
     // Link genres
     for genre_code in &meta.genres {
-        genres::link_book_by_code(pool, book_id, genre_code, backend).await?;
+        genres::link_book_by_code(pool, book_id, genre_code).await?;
     }
 
     // Link series
     if let Some(ref ser_title) = meta.series_title
         && !ser_title.is_empty()
     {
-        let series_id = ensure_series(pool, ser_title, backend).await?;
-        series::link_book(pool, book_id, series_id, meta.series_index, backend).await?;
+        let series_id = ensure_series(pool, ser_title).await?;
+        series::link_book(pool, book_id, series_id, meta.series_index).await?;
     }
 
     Ok(book_id)
@@ -1515,38 +1472,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_ensure_catalog_author_series() {
-        let (pool, _) = create_test_pool().await;
-        let cat_id = ensure_catalog(&pool, "a/b", CatType::Normal, DbBackend::Sqlite)
-            .await
-            .unwrap();
+        let pool = create_test_pool().await;
+        let cat_id = ensure_catalog(&pool, "a/b", CatType::Normal).await.unwrap();
         assert!(cat_id > 0);
 
-        let parent: Option<(i64,)> = sqlx::query_as("SELECT id FROM catalogs WHERE path = 'a'")
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
+        let parent: Option<(i64,)> =
+            sqlx::query_as(&*pool.sql("SELECT id FROM catalogs WHERE path = ?"))
+                .bind("a")
+                .fetch_optional(pool.inner())
+                .await
+                .unwrap();
         assert!(parent.is_some());
 
-        let a1 = ensure_author(&pool, "Isaac Asimov", DbBackend::Sqlite)
-            .await
-            .unwrap();
-        let a2 = ensure_author(&pool, "Isaac Asimov", DbBackend::Sqlite)
-            .await
-            .unwrap();
+        let a1 = ensure_author(&pool, "Isaac Asimov").await.unwrap();
+        let a2 = ensure_author(&pool, "Isaac Asimov").await.unwrap();
         assert_eq!(a1, a2);
 
-        let s1 = ensure_series(&pool, "Foundation", DbBackend::Sqlite)
-            .await
-            .unwrap();
-        let s2 = ensure_series(&pool, "Foundation", DbBackend::Sqlite)
-            .await
-            .unwrap();
+        let s1 = ensure_series(&pool, "Foundation").await.unwrap();
+        let s2 = ensure_series(&pool, "Foundation").await.unwrap();
         assert_eq!(s1, s2);
     }
 
     #[tokio::test]
     async fn test_run_scan_already_running() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let cfg: crate::config::Config = toml::from_str(
             r#"
 [server]
@@ -1560,7 +1509,7 @@ root_path = "/tmp"
         .unwrap();
 
         SCAN_LOCK.store(true, Ordering::SeqCst);
-        let res = run_scan(&pool, &cfg, DbBackend::Sqlite).await;
+        let res = run_scan(&pool, &cfg).await;
         SCAN_LOCK.store(false, Ordering::SeqCst);
         assert!(matches!(res, Err(ScanError::AlreadyRunning)));
     }

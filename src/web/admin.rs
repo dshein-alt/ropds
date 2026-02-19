@@ -469,7 +469,6 @@ pub async fn update_book_genres(
         &state.db,
         payload.book_id,
         &payload.genre_ids,
-        state.backend,
     )
     .await
     {
@@ -545,7 +544,7 @@ pub async fn update_book_authors(
         if trimmed.is_empty() {
             continue;
         }
-        match crate::scanner::ensure_author(&state.db, trimmed, state.backend).await {
+        match crate::scanner::ensure_author(&state.db, trimmed).await {
             Ok(id) => {
                 if !all_ids.contains(&id) {
                     all_ids.push(id);
@@ -559,7 +558,7 @@ pub async fn update_book_authors(
 
     // A book must have at least one author
     if all_ids.is_empty() {
-        match crate::scanner::ensure_author(&state.db, "Unknown", state.backend).await {
+        match crate::scanner::ensure_author(&state.db, "Unknown").await {
             Ok(id) => all_ids.push(id),
             Err(e) => {
                 tracing::error!("Failed to ensure fallback author: {e}");
@@ -572,13 +571,7 @@ pub async fn update_book_authors(
         }
     }
 
-    match crate::db::queries::authors::set_book_authors(
-        &state.db,
-        payload.book_id,
-        &all_ids,
-        state.backend,
-    )
-    .await
+    match crate::db::queries::authors::set_book_authors(&state.db, payload.book_id, &all_ids).await
     {
         Ok(()) => {
             let updated = crate::db::queries::authors::get_for_book(&state.db, payload.book_id)
@@ -751,9 +744,8 @@ pub async fn scan_now(
 
     let pool = state.db.clone();
     let config = (*state.config).clone();
-    let backend = state.backend;
     tokio::spawn(async move {
-        match crate::scanner::run_scan(&pool, &config, backend).await {
+        match crate::scanner::run_scan(&pool, &config).await {
             Ok(ref stats) => {
                 tracing::info!(
                     "Manual scan finished: {} added, {} skipped, {} deleted, {} errors",
@@ -886,23 +878,10 @@ pub async fn upsert_genre_translation(
     }
 
     let result = if let Some(section_id) = payload.section_id {
-        crate::db::queries::genres::upsert_section_translation(
-            &state.db,
-            section_id,
-            lang,
-            name,
-            state.backend,
-        )
-        .await
+        crate::db::queries::genres::upsert_section_translation(&state.db, section_id, lang, name)
+            .await
     } else if let Some(genre_id) = payload.genre_id {
-        crate::db::queries::genres::upsert_genre_translation(
-            &state.db,
-            genre_id,
-            lang,
-            name,
-            state.backend,
-        )
-        .await
+        crate::db::queries::genres::upsert_genre_translation(&state.db, genre_id, lang, name).await
     } else {
         return (
             StatusCode::BAD_REQUEST,

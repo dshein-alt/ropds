@@ -804,7 +804,7 @@ pub async fn web_download(
         .get("session")
         .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
     {
-        let _ = bookshelf::upsert(&state.db, user_id, book_id, state.backend).await;
+        let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
     }
 
     let download_name =
@@ -910,7 +910,7 @@ pub async fn bookshelf_toggle(
     if on_shelf {
         let _ = bookshelf::delete_one(&state.db, user_id, form.book_id).await;
     } else {
-        let _ = bookshelf::upsert(&state.db, user_id, form.book_id, state.backend).await;
+        let _ = bookshelf::upsert(&state.db, user_id, form.book_id).await;
     }
 
     if is_ajax {
@@ -947,17 +947,9 @@ async fn fetch_bookshelf_views(
     offset: i32,
     lang: &str,
 ) -> Vec<BookView> {
-    let raw_books = bookshelf::get_by_user(
-        &state.db,
-        user_id,
-        sort,
-        ascending,
-        limit,
-        offset,
-        state.backend,
-    )
-    .await
-    .unwrap_or_default();
+    let raw_books = bookshelf::get_by_user(&state.db, user_id, sort, ascending, limit, offset)
+        .await
+        .unwrap_or_default();
     let read_times = bookshelf::get_read_times(&state.db, user_id)
         .await
         .unwrap_or_default();
@@ -1159,7 +1151,6 @@ mod tests {
         Config, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig, ServerConfig,
         UploadConfig, WebConfig,
     };
-    use crate::db::DbBackend;
     use crate::db::create_test_pool;
     use crate::db::models::CatType;
     use crate::db::queries::books;
@@ -1220,29 +1211,24 @@ mod tests {
             },
         };
 
-        let (db, _) = create_test_pool().await;
+        let db = create_test_pool().await;
         let tera = tera::Tera::default();
         let mut translations = Translations::new();
         translations.insert("en".to_string(), serde_json::json!({"web": {}}));
 
-        AppState::new(
-            config,
-            db,
-            DbBackend::Sqlite,
-            tera,
-            translations,
-            false,
-            false,
-        )
+        AppState::new(config, db, tera, translations, false, false)
     }
 
     async fn ensure_catalog(pool: &crate::db::DbPool) -> i64 {
-        sqlx::query("INSERT INTO catalogs (path, cat_name) VALUES ('/web-tests', 'web-tests')")
-            .execute(pool)
+        sqlx::query(&pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, ?)"))
+            .bind("/web-tests")
+            .bind("web-tests")
+            .execute(pool.inner())
             .await
             .unwrap();
-        let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = '/web-tests'")
-            .fetch_one(pool)
+        let row: (i64,) = sqlx::query_as(&pool.sql("SELECT id FROM catalogs WHERE path = ?"))
+            .bind("/web-tests")
+            .fetch_one(pool.inner())
             .await
             .unwrap();
         row.0

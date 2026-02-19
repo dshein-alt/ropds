@@ -55,9 +55,9 @@ pub async fn basic_auth_layer(
 /// Verify username/password against the users table using argon2.
 async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: &str) -> bool {
     let result: Result<Option<(String,)>, _> =
-        sqlx::query_as("SELECT password_hash FROM users WHERE username = ?")
+        sqlx::query_as(&pool.sql("SELECT password_hash FROM users WHERE username = ?"))
             .bind(username)
-            .fetch_optional(pool)
+            .fetch_optional(pool.inner())
             .await;
 
     match result {
@@ -87,9 +87,9 @@ pub async fn get_user_id_from_headers(
     let (username, _password) = credentials.split_once(':')?;
 
     let result: Result<Option<(i64,)>, _> =
-        sqlx::query_as("SELECT id FROM users WHERE username = ?")
+        sqlx::query_as(&pool.sql("SELECT id FROM users WHERE username = ?"))
             .bind(username)
-            .fetch_optional(pool)
+            .fetch_optional(pool.inner())
             .await;
     result.ok().flatten().map(|(id,)| id)
 }
@@ -119,14 +119,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_credentials_and_get_user_id_from_headers() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let hash = crate::password::hash("secret123");
-        sqlx::query("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)")
-            .bind("alice")
-            .bind(hash)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            &*pool
+                .sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)"),
+        )
+        .bind("alice")
+        .bind(hash)
+        .execute(pool.inner())
+        .await
+        .unwrap();
 
         assert!(verify_credentials(&pool, "alice", "secret123").await);
         assert!(!verify_credentials(&pool, "alice", "wrong").await);
@@ -142,7 +145,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_user_id_from_headers_invalid_inputs() {
-        let (pool, _) = create_test_pool().await;
+        let pool = create_test_pool().await;
         let mut headers = HeaderMap::new();
 
         assert_eq!(get_user_id_from_headers(&pool, &headers).await, None);
