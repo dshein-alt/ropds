@@ -1,0 +1,5 @@
+services:
+  ropds:
+    volumes:
+      - ${ROPDS_LIBRARY_ROOT:-../library}:/library:rw
+      - ./config/config.postgres.external.toml:/app/config/config.toml:ro

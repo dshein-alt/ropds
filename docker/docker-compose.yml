@@ -1,0 +1,26 @@
+services:
+  ropds:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ropds:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ROPDS_CONFIG: /app/config/config.toml
+      ROPDS_DB_WAIT_TIMEOUT: ${ROPDS_DB_WAIT_TIMEOUT:-60}
+      ROPDS_ADMIN_INIT_ONCE: ${ROPDS_ADMIN_INIT_ONCE:-true}
+      ROPDS_ADMIN_PASSWORD: ${ROPDS_ADMIN_PASSWORD:-}
+      ROPDS_DB_HOST: ${ROPDS_DB_HOST:-}
+      ROPDS_DB_PORT: ${ROPDS_DB_PORT:-}
+    ports:
+      - "${ROPDS_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    volumes:
+      - ${ROPDS_LIBRARY_ROOT:-../library}:/library:rw

@@ -1,0 +1,20 @@
+# Build context is repository root. Keep only files needed for image build.
+target/
+.git/
+.claude/
+devel/
+docs/
+tests/
+
+# Local artifacts
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker runtime/docs not needed in image build context
+docker/db/
+docker/README.md
+docker/README_RU.md
+docker/.env
+docker/.env.example
+docker/docker-compose*.yml

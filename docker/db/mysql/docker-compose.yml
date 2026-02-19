@@ -1,0 +1,26 @@
+services:
+  mysql:
+    image: docker.io/library/mariadb:11
+    container_name: ropds-mysql
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-ropds}
+      MARIADB_USER: ${MARIADB_USER:-ropds}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-ropds_change_me}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root_change_me}
+    volumes:
+      - ropds_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ropds-db-net
+
+volumes:
+  ropds_mysql_data:
+
+networks:
+  ropds-db-net:
+    name: ropds-db-net

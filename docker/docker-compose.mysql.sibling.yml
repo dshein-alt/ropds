@@ -1,0 +1,11 @@
+services:
+  ropds:
+    volumes:
+      - ${ROPDS_LIBRARY_ROOT:-../library}:/library:rw
+      - ./config/config.mysql.sibling.toml:/app/config/config.toml:ro
+    networks:
+      - ropds-db-net
+
+networks:
+  ropds-db-net:
+    name: ropds-db-net

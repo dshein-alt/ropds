@@ -1,0 +1,9 @@
+services:
+  ropds:
+    volumes:
+      - ${ROPDS_LIBRARY_ROOT:-../library}:/library:rw
+      - ./config/config.toml.example:/app/config/config.toml:ro
+      - ropds_sqlite_data:/var/lib/ropds/sqlite
+
+volumes:
+  ropds_sqlite_data:

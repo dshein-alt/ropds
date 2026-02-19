@@ -1,0 +1,46 @@
+[server]
+host = "0.0.0.0"
+port = 8081
+log_level = "info"
+session_secret = "change-me-to-a-random-string"
+session_ttl_hours = 24
+
+[library]
+root_path = "/library"
+covers_path = "/library/covers"
+book_extensions = ["fb2", "epub", "mobi", "pdf", "djvu", "doc", "docx", "zip"]
+scan_zip = true
+zip_codepage = "cp866"
+inpx_enable = false
+
+[database]
+url = "mysql://ropds:ropds_change_me@mysql:3306/ropds"
+
+[opds]
+title = "Rust OPDS Server"
+subtitle = "Personal Library"
+max_items = 30
+split_items = 300
+auth_required = true
+show_covers = true
+alphabet_menu = true
+hide_doubles = true
+
+[scanner]
+schedule_minutes = [0]
+schedule_hours = [0, 12]
+schedule_day_of_week = []
+delete_logical = false
+skip_unchanged = true
+test_zip = false
+test_files = false
+workers_num = 1
+
+[web]
+language = "en"
+theme = "light"
+
+[upload]
+allow_upload = true
+upload_path = "/library/uploads"
+max_upload_size_mb = 100

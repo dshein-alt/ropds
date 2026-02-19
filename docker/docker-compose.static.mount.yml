@@ -1,0 +1,4 @@
+services:
+  ropds:
+    volumes:
+      - ../static:/app/static:ro
