@@ -77,8 +77,7 @@ pub fn read_book_file(
             let zip_path = root.join(book_path);
             let file = std::fs::File::open(&zip_path)?;
             let reader = std::io::BufReader::new(file);
-            let mut archive = zip::ZipArchive::new(reader)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let mut archive = zip::ZipArchive::new(reader).map_err(std::io::Error::other)?;
 
             let mut entry = archive
                 .by_name(filename)
@@ -88,10 +87,9 @@ pub fn read_book_file(
             entry.read_to_end(&mut data)?;
             Ok(data)
         }
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Unknown cat_type: {cat_type}"),
-        )),
+        Err(_) => Err(std::io::Error::other(format!(
+            "Unknown cat_type: {cat_type}"
+        ))),
     }
 }
 

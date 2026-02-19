@@ -50,10 +50,10 @@ pub async fn insert(
     .bind(cat_mtime)
     .execute(pool)
     .await?;
-    if let Some(id) = result.last_insert_id() {
-        if id > 0 {
-            return Ok(id);
-        }
+    if let Some(id) = result.last_insert_id()
+        && id > 0
+    {
+        return Ok(id);
     }
     // Fallback: query back by path (INSERT OR IGNORE returns 0 on conflict)
     let row: (i64,) = sqlx::query_as("SELECT id FROM catalogs WHERE path = ?")

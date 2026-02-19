@@ -80,19 +80,19 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     let mut display_name = String::new();
     let mut username = String::new();
     let mut user_allow_upload: i32 = 0;
-    if let Some(cookie) = jar.get("session") {
-        if let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret) {
-            is_authenticated = 1;
-            if let Ok(Some(user)) = crate::db::queries::users::get_by_id(&state.db, user_id).await {
-                if user.is_superuser == 1 {
-                    is_superuser = 1;
-                }
-                display_name = user.display_name;
-                username = user.username;
-                user_allow_upload = user.allow_upload;
+    if let Some(cookie) = jar.get("session")
+        && let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret)
+    {
+        is_authenticated = 1;
+        if let Ok(Some(user)) = crate::db::queries::users::get_by_id(&state.db, user_id).await {
+            if user.is_superuser == 1 {
+                is_superuser = 1;
             }
-            ctx.insert("csrf_token", &generate_csrf_token(cookie.value(), secret));
+            display_name = user.display_name;
+            username = user.username;
+            user_allow_upload = user.allow_upload;
         }
+        ctx.insert("csrf_token", &generate_csrf_token(cookie.value(), secret));
     }
     ctx.insert("is_superuser", &is_superuser);
     ctx.insert("is_authenticated", &is_authenticated);

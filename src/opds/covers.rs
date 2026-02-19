@@ -174,8 +174,7 @@ fn read_book_file(
             let zip_path = root.join(book_path);
             let file = std::fs::File::open(&zip_path)?;
             let reader = BufReader::new(file);
-            let mut archive = zip::ZipArchive::new(reader)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let mut archive = zip::ZipArchive::new(reader).map_err(std::io::Error::other)?;
             let mut entry = archive
                 .by_name(filename)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
@@ -183,10 +182,7 @@ fn read_book_file(
             entry.read_to_end(&mut data)?;
             Ok(data)
         }
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Unknown cat_type",
-        )),
+        Err(_) => Err(std::io::Error::other("Unknown cat_type")),
     }
 }
 
@@ -202,10 +198,10 @@ fn find_epub_opf<R: std::io::Read + std::io::Seek>(
     }
     // Fallback: find *.opf
     for i in 0..archive.len() {
-        if let Ok(entry) = archive.by_index(i) {
-            if entry.name().ends_with(".opf") {
-                return Some(entry.name().to_string());
-            }
+        if let Ok(entry) = archive.by_index(i)
+            && entry.name().ends_with(".opf")
+        {
+            return Some(entry.name().to_string());
         }
     }
     None

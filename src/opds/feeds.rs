@@ -69,20 +69,20 @@ pub async fn root_feed(State(state): State<AppState>, headers: axum::http::Heade
         let _ = fb.write_nav_entry(id, title, href, content, DEFAULT_UPDATED);
     }
 
-    if state.config.opds.auth_required {
-        if let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, &headers).await {
-            let count = crate::db::queries::bookshelf::count_by_user(&state.db, user_id)
-                .await
-                .unwrap_or(0);
-            let content = format!("Books read: {count}");
-            let _ = fb.write_nav_entry(
-                "m:6",
-                "Book shelf",
-                "/opds/bookshelf/",
-                &content,
-                DEFAULT_UPDATED,
-            );
-        }
+    if state.config.opds.auth_required
+        && let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, &headers).await
+    {
+        let count = crate::db::queries::bookshelf::count_by_user(&state.db, user_id)
+            .await
+            .unwrap_or(0);
+        let content = format!("Books read: {count}");
+        let _ = fb.write_nav_entry(
+            "m:6",
+            "Book shelf",
+            "/opds/bookshelf/",
+            &content,
+            DEFAULT_UPDATED,
+        );
     }
 
     match fb.finish() {

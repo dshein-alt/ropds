@@ -169,7 +169,7 @@ async fn enrich_book(
                 ser_no,
             })
             .collect(),
-        on_bookshelf: shelf_ids.map_or(false, |s| s.contains(&book.id)),
+        on_bookshelf: shelf_ids.is_some_and(|s| s.contains(&book.id)),
         read_time: String::new(),
     }
 }
@@ -397,14 +397,14 @@ pub async fn search_books(
             if let Ok(Some(genre)) = genres::get_by_id(&state.db, id, &locale).await {
                 ctx.insert("search_label", &genre.subsection);
                 // Back navigation to the genre's section
-                if let Some(section_id) = genre.section_id {
-                    if let Ok(Some(code)) = genres::get_section_code(&state.db, section_id).await {
-                        ctx.insert(
-                            "back_url",
-                            &format!("/web/genres?section={}", urlencoding::encode(&code)),
-                        );
-                        ctx.insert("back_label", &genre.section);
-                    }
+                if let Some(section_id) = genre.section_id
+                    && let Ok(Some(code)) = genres::get_section_code(&state.db, section_id).await
+                {
+                    ctx.insert(
+                        "back_url",
+                        &format!("/web/genres?section={}", urlencoding::encode(&code)),
+                    );
+                    ctx.insert("back_label", &genre.section);
                 }
             }
             (bks, cnt)

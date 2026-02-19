@@ -29,8 +29,8 @@ pub fn strip_meta(s: &str) -> String {
 
     // Strip matching quote pairs that enclose the whole string
     let trimmed = strip_matching_pair(trimmed, '\'', '\'');
-    let trimmed = strip_matching_pair(&trimmed, '"', '"');
-    let trimmed = strip_matching_pair(&trimmed, '\u{00AB}', '\u{00BB}'); // « »
+    let trimmed = strip_matching_pair(trimmed, '"', '"');
+    let trimmed = strip_matching_pair(trimmed, '\u{00AB}', '\u{00BB}'); // « »
 
     trimmed.to_string()
 }

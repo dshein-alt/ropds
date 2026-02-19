@@ -256,10 +256,10 @@ pub async fn delete_user(
     }
 
     // Prevent self-deletion
-    if let Some(current_id) = get_session_user_id(&jar, secret) {
-        if current_id == user_id {
-            return Redirect::to("/web/admin?error=cannot_delete_self").into_response();
-        }
+    if let Some(current_id) = get_session_user_id(&jar, secret)
+        && current_id == user_id
+    {
+        return Redirect::to("/web/admin?error=cannot_delete_self").into_response();
     }
 
     match users::delete(&state.db, user_id).await {
@@ -778,10 +778,8 @@ pub async fn scan_now(
 pub async fn scan_status() -> impl IntoResponse {
     let scanning = crate::scanner::is_scanning();
     let mut resp = serde_json::json!({ "scanning": scanning });
-    if !scanning {
-        if let Some(result) = crate::scanner::take_last_scan_result() {
-            resp["result"] = serde_json::to_value(result).unwrap_or_default();
-        }
+    if !scanning && let Some(result) = crate::scanner::take_last_scan_result() {
+        resp["result"] = serde_json::to_value(result).unwrap_or_default();
     }
     axum::Json(resp)
 }

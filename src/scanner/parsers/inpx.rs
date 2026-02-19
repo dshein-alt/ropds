@@ -114,7 +114,7 @@ fn parse_inp(reader: impl BufRead, folder: &str, out: &mut Vec<InpxRecord>) {
         let series_title = fields[I_SERIES]
             .split(':')
             .next()
-            .map(|s| strip_meta(s))
+            .map(strip_meta)
             .filter(|s| !s.is_empty());
 
         let series_index = fields[I_SERNO].trim().parse::<i32>().unwrap_or(0);

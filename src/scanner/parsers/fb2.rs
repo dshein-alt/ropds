@@ -156,13 +156,12 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
     }
 
     // Extract cover from raw bytes if XML parser didn't reach <binary> elements
-    if meta.cover_data.is_none() {
-        if let Some(ref wanted_id) = cover_ref {
-            if let Some((data, mime)) = extract_cover_from_bytes(&raw_data, wanted_id) {
-                meta.cover_data = Some(data);
-                meta.cover_type = mime;
-            }
-        }
+    if meta.cover_data.is_none()
+        && let Some(ref wanted_id) = cover_ref
+        && let Some((data, mime)) = extract_cover_from_bytes(&raw_data, wanted_id)
+    {
+        meta.cover_data = Some(data);
+        meta.cover_type = mime;
     }
 
     Ok(meta)

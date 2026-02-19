@@ -335,21 +335,20 @@ fn collect_entries(
     // First pass: find directories containing INPX files
     if inpx_enable {
         for entry in WalkDir::new(root).follow_links(true).into_iter().flatten() {
-            if entry.file_type().is_file() {
-                if let Some(ext) = entry.path().extension() {
-                    if ext.to_string_lossy().eq_ignore_ascii_case("inpx") {
-                        if let Some(parent) = entry.path().parent() {
-                            inpx_dirs.insert(parent.to_path_buf());
-                        }
-                        let rel = rel_path(root, entry.path());
-                        let mtime = file_mtime(entry.path());
-                        entries.push(ScanEntry::Inpx {
-                            path: entry.path().to_path_buf(),
-                            rel_path: rel,
-                            mtime,
-                        });
-                    }
+            if entry.file_type().is_file()
+                && let Some(ext) = entry.path().extension()
+                && ext.to_string_lossy().eq_ignore_ascii_case("inpx")
+            {
+                if let Some(parent) = entry.path().parent() {
+                    inpx_dirs.insert(parent.to_path_buf());
                 }
+                let rel = rel_path(root, entry.path());
+                let mtime = file_mtime(entry.path());
+                entries.push(ScanEntry::Inpx {
+                    path: entry.path().to_path_buf(),
+                    rel_path: rel,
+                    mtime,
+                });
             }
         }
     }
@@ -359,10 +358,10 @@ fn collect_entries(
         if !entry.file_type().is_file() {
             continue;
         }
-        if let Some(parent) = entry.path().parent() {
-            if inpx_dirs.contains(parent) {
-                continue; // Skip files in INPX directories
-            }
+        if let Some(parent) = entry.path().parent()
+            && inpx_dirs.contains(parent)
+        {
+            continue; // Skip files in INPX directories
         }
 
         let ext = match entry.path().extension() {
@@ -1172,10 +1171,10 @@ async fn ctx_insert_book_with_meta(
     .await?;
 
     // Save cover to disk
-    if let Some(ref cover_data) = meta.cover_data {
-        if let Err(e) = save_cover(&ctx.covers_dir, book_id, cover_data, &meta.cover_type) {
-            warn!("Failed to save cover for book {book_id}: {e}");
-        }
+    if let Some(ref cover_data) = meta.cover_data
+        && let Err(e) = save_cover(&ctx.covers_dir, book_id, cover_data, &meta.cover_type)
+    {
+        warn!("Failed to save cover for book {book_id}: {e}");
     }
 
     // Link authors
@@ -1199,11 +1198,11 @@ async fn ctx_insert_book_with_meta(
     }
 
     // Link series
-    if let Some(ref ser_title) = meta.series_title {
-        if !ser_title.is_empty() {
-            let series_id = cached_ensure_series(ctx, ser_title).await?;
-            series::link_book(&ctx.pool, book_id, series_id, meta.series_index).await?;
-        }
+    if let Some(ref ser_title) = meta.series_title
+        && !ser_title.is_empty()
+    {
+        let series_id = cached_ensure_series(ctx, ser_title).await?;
+        series::link_book(&ctx.pool, book_id, series_id, meta.series_index).await?;
     }
 
     Ok(book_id)
@@ -1264,10 +1263,10 @@ pub async fn insert_book_with_meta(
     .await?;
 
     // Save cover to disk
-    if let Some(ref cover_data) = meta.cover_data {
-        if let Err(e) = save_cover(covers_dir, book_id, cover_data, &meta.cover_type) {
-            warn!("Failed to save cover for book {book_id}: {e}");
-        }
+    if let Some(ref cover_data) = meta.cover_data
+        && let Err(e) = save_cover(covers_dir, book_id, cover_data, &meta.cover_type)
+    {
+        warn!("Failed to save cover for book {book_id}: {e}");
     }
 
     // Link authors
@@ -1292,11 +1291,11 @@ pub async fn insert_book_with_meta(
     }
 
     // Link series
-    if let Some(ref ser_title) = meta.series_title {
-        if !ser_title.is_empty() {
-            let series_id = ensure_series(pool, ser_title).await?;
-            series::link_book(pool, book_id, series_id, meta.series_index).await?;
-        }
+    if let Some(ref ser_title) = meta.series_title
+        && !ser_title.is_empty()
+    {
+        let series_id = ensure_series(pool, ser_title).await?;
+        series::link_book(pool, book_id, series_id, meta.series_index).await?;
     }
 
     Ok(book_id)
@@ -1384,10 +1383,10 @@ fn mime_to_ext(mime: &str) -> &str {
 fn delete_cover(covers_dir: &Path, book_id: i64) {
     for ext in &["jpg", "png", "gif"] {
         let path = covers_dir.join(format!("{book_id}.{ext}"));
-        if path.exists() {
-            if let Err(e) = fs::remove_file(&path) {
-                warn!("Failed to remove cover {}: {e}", path.display());
-            }
+        if path.exists()
+            && let Err(e) = fs::remove_file(&path)
+        {
+            warn!("Failed to remove cover {}: {e}", path.display());
         }
     }
 }

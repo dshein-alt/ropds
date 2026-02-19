@@ -122,10 +122,10 @@ pub async fn login_page(
     // If already authenticated, redirect to home
     if state.config.opds.auth_required {
         let secret = state.config.server.session_secret.as_bytes();
-        if let Some(cookie) = jar.get("session") {
-            if verify_session(cookie.value(), secret).is_some() {
-                return Html(String::new()).into_response();
-            }
+        if let Some(cookie) = jar.get("session")
+            && verify_session(cookie.value(), secret).is_some()
+        {
+            return Html(String::new()).into_response();
         }
     }
 

@@ -37,10 +37,10 @@ fn find_opf_path<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Str
     // Fallback: scan for *.opf files
     let mut opf_files = Vec::new();
     for i in 0..archive.len() {
-        if let Ok(entry) = archive.by_index(i) {
-            if entry.name().ends_with(".opf") {
-                opf_files.push(entry.name().to_string());
-            }
+        if let Ok(entry) = archive.by_index(i)
+            && entry.name().ends_with(".opf")
+        {
+            opf_files.push(entry.name().to_string());
         }
     }
     match opf_files.len() {
@@ -216,14 +216,13 @@ fn extract_cover_from_opf<R: Read + Seek>(
     }
 
     // Strategy 2: <meta name="cover" content="id"/> → lookup in manifest
-    if let Some(ref id) = cover_id {
-        if let Some(item) = manifest.iter().find(|m| m.id == *id) {
-            if item.media_type.starts_with("image/") {
-                let path = resolve_path(opf_dir, &item.href);
-                if let Some(data) = read_zip_entry_opt(archive, &path) {
-                    return Some((data, item.media_type.clone()));
-                }
-            }
+    if let Some(ref id) = cover_id
+        && let Some(item) = manifest.iter().find(|m| m.id == *id)
+        && item.media_type.starts_with("image/")
+    {
+        let path = resolve_path(opf_dir, &item.href);
+        if let Some(data) = read_zip_entry_opt(archive, &path) {
+            return Some((data, item.media_type.clone()));
         }
     }
 
