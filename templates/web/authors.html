@@ -3,7 +3,20 @@
 {% block title %}{{ t.nav.authors }} — {{ app_title }}{% endblock %}
 
 {% block content %}
-  <h4 class="mb-3">{{ t.nav.authors }}</h4>
+  <h4 class="mb-3">
+    {{ t.nav.authors }}
+    {% if search_terms is defined and search_terms != "" %}
+    <small class="text-body-secondary">/ {{ search_terms }}</small>
+    {% endif %}
+  </h4>
+
+  {% if back_url is defined %}
+  <nav class="mb-3">
+    <a href="{{ back_url }}" class="text-decoration-none">
+      <i class="bi bi-arrow-left me-1"></i>{{ t.nav.authors }}
+    </a>
+  </nav>
+  {% endif %}
 
   {% if authors | length == 0 %}
     <p class="text-body-secondary">{{ t.common.no_results }}</p>

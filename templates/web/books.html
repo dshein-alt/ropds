@@ -3,20 +3,19 @@
 {% block title %}{{ t.nav.books }} — {{ app_title }}{% endblock %}
 
 {% block content %}
-  {% if back_url is defined %}
   <h4 class="mb-3">
-    {{ back_label }}
+    {{ t.nav.books }}
     {% if search_label is defined %}
     <small class="text-body-secondary">/ {{ search_label }}</small>
     {% endif %}
   </h4>
+
+  {% if back_url is defined %}
   <nav class="mb-3">
     <a href="{{ back_url }}" class="text-decoration-none">
       <i class="bi bi-arrow-left me-1"></i>{{ back_label }}
     </a>
   </nav>
-  {% elif search_label is defined %}
-  <h4 class="mb-3">{{ search_label }}</h4>
   {% endif %}
 
   {% if books | length == 0 %}

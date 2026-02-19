@@ -3,23 +3,20 @@
 {% block title %}{{ t.nav.catalogs }} — {{ app_title }}{% endblock %}
 
 {% block content %}
-  {# Breadcrumbs #}
-  {% if breadcrumbs is defined and breadcrumbs | length > 0 %}
-  <nav aria-label="breadcrumb" class="mb-3">
-    <ol class="breadcrumb">
-      <li class="breadcrumb-item"><a href="/web/catalogs">{{ t.common.root }}</a></li>
-      {% for crumb in breadcrumbs %}
-        {% if loop.last %}
-        <li class="breadcrumb-item active">{{ crumb.name }}</li>
-        {% else %}
-        <li class="breadcrumb-item"><a href="/web/catalogs?cat_id={{ crumb.cat_id }}">{{ crumb.name }}</a></li>
-        {% endif %}
-      {% endfor %}
-    </ol>
+  <h4 class="mb-3">
+    {{ t.nav.catalogs }}
+    {% if current_cat_name is defined %}
+    <small class="text-body-secondary">/ {{ current_cat_name }}</small>
+    {% endif %}
+  </h4>
+
+  {% if parent_url is defined %}
+  <nav class="mb-3">
+    <a href="{{ parent_url }}" class="text-decoration-none">
+      <i class="bi bi-arrow-left me-1"></i>{{ parent_name | default(value=t.common.root) }}
+    </a>
   </nav>
   {% endif %}
-
-  <h4 class="mb-3">{{ t.nav.catalogs }}</h4>
 
   {% if entries | length == 0 %}
     <p class="text-body-secondary">{{ t.common.no_results }}</p>

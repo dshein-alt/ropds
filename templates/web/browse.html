@@ -10,6 +10,14 @@
     {% endif %}
   </h4>
 
+  {% if chars and chars != "" %}
+  <nav class="mb-3">
+    <a href="{{ browse_url }}?lang={{ lang }}" class="text-decoration-none">
+      <i class="bi bi-arrow-left me-1"></i>{{ t.nav[browse_type] | default(value=browse_type) }}
+    </a>
+  </nav>
+  {% endif %}
+
   {# Language tabs #}
   <ul class="nav nav-pills mb-4">
     <li class="nav-item">

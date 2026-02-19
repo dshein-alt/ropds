@@ -8,6 +8,7 @@ use crate::db::models::{Author, Genre};
 use crate::db::queries::{authors, books, bookshelf, catalogs, genres, series};
 use crate::state::AppState;
 use crate::web::context::build_context;
+use crate::web::i18n;
 use crate::web::pagination::Pagination;
 
 // ── View models for templates ───────────────────────────────────────
@@ -291,6 +292,19 @@ pub async fn catalogs(
 
     if cat_id > 0 {
         let crumbs = build_breadcrumbs(&state, cat_id).await;
+        if let Some(last) = crumbs.last() {
+            ctx.insert("current_cat_name", &last.name);
+        }
+        if crumbs.len() > 1 {
+            let parent = &crumbs[crumbs.len() - 2];
+            ctx.insert(
+                "parent_url",
+                &format!("/web/catalogs?cat_id={}", parent.cat_id.unwrap_or(0)),
+            );
+            ctx.insert("parent_name", &parent.name);
+        } else {
+            ctx.insert("parent_url", "/web/catalogs");
+        }
         ctx.insert("breadcrumbs", &crumbs);
     }
 
@@ -332,6 +346,20 @@ pub async fn search_books(
             if let Ok(Some(author)) = authors::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &author.full_name);
             }
+            let t = i18n::get_locale(&state.translations, &locale);
+            let label = t["nav"]["authors"].as_str().unwrap_or("Authors");
+            ctx.insert("back_label", label);
+            if let Some(src_q) = params.src_q.as_deref().filter(|s| !s.trim().is_empty()) {
+                ctx.insert(
+                    "back_url",
+                    &format!(
+                        "/web/search/authors?type=b&q={}",
+                        urlencoding::encode(src_q)
+                    ),
+                );
+            } else {
+                ctx.insert("back_url", "/web/authors");
+            }
             (bks, cnt)
         }
         "s" => {
@@ -344,6 +372,20 @@ pub async fn search_books(
                 .unwrap_or(0);
             if let Ok(Some(ser)) = series::get_by_id(&state.db, id).await {
                 ctx.insert("search_label", &ser.ser_name);
+            }
+            let t = i18n::get_locale(&state.translations, &locale);
+            let label = t["nav"]["series"].as_str().unwrap_or("Series");
+            ctx.insert("back_label", label);
+            if let Some(src_q) = params.src_q.as_deref().filter(|s| !s.trim().is_empty()) {
+                ctx.insert(
+                    "back_url",
+                    &format!(
+                        "/web/search/series?type=b&q={}",
+                        urlencoding::encode(src_q)
+                    ),
+                );
+            } else {
+                ctx.insert("back_url", "/web/series");
             }
             (bks, cnt)
         }
@@ -381,6 +423,11 @@ pub async fn search_books(
             let cnt = books::count_by_title_prefix(&state.db, &term, hide_doubles)
                 .await
                 .unwrap_or(0);
+            ctx.insert("search_label", &params.q);
+            let t = i18n::get_locale(&state.translations, &locale);
+            let label = t["nav"]["books"].as_str().unwrap_or("Books");
+            ctx.insert("back_label", label);
+            ctx.insert("back_url", "/web/books");
             (bks, cnt)
         }
         "i" => {
@@ -402,6 +449,7 @@ pub async fn search_books(
             let cnt = books::count_by_title_search(&state.db, &term, hide_doubles)
                 .await
                 .unwrap_or(0);
+            ctx.insert("search_label", &params.q);
             (bks, cnt)
         }
     };
@@ -644,6 +692,7 @@ pub async fn search_authors(
     ctx.insert("pagination", &pagination);
     ctx.insert("search_terms", &params.q);
     ctx.insert("search_terms_encoded", &search_terms_encoded);
+    ctx.insert("back_url", "/web/authors");
     ctx.insert(
         "pagination_qs",
         &format!(
@@ -694,6 +743,7 @@ pub async fn search_series(
     ctx.insert("pagination", &pagination);
     ctx.insert("search_terms", &params.q);
     ctx.insert("search_terms_encoded", &search_terms_encoded);
+    ctx.insert("back_url", "/web/series");
     ctx.insert(
         "pagination_qs",
         &format!(
