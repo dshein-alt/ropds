@@ -183,6 +183,64 @@ pub async fn get_name_prefix_groups(
     Ok(rows)
 }
 
+/// Delete a series if it has no remaining book links.
+pub async fn delete_if_orphaned(pool: &DbPool, series_id: i64) -> Result<(), sqlx::Error> {
+    let sql = pool.sql("SELECT COUNT(*) FROM book_series WHERE series_id = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
+        .bind(series_id)
+        .fetch_one(pool.inner())
+        .await?;
+    if row.0 == 0 {
+        let sql = pool.sql("DELETE FROM series WHERE id = ?");
+        sqlx::query(&sql)
+            .bind(series_id)
+            .execute(pool.inner())
+            .await?;
+    }
+    Ok(())
+}
+
+/// Replace the series for a book: delete existing link, optionally set a new one,
+/// then remove any orphaned series (no remaining book links).
+/// Empty `series_name` removes the series without assigning a new one.
+pub async fn set_book_series(
+    pool: &DbPool,
+    book_id: i64,
+    series_name: &str,
+    ser_no: i32,
+) -> Result<(), sqlx::Error> {
+    // Remember old series IDs before unlinking
+    let sql = pool.sql("SELECT series_id FROM book_series WHERE book_id = ?");
+    let old_ids: Vec<(i64,)> = sqlx::query_as(&sql)
+        .bind(book_id)
+        .fetch_all(pool.inner())
+        .await?;
+
+    let sql = pool.sql("DELETE FROM book_series WHERE book_id = ?");
+    sqlx::query(&sql)
+        .bind(book_id)
+        .execute(pool.inner())
+        .await?;
+
+    let new_series_id = if !series_name.is_empty() {
+        let series_id = crate::scanner::ensure_series(pool, series_name)
+            .await
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        link_book(pool, book_id, series_id, ser_no).await?;
+        Some(series_id)
+    } else {
+        None
+    };
+
+    // Clean up orphaned series that no longer have any books
+    for (old_id,) in old_ids {
+        if new_series_id != Some(old_id) {
+            delete_if_orphaned(pool, old_id).await?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +337,37 @@ mod tests {
         assert_eq!(linked[0].1, 3);
         assert_eq!(linked[1].0.id, z_id);
         assert_eq!(linked[1].1, 7);
+    }
+
+    #[tokio::test]
+    async fn test_set_book_series_assign_update_remove() {
+        let pool = create_test_pool().await;
+        let catalog_id = ensure_catalog(&pool).await;
+        let book_id = insert_test_book(&pool, catalog_id, "Series Test").await;
+
+        // Assign a series
+        set_book_series(&pool, book_id, "Foundation", 1)
+            .await
+            .unwrap();
+        let linked = get_for_book(&pool, book_id).await.unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].0.ser_name, "Foundation");
+        assert_eq!(linked[0].1, 1);
+
+        // Update to a different series — old series should be orphan-cleaned
+        set_book_series(&pool, book_id, "Dune", 3).await.unwrap();
+        let linked = get_for_book(&pool, book_id).await.unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].0.ser_name, "Dune");
+        assert_eq!(linked[0].1, 3);
+        // Foundation should be deleted (orphaned)
+        assert!(find_by_name(&pool, "Foundation").await.unwrap().is_none());
+
+        // Remove series entirely
+        set_book_series(&pool, book_id, "", 0).await.unwrap();
+        let linked = get_for_book(&pool, book_id).await.unwrap();
+        assert!(linked.is_empty());
+        // Dune should also be cleaned up
+        assert!(find_by_name(&pool, "Dune").await.unwrap().is_none());
     }
 }

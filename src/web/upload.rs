@@ -514,6 +514,8 @@ pub async fn upload_file(
             "size": book_data.len(),
             "lang": meta.lang,
             "has_cover": meta.cover_data.is_some(),
+            "series_title": meta.series_title,
+            "series_index": meta.series_index,
         }
     }))
 }
@@ -586,6 +588,10 @@ pub struct PublishForm {
     pub genres: Vec<String>,
     #[serde(default)]
     pub authors: Vec<String>,
+    #[serde(default)]
+    pub series_title: Option<String>,
+    #[serde(default)]
+    pub series_index: Option<i32>,
     #[serde(default)]
     pub csrf_token: String,
 }
@@ -703,8 +709,12 @@ pub async fn publish(
         annotation: upload_state.annotation.clone(),
         docdate: upload_state.docdate.clone(),
         lang: upload_state.lang.clone(),
-        series_title: upload_state.series_title.clone(),
-        series_index: upload_state.series_index,
+        series_title: if form.series_title.is_some() {
+            form.series_title
+        } else {
+            upload_state.series_title.clone()
+        },
+        series_index: form.series_index.unwrap_or(upload_state.series_index),
         cover_data,
         cover_type: upload_state.cover_type.clone(),
     };

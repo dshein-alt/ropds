@@ -65,7 +65,10 @@
                   {% endif %}
                   {% if is_superuser %}
                   <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1 btn-edit-book"
-                          data-book-id="{{ item.id }}" title="{{ t.book.edit_genres }}">
+                          data-book-id="{{ item.id }}"
+                          data-series-name="{% if item.series_list | length > 0 %}{{ item.series_list[0].ser_name }}{% endif %}"
+                          data-series-no="{% if item.series_list | length > 0 %}{{ item.series_list[0].ser_no }}{% endif %}"
+                          title="{{ t.book.edit_genres }}">
                     <i class="bi bi-pencil"></i>
                   </button>
                   {% endif %}
@@ -167,6 +170,22 @@
               <i class="bi bi-plus-lg me-1"></i>{{ t.book.add_author }}
             </button>
           </div>
+
+          {# ── Series Editor ─── #}
+          <h6><i class="bi bi-collection me-1"></i>{{ t.book.edit_series }}</h6>
+          <div class="row mb-3">
+            <div class="col-8">
+              <input type="text" id="edit-book-series" class="form-control form-control-sm"
+                     placeholder="{{ t.book.series_name }}" list="series-suggestions" maxlength="256">
+              <datalist id="series-suggestions"></datalist>
+            </div>
+            <div class="col-4">
+              <input type="number" id="edit-book-series-no" class="form-control form-control-sm"
+                     placeholder="{{ t.book.volume_number }}" min="0" max="9999">
+            </div>
+          </div>
+
+        </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
@@ -214,6 +233,10 @@
         }
       });
       newAuthors = [];
+
+      // Gather current series
+      document.getElementById("edit-book-series").value = btn.dataset.seriesName || "";
+      document.getElementById("edit-book-series-no").value = btn.dataset.seriesNo || "";
 
       // Set modal title
       var titleEl = card.querySelector(".card-title");
@@ -293,6 +316,29 @@
         e.preventDefault();
         document.getElementById("edit-add-author").click();
       }
+    });
+
+    // Series autocomplete
+    var seriesTimer = null;
+    document.getElementById("edit-book-series").addEventListener("input", function() {
+      clearTimeout(seriesTimer);
+      var q = this.value.trim();
+      if (q.length < 2) return;
+      seriesTimer = setTimeout(async function() {
+        try {
+          var resp = await fetch("/web/admin/series-search?q=" + encodeURIComponent(q), { credentials: "same-origin" });
+          var data = await resp.json();
+          var dl = document.getElementById("series-suggestions");
+          dl.innerHTML = "";
+          if (data.ok && data.series) {
+            data.series.forEach(function(s) {
+              var opt = document.createElement("option");
+              opt.value = s.ser_name;
+              dl.appendChild(opt);
+            });
+          }
+        } catch (e) { /* ignore */ }
+      }, 300);
     });
 
     var TITLE_ERRORS = {
@@ -379,6 +425,17 @@
         });
         var authorData = await authorResp.json();
 
+        // Save series
+        var seriesName = document.getElementById("edit-book-series").value.trim();
+        var seriesNo = parseInt(document.getElementById("edit-book-series-no").value) || 0;
+        var seriesResp = await fetch("/web/admin/book-series", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ book_id: editBookId, series_name: seriesName, series_no: seriesNo, csrf_token: csrfToken })
+        });
+        var seriesData = await seriesResp.json();
+
         // Update DOM - genres
         if (genreData.ok) {
           var card = document.querySelector('.book-genres-container[data-book-id="' + editBookId + '"]');
@@ -416,6 +473,34 @@
               authorData.authors.map(function(a) {
                 return '<a href="/web/search/books?type=a&q=' + a.id + '" class="text-decoration-none">' + a.full_name + '</a>';
               }).join(", ");
+          }
+        }
+
+        // Update DOM - series
+        if (seriesData.ok) {
+          var cardEl = document.querySelector('.btn-edit-book[data-book-id="' + editBookId + '"]');
+          if (cardEl) {
+            var bookCard = cardEl.closest(".col-12");
+            var seriesDiv = bookCard.querySelector(".mb-1:has(.bi-collection)");
+            if (seriesData.series && seriesData.series.length > 0) {
+              var s = seriesData.series[0];
+              var html = '<i class="bi bi-collection text-body-secondary me-1"></i>' +
+                '<a href="/web/search/books?type=s&q=' + s.id + '" class="text-decoration-none">' + s.ser_name + '</a>';
+              if (s.ser_no > 0) html += ' <span class="text-body-secondary">#' + s.ser_no + '</span>';
+              if (!seriesDiv) {
+                seriesDiv = document.createElement("div");
+                seriesDiv.className = "mb-1";
+                var genresContainer = bookCard.querySelector(".book-genres-container");
+                if (genresContainer) genresContainer.after(seriesDiv);
+              }
+              seriesDiv.innerHTML = html;
+              cardEl.dataset.seriesName = s.ser_name;
+              cardEl.dataset.seriesNo = s.ser_no;
+            } else {
+              if (seriesDiv) seriesDiv.remove();
+              cardEl.dataset.seriesName = "";
+              cardEl.dataset.seriesNo = "";
+            }
           }
         }
 

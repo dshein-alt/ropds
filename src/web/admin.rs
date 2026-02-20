@@ -594,6 +594,107 @@ pub async fn update_book_authors(
     }
 }
 
+// ── Book series management (admin-only) ─────────────────────────────
+
+#[derive(Deserialize)]
+pub struct UpdateBookSeriesPayload {
+    pub book_id: i64,
+    #[serde(default)]
+    pub series_name: String,
+    #[serde(default)]
+    pub series_no: i32,
+    #[serde(default)]
+    pub csrf_token: String,
+}
+
+pub async fn update_book_series(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Json(payload): axum::Json<UpdateBookSeriesPayload>,
+) -> Response {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &payload.csrf_token) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"ok": false})),
+        )
+            .into_response();
+    }
+
+    if let Ok(None) | Err(_) =
+        crate::db::queries::books::get_by_id(&state.db, payload.book_id).await
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({"ok": false})),
+        )
+            .into_response();
+    }
+
+    let name = payload.series_name.trim();
+    match crate::db::queries::series::set_book_series(
+        &state.db,
+        payload.book_id,
+        name,
+        payload.series_no,
+    )
+    .await
+    {
+        Ok(()) => {
+            let updated = crate::db::queries::series::get_for_book(&state.db, payload.book_id)
+                .await
+                .unwrap_or_default();
+            let series_json: Vec<serde_json::Value> = updated
+                .into_iter()
+                .map(|(s, ser_no)| {
+                    serde_json::json!({
+                        "id": s.id,
+                        "ser_name": s.ser_name,
+                        "ser_no": ser_no,
+                    })
+                })
+                .collect();
+            axum::Json(serde_json::json!({
+                "ok": true,
+                "series": series_json,
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to update series for book {}: {e}", payload.book_id);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"ok": false})),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SeriesSearchQuery {
+    #[serde(default)]
+    pub q: String,
+}
+
+pub async fn series_search(
+    State(state): State<AppState>,
+    Query(params): Query<SeriesSearchQuery>,
+) -> Response {
+    let term = params.q.trim().to_uppercase();
+    if term.len() < 2 {
+        return axum::Json(serde_json::json!({"ok": true, "series": []})).into_response();
+    }
+    let results = crate::db::queries::series::search_by_name(&state.db, &term, 20, 0)
+        .await
+        .unwrap_or_default();
+    let series_json: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|s| serde_json::json!({"id": s.id, "ser_name": s.ser_name}))
+        .collect();
+    axum::Json(serde_json::json!({"ok": true, "series": series_json})).into_response()
+}
+
 // ── Book title management (admin-only) ──────────────────────────────
 
 #[derive(Deserialize)]

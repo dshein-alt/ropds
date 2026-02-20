@@ -109,6 +109,17 @@
                   </td>
                 </tr>
                 <tr>
+                  <td class="text-body-secondary">{{ t.upload.book_series }}</td>
+                  <td>
+                    <div class="d-flex gap-2">
+                      <input type="text" id="meta-series" class="form-control form-control-sm"
+                             maxlength="256" placeholder="{{ t.book.series_name }}">
+                      <input type="number" id="meta-series-no" class="form-control form-control-sm"
+                             min="0" max="9999" style="width: 80px" placeholder="{{ t.upload.book_volume }}">
+                    </div>
+                  </td>
+                </tr>
+                <tr>
                   <td class="text-body-secondary">{{ t.upload.book_format }}</td>
                   <td id="meta-format"></td>
                 </tr>
@@ -185,6 +196,8 @@
   const metaAuthorsBadges = document.getElementById("meta-authors-badges");
   const metaAddAuthor  = document.getElementById("meta-add-author");
   const metaAddAuthorBtn = document.getElementById("meta-add-author-btn");
+  const metaSeries     = document.getElementById("meta-series");
+  const metaSeriesNo   = document.getElementById("meta-series-no");
   const metaFormat     = document.getElementById("meta-format");
   const metaSize       = document.getElementById("meta-size");
   const metaLang       = document.getElementById("meta-lang");
@@ -380,6 +393,8 @@
       metaTitle.value = m.title || "";
       uploadAuthors = (m.authors || []).slice();
       renderAuthorBadges();
+      metaSeries.value       = m.series_title || "";
+      metaSeriesNo.value     = m.series_index || "";
       metaFormat.textContent  = m.format || "";
       metaSize.textContent    = m.size || "";
       metaLang.textContent    = m.lang || "";
@@ -438,6 +453,8 @@
           title: metaTitle.value.trim(),
           genres: genreCodes,
           authors: uploadAuthors,
+          series_title: metaSeries.value.trim() || null,
+          series_index: parseInt(metaSeriesNo.value) || 0,
           csrf_token: csrfToken
         })
       });
