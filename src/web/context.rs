@@ -5,7 +5,7 @@ use sha2::Sha256;
 use tera::Context;
 
 use crate::db::models::Author;
-use crate::db::queries::{authors, books, counters};
+use crate::db::queries::{authors, books, counters, reading_positions};
 use crate::state::AppState;
 use crate::web::i18n;
 
@@ -80,6 +80,7 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     let mut display_name = String::new();
     let mut username = String::new();
     let mut user_allow_upload: i32 = 0;
+    let mut last_read_book_id: i64 = 0;
     if let Some(cookie) = jar.get("session")
         && let Some(user_id) = crate::web::auth::verify_session(cookie.value(), secret)
     {
@@ -92,6 +93,13 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
             username = user.username;
             user_allow_upload = user.allow_upload;
         }
+        // Last read book for Reader navbar button
+        if state.config.reader.enable
+            && let Ok(Some(bid)) =
+                reading_positions::get_last_read_book_id(&state.db, user_id).await
+        {
+            last_read_book_id = bid;
+        }
         ctx.insert("csrf_token", &generate_csrf_token(cookie.value(), secret));
     }
     ctx.insert("is_superuser", &is_superuser);
@@ -103,6 +111,10 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     let can_upload =
         state.config.upload.allow_upload && (is_superuser == 1 || user_allow_upload == 1);
     ctx.insert("can_upload", &can_upload);
+
+    // Reader: navbar button links to last read book (opens in new tab)
+    ctx.insert("reader_enabled", &state.config.reader.enable);
+    ctx.insert("last_read_book_id", &last_read_book_id);
 
     // Stats from counters table
     let counters_list = counters::get_all(&state.db).await.unwrap_or_default();

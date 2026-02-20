@@ -113,8 +113,8 @@ pub fn router(state: AppState) -> Router<AppState> {
 mod tests {
     use super::*;
     use crate::config::{
-        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig,
-        ServerConfig, UploadConfig, WebConfig,
+        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ReaderConfig,
+        ScannerConfig, ServerConfig, UploadConfig, WebConfig,
     };
     use crate::db::create_test_pool;
     use crate::web::i18n::Translations;
@@ -178,6 +178,7 @@ mod tests {
                 upload_path: PathBuf::from("/tmp/uploads"),
                 max_upload_size_mb: 10,
             },
+            reader: ReaderConfig::default(),
         };
 
         let db = create_test_pool().await;

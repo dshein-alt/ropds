@@ -1268,8 +1268,8 @@ fn format_uptime(total_secs: u64, ctx: &tera::Context) -> String {
 mod tests {
     use super::*;
     use crate::config::{
-        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig,
-        ServerConfig, UploadConfig, WebConfig,
+        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ReaderConfig,
+        ScannerConfig, ServerConfig, UploadConfig, WebConfig,
     };
     use crate::db::{DbPool, create_test_pool};
     use crate::web::auth::sign_session;
@@ -1335,6 +1335,7 @@ mod tests {
                 upload_path: PathBuf::from("/tmp/uploads"),
                 max_upload_size_mb: 10,
             },
+            reader: ReaderConfig::default(),
         };
 
         let tera = tera::Tera::default();

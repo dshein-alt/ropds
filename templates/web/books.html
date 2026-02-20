@@ -103,6 +103,13 @@
                   {% endif %}
                 </div>
 
+                {# Read button (for supported formats) #}
+                {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
+                <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="{{ t.book.read }}">
+                  <i class="bi bi-book-half"></i>
+                </a>
+                {% endif %}
+
                 {# Star/bookshelf toggle #}
                 {% if is_authenticated %}
                 <form method="post" action="/web/bookshelf/toggle" class="d-inline ms-2">

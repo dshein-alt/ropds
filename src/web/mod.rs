@@ -75,6 +75,14 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/bookshelf/toggle", post(views::bookshelf_toggle))
         .route("/bookshelf/clear", post(views::bookshelf_clear))
         .route("/api/genres", get(views::genres_json))
+        .route("/reader/{book_id}", get(views::web_reader))
+        .route("/read/{book_id}", get(views::web_read_inline))
+        .route("/api/reading-position", post(views::save_reading_position))
+        .route(
+            "/api/reading-position/{book_id}",
+            get(views::get_reading_position),
+        )
+        .route("/api/reading-history", get(views::get_reading_history))
         .route("/upload", get(upload::upload_page))
         .route(
             "/upload/file",
@@ -93,8 +101,8 @@ pub fn router(state: AppState) -> Router<AppState> {
 mod tests {
     use super::*;
     use crate::config::{
-        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig,
-        ServerConfig, UploadConfig, WebConfig,
+        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ReaderConfig,
+        ScannerConfig, ServerConfig, UploadConfig, WebConfig,
     };
     use crate::db::create_test_pool;
     use crate::web::i18n::Translations;
@@ -157,6 +165,10 @@ mod tests {
                 allow_upload: true,
                 upload_path: PathBuf::from("/tmp/uploads"),
                 max_upload_size_mb: 10,
+            },
+            reader: ReaderConfig {
+                enable: true,
+                read_history_max: 100,
             },
         };
 

@@ -39,6 +39,11 @@
             {% if item.show_zip %}
             <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm py-0 px-1">zip</a>
             {% endif %}
+            {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
+            <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-outline-success py-0 px-1" title="{{ t.book.read }}">
+              <i class="bi bi-book-half"></i>
+            </a>
+            {% endif %}
             <form method="post" action="/web/bookshelf/toggle" class="d-inline">
               <input type="hidden" name="book_id" value="{{ item.id }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

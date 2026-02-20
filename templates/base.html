@@ -32,6 +32,13 @@
               <i class="bi bi-star me-1"></i>{{ t.nav.bookshelf }}
             </a>
           </li>
+          {% if reader_enabled %}
+          <li class="nav-item">
+            <a class="nav-link" href="{% if last_read_book_id %}/web/reader/{{ last_read_book_id }}{% else %}#{% endif %}" target="_blank"{% if not last_read_book_id %} tabindex="-1" aria-disabled="true"{% endif %}>
+              <i class="bi bi-book-half me-1"></i>{{ t.nav.reader }}
+            </a>
+          </li>
+          {% endif %}
           {% endif %}
           <li class="nav-item">
             <a class="nav-link{% if active_page == 'catalogs' %} active{% endif %}" href="/web/catalogs">
