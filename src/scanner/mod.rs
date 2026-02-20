@@ -9,6 +9,10 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use dashmap::DashMap;
+use image::GenericImageView;
+use image::codecs::jpeg::JpegEncoder;
+use image::codecs::png::{CompressionType, FilterType as PngFilterType, PngEncoder};
+use image::{DynamicImage, ExtendedColorType, ImageEncoder};
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
@@ -123,7 +127,9 @@ pub async fn run_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapsho
 struct ScanContext {
     pool: DbPool,
     root: PathBuf,
-    covers_dir: PathBuf,
+    covers_path: PathBuf,
+    cover_max_dimension_px: u32,
+    cover_jpeg_quality: u8,
     extensions: HashSet<String>,
     stats: Arc<ScanStats>,
     // Config flags
@@ -142,7 +148,7 @@ struct ScanContext {
 
 async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, ScanError> {
     let root = &config.library.root_path;
-    let covers_dir = &config.library.covers_path;
+    let covers_path = &config.covers.covers_path;
     let extensions: HashSet<String> = config
         .library
         .book_extensions
@@ -176,7 +182,9 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
     let ctx = ScanContext {
         pool: pool.clone(),
         root: root.clone(),
-        covers_dir: covers_dir.clone(),
+        covers_path: covers_path.clone(),
+        cover_max_dimension_px: config.covers.cover_max_dimension_px,
+        cover_jpeg_quality: config.covers.cover_jpeg_quality,
         extensions,
         stats: Arc::clone(&stats),
         skip_unchanged: config.scanner.skip_unchanged,
@@ -235,7 +243,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         stats.books_deleted.store(deleted, Ordering::Relaxed);
         // Remove cover files from disk
         for id in &ids {
-            delete_cover(covers_dir, *id);
+            delete_cover(covers_path, *id);
         }
         info!(
             "Physically deleted {deleted} unavailable books, removed {} covers",
@@ -1140,7 +1148,14 @@ async fn ctx_insert_book_with_meta(
 
     // Save cover to disk
     if let Some(ref cover_data) = meta.cover_data
-        && let Err(e) = save_cover(&ctx.covers_dir, book_id, cover_data, &meta.cover_type)
+        && let Err(e) = save_cover(
+            &ctx.covers_path,
+            book_id,
+            cover_data,
+            &meta.cover_type,
+            ctx.cover_max_dimension_px,
+            ctx.cover_jpeg_quality,
+        )
     {
         warn!("Failed to save cover for book {book_id}: {e}");
     }
@@ -1177,7 +1192,7 @@ async fn ctx_insert_book_with_meta(
 }
 
 /// Insert a book record and link authors, genres, series.
-/// Saves cover image to `covers_dir` if present.
+/// Saves cover image to `covers_path` if present.
 /// (Public API — used by upload handler.)
 pub async fn insert_book_with_meta(
     pool: &DbPool,
@@ -1188,7 +1203,9 @@ pub async fn insert_book_with_meta(
     size: i64,
     cat_type: CatType,
     meta: &BookMeta,
-    covers_dir: &Path,
+    covers_path: &Path,
+    cover_max_dimension_px: u32,
+    cover_jpeg_quality: u8,
 ) -> Result<i64, ScanError> {
     let title = if meta.title.is_empty() {
         Path::new(filename)
@@ -1232,7 +1249,14 @@ pub async fn insert_book_with_meta(
 
     // Save cover to disk
     if let Some(ref cover_data) = meta.cover_data
-        && let Err(e) = save_cover(covers_dir, book_id, cover_data, &meta.cover_type)
+        && let Err(e) = save_cover(
+            covers_path,
+            book_id,
+            cover_data,
+            &meta.cover_type,
+            cover_max_dimension_px,
+            cover_jpeg_quality,
+        )
     {
         warn!("Failed to save cover for book {book_id}: {e}");
     }
@@ -1324,16 +1348,61 @@ async fn try_skip_inpx_archive(
 // Covers & utilities
 // ---------------------------------------------------------------------------
 
+const DEFAULT_COVER_MAX_DIMENSION_PX: u32 = 600;
+const DEFAULT_COVER_JPEG_QUALITY: u8 = 85;
+
+pub(crate) fn normalize_cover_for_storage_with_options(
+    data: &[u8],
+    mime: &str,
+    max_dimension_px: u32,
+    jpeg_quality: u8,
+) -> (Vec<u8>, String) {
+    let max_dimension_px = sanitize_cover_max_dimension(max_dimension_px);
+    let jpeg_quality = sanitize_cover_jpeg_quality(jpeg_quality);
+
+    let Ok(img) = image::load_from_memory(data) else {
+        // Keep original bytes if decoder can't parse this format.
+        return (data.to_vec(), normalize_mime(mime).to_string());
+    };
+
+    let (w, h) = img.dimensions();
+    if w.max(h) <= max_dimension_px {
+        return (data.to_vec(), normalize_mime(mime).to_string());
+    }
+
+    let resized = img.resize(
+        max_dimension_px,
+        max_dimension_px,
+        image::imageops::FilterType::Lanczos3,
+    );
+
+    // PNG sources stay PNG; others become JPEG with quality tuning.
+    if mime == "image/png" {
+        if let Some(bytes) = encode_png(&resized) {
+            return (bytes, "image/png".to_string());
+        }
+    } else if let Some(bytes) = encode_jpeg(&resized, jpeg_quality) {
+        return (bytes, "image/jpeg".to_string());
+    }
+
+    // Fallback if encoding fails for any reason.
+    (data.to_vec(), normalize_mime(mime).to_string())
+}
+
 /// Save cover image bytes to disk as `{covers_dir}/{book_id}.{ext}`.
 pub fn save_cover(
-    covers_dir: &Path,
+    covers_path: &Path,
     book_id: i64,
     data: &[u8],
     mime: &str,
+    max_dimension_px: u32,
+    jpeg_quality: u8,
 ) -> Result<(), std::io::Error> {
-    let ext = mime_to_ext(mime);
-    let path = covers_dir.join(format!("{book_id}.{ext}"));
-    fs::write(&path, data)
+    let (normalized_data, normalized_mime) =
+        normalize_cover_for_storage_with_options(data, mime, max_dimension_px, jpeg_quality);
+    let ext = mime_to_ext(&normalized_mime);
+    let path = covers_path.join(format!("{book_id}.{ext}"));
+    fs::write(&path, normalized_data)
 }
 
 fn mime_to_ext(mime: &str) -> &str {
@@ -1344,10 +1413,53 @@ fn mime_to_ext(mime: &str) -> &str {
     }
 }
 
+fn normalize_mime(mime: &str) -> &str {
+    match mime {
+        "image/png" => "image/png",
+        "image/gif" => "image/gif",
+        _ => "image/jpeg",
+    }
+}
+
+fn sanitize_cover_max_dimension(max_dimension_px: u32) -> u32 {
+    if max_dimension_px == 0 {
+        DEFAULT_COVER_MAX_DIMENSION_PX
+    } else {
+        max_dimension_px
+    }
+}
+
+fn sanitize_cover_jpeg_quality(jpeg_quality: u8) -> u8 {
+    if jpeg_quality == 0 {
+        DEFAULT_COVER_JPEG_QUALITY
+    } else {
+        jpeg_quality.min(100)
+    }
+}
+
+fn encode_jpeg(img: &DynamicImage, quality: u8) -> Option<Vec<u8>> {
+    let mut out = Cursor::new(Vec::new());
+    let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
+    encoder.encode_image(img).ok()?;
+    Some(out.into_inner())
+}
+
+fn encode_png(img: &DynamicImage) -> Option<Vec<u8>> {
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let mut out = Cursor::new(Vec::new());
+    let encoder =
+        PngEncoder::new_with_quality(&mut out, CompressionType::Default, PngFilterType::Adaptive);
+    encoder
+        .write_image(rgba.as_raw(), w, h, ExtendedColorType::Rgba8)
+        .ok()?;
+    Some(out.into_inner())
+}
+
 /// Remove cover file for a book (tries all known extensions).
-fn delete_cover(covers_dir: &Path, book_id: i64) {
+fn delete_cover(covers_path: &Path, book_id: i64) {
     for ext in &["jpg", "png", "gif"] {
-        let path = covers_dir.join(format!("{book_id}.{ext}"));
+        let path = covers_path.join(format!("{book_id}.{ext}"));
         if path.exists()
             && let Err(e) = fs::remove_file(&path)
         {
@@ -1517,7 +1629,15 @@ root_path = "/tmp"
     #[test]
     fn test_cover_helpers_and_rel_path() {
         let dir = tempdir().unwrap();
-        save_cover(dir.path(), 42, b"cover", "image/png").unwrap();
+        save_cover(
+            dir.path(),
+            42,
+            b"cover",
+            "image/png",
+            DEFAULT_COVER_MAX_DIMENSION_PX,
+            DEFAULT_COVER_JPEG_QUALITY,
+        )
+        .unwrap();
         let png = dir.path().join("42.png");
         assert!(png.exists());
 
@@ -1534,6 +1654,40 @@ root_path = "/tmp"
         let root = Path::new("/tmp/root");
         let file = Path::new("/tmp/root/sub/book.fb2");
         assert_eq!(rel_path(root, file), "sub/book.fb2");
+    }
+
+    #[test]
+    fn test_normalize_cover_for_storage_resizes_only_when_needed() {
+        let small = DynamicImage::new_rgb8(320, 480);
+        let mut small_png = Cursor::new(Vec::new());
+        small
+            .write_to(&mut small_png, image::ImageFormat::Png)
+            .unwrap();
+        let small_bytes = small_png.into_inner();
+        let (same_data, same_mime) = normalize_cover_for_storage_with_options(
+            &small_bytes,
+            "image/png",
+            DEFAULT_COVER_MAX_DIMENSION_PX,
+            DEFAULT_COVER_JPEG_QUALITY,
+        );
+        assert_eq!(same_mime, "image/png");
+        assert_eq!(same_data, small_bytes);
+
+        let large = DynamicImage::new_rgb8(1800, 1200);
+        let mut large_png = Cursor::new(Vec::new());
+        large
+            .write_to(&mut large_png, image::ImageFormat::Png)
+            .unwrap();
+        let (resized_data, resized_mime) = normalize_cover_for_storage_with_options(
+            &large_png.into_inner(),
+            "image/png",
+            DEFAULT_COVER_MAX_DIMENSION_PX,
+            DEFAULT_COVER_JPEG_QUALITY,
+        );
+        assert_eq!(resized_mime, "image/png");
+        let resized = image::load_from_memory(&resized_data).unwrap();
+        let (w, h) = resized.dimensions();
+        assert_eq!(w.max(h), DEFAULT_COVER_MAX_DIMENSION_PX);
     }
 
     #[test]
