@@ -3,6 +3,7 @@ mod author_search_tests;
 mod book_search_tests;
 mod bookshelf_tests;
 mod catalog_tests;
+mod reader_tests;
 mod scanner_tests;
 mod series_search_tests;
 mod upload_tests;
