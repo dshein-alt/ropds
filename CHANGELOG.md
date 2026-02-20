@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Embedded book reader for EPUB, FB2, MOBI, DjVu, and PDF formats with reading position save/restore.
+- Reader navbar button with quick access to the last read book.
+- Reading history sidebar in the reader page.
+- "Read" button on book listings for supported formats.
+- `[reader]` configuration section with `enable` and `read_history_max` options.
+
 ## [0.6.2] - 2026.02.20
 
 ### Added

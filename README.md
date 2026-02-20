@@ -66,6 +66,13 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 - Users manage their own profile: display name and password
 - Forced password change on first login when set by admin
 
+**Embedded Book Reader**
+- Read EPUB, FB2, MOBI, DjVu, and PDF directly in the browser — no downloads needed
+- Automatic reading position save/restore per user per book
+- Reading history sidebar with quick access to recently read books
+- Reader opens in a new tab with an immersive full-page layout
+- Powered by [foliate-js](https://github.com/johnfactotum/foliate-js) and [djvu.js](https://github.com/RussCoder/djvujs)
+
 **Web Interface**
 - Responsive Bootstrap 5 UI with light/dark theme
 - Browse by catalogs, authors, series, or genres with breadcrumb navigation
@@ -158,6 +165,7 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 | `[scanner]` | Cron-style schedule, parallel workers, integrity checks |
 | `[web]` | Default language (`en`, `ru`), default theme (`light`, `dark`) |
 | `[upload]` | Enable/disable uploads, staging directory, size limit |
+| `[reader]` | Enable/disable embedded reader, reading history size |
 
 ## Supported Formats
 
