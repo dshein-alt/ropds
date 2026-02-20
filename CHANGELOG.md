@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026.02.20
+
+### Added
+- CI pipeline for running tests on commits and extended database tests on releases.
+- CI pipeline for parsing changelog for release tags.
+
+### Changed
+- Consolidated Docker Compose files into standalone deployment scenarios.
+
 ## [0.6.0] - 2026.02.19
 
 ### Added
