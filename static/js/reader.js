@@ -62,7 +62,7 @@ function refreshHistorySidebar() {
                     onclick="event.preventDefault(); loadBook(${item.book_id}, '${item.format}');">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="text-truncate me-2 small">${item.title}</div>
-                        <span class="badge bg-secondary rounded-pill">${pct}%</span>
+                        <span class="badge bg-primary rounded-pill">${pct}%</span>
                     </div>
                     <small class="text-body-secondary">${item.updated_at}</small>
                 </a>`;

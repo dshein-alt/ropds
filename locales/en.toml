@@ -253,3 +253,6 @@ book_volume = "Volume #"
 book_genres = "Genres"
 edit_genres = "Edit Genres"
 genres_selected = "genres selected"
+
+[reader]
+history_title = "Last books"

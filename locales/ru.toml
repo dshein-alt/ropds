@@ -253,3 +253,6 @@ book_volume = "Том №"
 book_genres = "Жанры"
 edit_genres = "Редактировать жанры"
 genres_selected = "жанров выбрано"
+
+[reader]
+history_title = "Последние книги"

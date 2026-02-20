@@ -26,18 +26,18 @@
         </a>
 
         {# Reading history toggle #}
-        <button class="btn btn-sm btn-outline-light" type="button"
+        <button class="btn btn-sm btn-success" type="button"
                 data-bs-toggle="offcanvas" data-bs-target="#reading-history"
-                title="{{ t.nav.reader }}">
-          <i class="bi bi-clock-history"></i>
+                title="{{ t.reader.history_title }}">
+          <i class="bi bi-clock-history me-1"></i>{{ t.reader.history_title }}
         </button>
 
-        <span class="text-light text-truncate flex-grow-1 small fw-medium" id="reader-title">
+        <span class="text-light text-truncate flex-grow-1 small fw-medium text-center" id="reader-title">
           {{ book_title }}
           {% if book_authors %}<span class="text-white-50"> — {{ book_authors }}</span>{% endif %}
         </span>
 
-        <span class="badge bg-secondary" id="reader-progress">
+        <span class="badge bg-primary" id="reader-progress">
           {{ (saved_progress * 100) | round(precision=0) }}%
         </span>
 
@@ -50,11 +50,11 @@
 
   {# ── Reading History Offcanvas ──────────────────────────── #}
   <div class="offcanvas offcanvas-start" tabindex="-1" id="reading-history" style="width: 300px;">
-    <div class="offcanvas-header py-2">
-      <h6 class="offcanvas-title">
-        <i class="bi bi-clock-history me-1"></i>{{ t.nav.reader }}
+    <div class="offcanvas-header py-2 bg-success text-white">
+      <h6 class="offcanvas-title mb-0">
+        <i class="bi bi-clock-history me-1"></i>{{ t.reader.history_title }}
       </h6>
-      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
     </div>
     <div class="offcanvas-body p-0">
       <div class="list-group list-group-flush" id="history-list" style="max-height: calc(100vh - 100px); overflow-y: auto;">
@@ -65,7 +65,7 @@
            onclick="event.preventDefault(); loadBook({{ item.book_id }}, '{{ item.format }}');">
           <div class="d-flex justify-content-between align-items-start">
             <div class="text-truncate me-2 small">{{ item.title }}</div>
-            <span class="badge bg-secondary rounded-pill">{{ (item.progress * 100) | round(precision=0) }}%</span>
+            <span class="badge bg-primary rounded-pill">{{ (item.progress * 100) | round(precision=0) }}%</span>
           </div>
           <small class="text-body-secondary">{{ item.updated_at }}</small>
         </a>
