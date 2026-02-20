@@ -40,6 +40,8 @@ session_secret = "test-secret-key-for-integration-tests"
 
 [library]
 root_path = {lib_dir:?}
+
+[covers]
 covers_path = {covers_dir:?}
 
 [database]
@@ -63,6 +65,8 @@ session_secret = "test-secret-key-for-integration-tests"
 
 [library]
 root_path = {lib_dir:?}
+
+[covers]
 covers_path = {covers_dir:?}
 
 [database]

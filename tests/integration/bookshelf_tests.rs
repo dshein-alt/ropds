@@ -192,6 +192,8 @@ session_secret = "test-secret-key-for-integration-tests"
 
 [library]
 root_path = {:?}
+
+[covers]
 covers_path = {:?}
 
 [database]
