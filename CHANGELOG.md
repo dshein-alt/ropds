@@ -8,10 +8,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
-- Embedded book reader for EPUB, FB2, MOBI, DjVu, and PDF formats with reading position save/restore.
-- Reader navbar button with quick access to the last read book.
-- Reading history sidebar in the reader page.
-- "Read" button on book listings for supported formats.
+- Embedded book reader for EPUB, FB2, MOBI, DjVu, and PDF formats with reading position save/restore, reading history sidebar, and quick-access navbar button.
+- Reader controls: page navigation (buttons, keyboard, mouse wheel, swipe), progress slider, location counter, go-to-page, font zoom, and background color presets — with mobile-responsive layout.
 - `[reader]` configuration section with `enable` and `read_history_max` options.
 
 ## [0.6.2] - 2026.02.20

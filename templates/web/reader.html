@@ -8,8 +8,102 @@
   <link href="/static/css/bootstrap.min.css" rel="stylesheet">
   <link href="/static/css/bootstrap-icons.min.css" rel="stylesheet">
   <link href="/static/css/ropds.css?v={{ version }}" rel="stylesheet">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { min-height: 0 !important; }
+    #reader-slider { height: 20px; }
+    #reader-footer .btn { min-width: 32px; }
+    #reader-container { min-height: 0; }
+    #reader-container > foliate-view {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    #reader-footer {
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .reader-nav-zone {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 15%;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .reader-nav-zone--left { left: 0; }
+    .reader-nav-zone--right { right: 0; }
+    .reader-nav-zone__icon {
+      font-size: 1.5rem;
+      color: var(--bs-body-color);
+      background: var(--bs-body-bg);
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.25;
+      transition: opacity 0.2s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      pointer-events: none;
+    }
+    .reader-nav-zone:hover .reader-nav-zone__icon { opacity: 0.7; }
+    @media (hover: none) {
+      .reader-nav-zone { display: none; }
+    }
+    .bg-swatch-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .bg-swatch-row:hover { background: var(--bs-tertiary-bg); }
+    .bg-swatch-row.active { background: var(--bs-primary-bg-subtle); }
+    .bg-swatch-row .swatch-dot {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.2);
+      flex-shrink: 0;
+    }
+    .bg-swatch-row.active .swatch-dot {
+      border-color: var(--bs-primary);
+      box-shadow: 0 0 0 2px var(--bs-primary);
+    }
+    .bg-swatch-row .swatch-label {
+      font-size: 0.8rem;
+      color: var(--bs-body-color);
+    }
+    /* Collapsible top toolbar (mobile) */
+    #reader-header {
+      transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+      max-height: 60px;
+      overflow: hidden;
+    }
+    #reader-header.collapsed {
+      max-height: 0;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Mobile: hide loc text, tighter buttons */
+    @media (max-width: 480px) {
+      #reader-loc { display: none; }
+      #reader-slider { min-width: 60px; }
+      #reader-footer .btn { min-width: 28px; padding: 2px 5px; }
+    }
+  </style>
 </head>
-<body class="d-flex flex-column vh-100 overflow-hidden"
+<body class="d-flex flex-column overflow-hidden"
       data-book-id="{{ book_id }}"
       data-format="{{ book_format }}"
       data-book-url="/web/read/{{ book_id }}"
@@ -18,7 +112,7 @@
       data-csrf-token="{{ csrf_token | default(value='') }}">
 
   {# ── Reader Toolbar ──────────────────────────────────────── #}
-  <nav class="navbar navbar-dark bg-dark navbar-expand py-1 flex-shrink-0">
+  <nav class="navbar navbar-dark bg-dark navbar-expand py-1 flex-shrink-0" id="reader-header">
     <div class="container-fluid px-2">
       <div class="d-flex align-items-center gap-2 w-100">
         <a href="/web" class="btn btn-sm btn-outline-light" title="{{ t.nav.home }}">
@@ -78,6 +172,46 @@
   <div id="reader-container" class="flex-grow-1 overflow-hidden position-relative">
     {# Filled by reader.js #}
   </div>
+
+  {# ── Reader Footer Toolbar ──────────────────────────────── #}
+  <nav class="navbar navbar-dark bg-dark py-0 flex-shrink-0 border-top border-secondary" id="reader-footer">
+    <div class="container-fluid px-1 py-1">
+      <div class="d-flex align-items-center gap-1 w-100">
+        <button class="btn btn-sm btn-outline-light flex-shrink-0" id="btn-prev" title="Previous page">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <span class="text-light small text-nowrap text-center flex-shrink-0" id="reader-loc" style="min-width:70px">&mdash;</span>
+        <input type="range" class="form-range flex-grow-1" id="reader-slider"
+               min="0" max="1000" value="0" style="min-width:50px">
+        <button class="btn btn-sm btn-outline-light flex-shrink-0" id="zoom-down" title="Zoom out">A&minus;</button>
+        <button class="btn btn-sm btn-outline-light flex-shrink-0" id="zoom-up" title="Zoom in">A+</button>
+        <div class="dropup flex-shrink-0">
+          <button class="btn btn-sm btn-outline-light" data-bs-toggle="dropdown" id="bg-toggle"
+                  title="Background color">
+            <i class="bi bi-palette"></i>
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-1" style="min-width:150px" id="bg-menu">
+            <div class="d-flex flex-column" id="bg-swatches"></div>
+          </div>
+        </div>
+        <div class="dropup flex-shrink-0">
+          <button class="btn btn-sm btn-outline-light" data-bs-toggle="dropdown" id="goto-toggle"
+                  title="Go to location">
+            <i class="bi bi-arrow-right-square"></i>
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-2" style="min-width:200px">
+            <div class="input-group input-group-sm">
+              <input type="number" class="form-control" id="goto-input" min="1" placeholder="Loc #">
+              <button class="btn btn-primary" id="goto-btn">Go</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline-light flex-shrink-0" id="btn-next" title="Next page">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
 
   <script src="/static/js/bootstrap.bundle.min.js"></script>
   <script src="/static/js/ropds.js?v={{ version }}"></script>
