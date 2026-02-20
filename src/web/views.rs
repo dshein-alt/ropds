@@ -862,9 +862,20 @@ pub async fn web_reader(
         .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
     {
         if let Ok(Some(pos)) = reading_positions::get_position(&state.db, user_id, book_id).await {
-            saved_position = pos.position;
+            saved_position = pos.position.clone();
             saved_progress = pos.progress;
         }
+        // Touch/create the reading position so the book appears in "last read"
+        // immediately, even before the JS client sends its first position update.
+        let _ = reading_positions::save_position(
+            &state.db,
+            user_id,
+            book_id,
+            &saved_position,
+            saved_progress,
+            state.config.reader.read_history_max,
+        )
+        .await;
         recent_books = reading_positions::get_recent(&state.db, user_id, 10)
             .await
             .unwrap_or_default();
