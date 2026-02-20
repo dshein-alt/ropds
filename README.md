@@ -1,5 +1,7 @@
 # ROPDS
 
+[![CI](https://github.com/dshein-alt/ropds/actions/workflows/tag-tests.yml/badge.svg?branch=master)](https://github.com/dshein-alt/ropds/actions/workflows/tag-tests.yml)
+
 **Rust OPDS Server** — a fast, lightweight personal e-book library server with OPDS catalog and web interface.
 
 > Inspired by [SimpleOPDS](https://github.com/mitshel/sopds).
