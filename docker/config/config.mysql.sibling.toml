@@ -14,6 +14,7 @@ zip_codepage = "cp866"
 inpx_enable = false
 
 [database]
+# Credentials must match DB_NAME, DB_USER, DB_PASSWORD in docker/.env
 url = "mysql://ropds:ropds_change_me@mysql:3306/ropds"
 
 [opds]

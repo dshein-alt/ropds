@@ -14,6 +14,7 @@ zip_codepage = "cp866"
 inpx_enable = false
 
 [database]
+# Credentials must match DB_NAME, DB_USER, DB_PASSWORD in docker/.env
 url = "postgres://ropds:ropds_change_me@postgres:5432/ropds"
 
 [opds]

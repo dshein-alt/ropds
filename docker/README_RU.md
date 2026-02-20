@@ -1,6 +1,6 @@
 # Развёртывание ROPDS с помощью Docker
 
-В этой директории находится готовый комплект для развёртывания ROPDS в Docker, включающий базовый и дополнительные (override) файлы compose.
+В этой директории находится готовый комплект для развёртывания ROPDS в Docker с отдельными compose-файлами для каждого сценария.
 
 ## Предварительные требования
 
@@ -18,10 +18,7 @@ cp docker/.env.example docker/.env
 2. Запустите ROPDS с SQLite, используя выделенный том Docker:
 
 ```bash
-docker compose \
-  -f docker/docker-compose.yml \
-  -f docker/docker-compose.sqlite.yml \
-  up -d --build
+docker compose -f docker/docker-compose.sqlite.yml up -d --build
 ```
 
 3. Откройте интерфейс в браузере:
@@ -31,29 +28,19 @@ docker compose \
 
 ## Матрица файлов Compose
 
+Каждый сценарий — это один самодостаточный compose-файл.
+
 | Сценарий | Команда |
 |---|---|
-| SQLite (БД на томе) | `docker compose -f docker/docker-compose.yml -f docker/docker-compose.sqlite.yml up -d --build` |
-| PostgreSQL в соседнем стеке | `docker compose -f docker/docker-compose.yml -f docker/docker-compose.postgres.sibling.yml up -d --build` |
-| Внешний сервер PostgreSQL | `docker compose -f docker/docker-compose.yml -f docker/docker-compose.postgres.external.yml up -d --build` |
-| MySQL/MariaDB в соседнем стеке | `docker compose -f docker/docker-compose.yml -f docker/docker-compose.mysql.sibling.yml up -d --build` |
-| Внешний сервер MySQL/MariaDB | `docker compose -f docker/docker-compose.yml -f docker/docker-compose.mysql.external.yml up -d --build` |
+| SQLite (БД на томе) | `docker compose -f docker/docker-compose.sqlite.yml up -d --build` |
+| PostgreSQL (встроенный) | `docker compose -f docker/docker-compose.postgres.sibling.yml up -d --build` |
+| Внешний сервер PostgreSQL | `docker compose -f docker/docker-compose.postgres.external.yml up -d --build` |
+| MySQL/MariaDB (встроенный) | `docker compose -f docker/docker-compose.mysql.sibling.yml up -d --build` |
+| Внешний сервер MySQL/MariaDB | `docker compose -f docker/docker-compose.mysql.external.yml up -d --build` |
 
-## Соседние стеки баз данных
+**Встроенные** сценарии включают и ROPDS, и сервис базы данных в одном compose-файле — одна команда `docker compose up` запускает всё.
 
-Чтобы запустить стек PostgreSQL:
-
-```bash
-docker compose -f docker/db/postgres/docker-compose.yml up -d
-```
-
-Чтобы запустить стек MariaDB:
-
-```bash
-docker compose -f docker/db/mysql/docker-compose.yml up -d
-```
-
-После этого запустите ROPDS с соответствующим файлом переопределения `*.sibling.yml`.
+**Внешние** сценарии запускают только ROPDS и подключаются к базе данных, размещённой отдельно.
 
 ## Конфигурационные файлы
 
@@ -69,7 +56,7 @@ docker compose -f docker/db/mysql/docker-compose.yml up -d
 
 ## Модель монтирования
 
-В базовом compose-файле выполняются следующие монтирования:
+Каждый compose-файл монтирует:
 
 - `./config/*.toml -> /app/config/config.toml` (только чтение)
 - `${ROPDS_LIBRARY_ROOT} -> /library` (чтение и запись)
@@ -84,7 +71,6 @@ Docker-образ полностью автономен и уже содержи
 
 ```bash
 docker compose \
-  -f docker/docker-compose.yml \
   -f docker/docker-compose.sqlite.yml \
   -f docker/docker-compose.static.mount.yml \
   up -d --build
@@ -95,6 +81,30 @@ docker compose \
 - `/library/covers`
 - `/library/uploads`
 - Том данных SQLite по пути `/var/lib/ropds/sqlite` (в случае SQLite)
+
+## Переменные окружения
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `TZ` | (нет) | Часовой пояс контейнера (напр. `Europe/Moscow`) |
+| `ROPDS_PORT` | `8081` | Порт HTTP на хосте |
+| `ROPDS_LIBRARY_ROOT` | `../library` | Путь к библиотеке на хосте |
+| `ROPDS_ADMIN_PASSWORD` | (нет) | Пароль администратора при первом запуске |
+| `ROPDS_ADMIN_INIT_ONCE` | `true` | Однократная инициализация администратора |
+| `ROPDS_DB_WAIT_TIMEOUT` | `60` | Тайм-аут ожидания БД (секунды) |
+| `ROPDS_DB_HOST` | (нет) | Явное указание хоста БД |
+| `ROPDS_DB_PORT` | (нет) | Явное указание порта БД |
+
+Для встроенных сценариев с БД (PostgreSQL и MySQL/MariaDB):
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `DB_NAME` | `ropds` | Имя базы данных |
+| `DB_USER` | `ropds` | Пользователь БД |
+| `DB_PASSWORD` | `ropds_change_me` | Пароль пользователя БД |
+| `DB_ROOT_PASSWORD` | `root_change_me` | Пароль root MariaDB (только MySQL) |
+
+Значения должны совпадать с учётными данными в соответствующем файле `config/*.toml`.
 
 ## Первичная настройка администратора
 
