@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="{{ locale }}" data-bs-theme="{{ default_theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ book_title }} — {{ app_title }}</title>
+  <link rel="icon" href="/static/images/favicon.ico">
+  <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/css/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/static/css/ropds.css?v={{ version }}" rel="stylesheet">
+</head>
+<body class="d-flex flex-column vh-100 overflow-hidden"
+      data-book-id="{{ book_id }}"
+      data-format="{{ book_format }}"
+      data-book-url="/web/read/{{ book_id }}"
+      data-saved-position="{{ saved_position }}"
+      data-saved-progress="{{ saved_progress }}"
+      data-csrf-token="{{ csrf_token | default(value='') }}">
+
+  {# ── Reader Toolbar ──────────────────────────────────────── #}
+  <nav class="navbar navbar-dark bg-dark navbar-expand py-1 flex-shrink-0">
+    <div class="container-fluid px-2">
+      <div class="d-flex align-items-center gap-2 w-100">
+        <a href="/web" class="btn btn-sm btn-outline-light" title="{{ t.nav.home }}">
+          <i class="bi bi-arrow-left"></i>
+        </a>
+
+        {# Reading history toggle #}
+        <button class="btn btn-sm btn-outline-light" type="button"
+                data-bs-toggle="offcanvas" data-bs-target="#reading-history"
+                title="{{ t.nav.reader }}">
+          <i class="bi bi-clock-history"></i>
+        </button>
+
+        <span class="text-light text-truncate flex-grow-1 small fw-medium" id="reader-title">
+          {{ book_title }}
+          {% if book_authors %}<span class="text-white-50"> — {{ book_authors }}</span>{% endif %}
+        </span>
+
+        <span class="badge bg-secondary" id="reader-progress">
+          {{ (saved_progress * 100) | round(precision=0) }}%
+        </span>
+
+        <button class="btn btn-sm btn-outline-light" onclick="toggleTheme()" title="{{ t.theme.toggle }}">
+          <i id="theme-icon" class="bi bi-moon"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  {# ── Reading History Offcanvas ──────────────────────────── #}
+  <div class="offcanvas offcanvas-start" tabindex="-1" id="reading-history" style="width: 300px;">
+    <div class="offcanvas-header py-2">
+      <h6 class="offcanvas-title">
+        <i class="bi bi-clock-history me-1"></i>{{ t.nav.reader }}
+      </h6>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body p-0">
+      <div class="list-group list-group-flush" id="history-list" style="max-height: calc(100vh - 100px); overflow-y: auto;">
+        {% for item in recent_books %}
+        <a href="/web/reader/{{ item.book_id }}"
+           class="list-group-item list-group-item-action py-2 px-3 {% if item.book_id == book_id %}active{% endif %}"
+           data-book-id="{{ item.book_id }}"
+           onclick="event.preventDefault(); loadBook({{ item.book_id }}, '{{ item.format }}');">
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="text-truncate me-2 small">{{ item.title }}</div>
+            <span class="badge bg-secondary rounded-pill">{{ (item.progress * 100) | round(precision=0) }}%</span>
+          </div>
+          <small class="text-body-secondary">{{ item.updated_at }}</small>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Reader Container ──────────────────────────────────── #}
+  <div id="reader-container" class="flex-grow-1 overflow-hidden position-relative">
+    {# Filled by reader.js #}
+  </div>
+
+  <script src="/static/js/bootstrap.bundle.min.js"></script>
+  <script src="/static/js/ropds.js?v={{ version }}"></script>
+  <script type="module" src="/static/js/reader.js?v={{ version }}"></script>
+</body>
+</html>
