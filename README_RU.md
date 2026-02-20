@@ -105,6 +105,12 @@ cp config.toml.example config.toml
 [library]
 root_path = "/path/to/books"
 
+[covers]
+covers_path = "/path/to/books/covers"
+cover_max_dimension_px = 600
+cover_jpeg_quality = 85
+show_covers = true
+
 [database]
 url = "sqlite://ropds.db?mode=rwc"
 ```
@@ -145,9 +151,10 @@ url = "sqlite://ropds.db?mode=rwc"
 | Секция | Основные параметры |
 |---|---|
 | `[server]` | Адрес, порт, уровень логирования, секрет сессии и TTL |
-| `[library]` | Путь к книгам, директория обложек, расширения файлов, поддержка ZIP/INPX |
+| `[library]` | Путь к книгам, расширения файлов, поддержка ZIP/INPX |
+| `[covers]` | `covers_path`, обработка обложек (`cover_max_dimension_px`, `cover_jpeg_quality`), `show_covers` |
 | `[database]` | URL подключения — `sqlite://`, `postgres://` или `mysql://` |
-| `[opds]` | Название каталога, пагинация, авторизация, отображение обложек |
+| `[opds]` | Название каталога, пагинация, авторизация |
 | `[scanner]` | Расписание в стиле cron, параллельные потоки, проверки целостности |
 | `[web]` | Язык по умолчанию (`en`, `ru`), тема (`light`, `dark`) |
 | `[upload]` | Включение загрузки, директория, лимит размера файла |

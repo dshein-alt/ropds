@@ -70,12 +70,20 @@ if [ -z "$db_url" ]; then
 fi
 
 root_path="$(toml_value library root_path || true)"
-covers_path="$(toml_value library covers_path || true)"
+covers_path="$(toml_value covers covers_path || true)"
+legacy_library_covers_path="$(toml_value library covers_path || true)"
+legacy_covers_dir="$(toml_value library covers_dir || true)"
 upload_path="$(toml_value upload upload_path || true)"
 allow_upload="$(toml_value upload allow_upload || true)"
 
 if [ -z "$root_path" ]; then
     root_path="/library"
+fi
+if [ -z "$covers_path" ]; then
+    covers_path="$legacy_library_covers_path"
+fi
+if [ -z "$covers_path" ]; then
+    covers_path="$legacy_covers_dir"
 fi
 if [ -z "$covers_path" ]; then
     covers_path="$root_path/covers"

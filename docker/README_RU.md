@@ -135,4 +135,5 @@ docker compose \
 ## Организация библиотеки
 
 - По умолчанию `covers_path` и `upload_path` указывают внутрь `/library`.
+- Настройки обложек задаются в `[covers]` (`covers_path`, `cover_max_dimension_px`, `cover_jpeg_quality`, `show_covers`).
 - В каталогах с книгами храните только поддерживаемые форматы, чтобы избежать сканирования лишних файлов.

@@ -135,4 +135,5 @@ Migrations are executed by ROPDS on startup based on configured DB backend.
 ## Library layout note
 
 - `covers_path` and `upload_path` defaults point inside `/library`.
+- Cover settings are configured in `[covers]` (`covers_path`, `cover_max_dimension_px`, `cover_jpeg_quality`, `show_covers`).
 - Keep only supported book formats in book folders to avoid scanning non-book files.

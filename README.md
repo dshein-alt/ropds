@@ -105,6 +105,12 @@ Edit `config.toml` — at minimum set `library.root_path` to your book collectio
 [library]
 root_path = "/path/to/books"
 
+[covers]
+covers_path = "/path/to/books/covers"
+cover_max_dimension_px = 600
+cover_jpeg_quality = 85
+show_covers = true
+
 [database]
 url = "sqlite://ropds.db?mode=rwc"
 ```
@@ -145,9 +151,10 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 | Section | Key highlights |
 |---|---|
 | `[server]` | Bind address, port, log level, session secret & TTL |
-| `[library]` | Book root path, covers directory, file extensions, ZIP/INPX support |
+| `[library]` | Book root path, file extensions, ZIP/INPX support |
+| `[covers]` | `covers_path`, resize/compression (`cover_max_dimension_px`, `cover_jpeg_quality`), `show_covers` |
 | `[database]` | Connection URL — `sqlite://`, `postgres://`, or `mysql://` |
-| `[opds]` | Catalog title, pagination, auth, cover display |
+| `[opds]` | Catalog title, pagination, auth |
 | `[scanner]` | Cron-style schedule, parallel workers, integrity checks |
 | `[web]` | Default language (`en`, `ru`), default theme (`light`, `dark`) |
 | `[upload]` | Enable/disable uploads, staging directory, size limit |

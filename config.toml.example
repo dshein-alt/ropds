@@ -7,11 +7,16 @@ session_ttl_hours = 24
 
 [library]
 root_path = "/path/to/books"
-covers_path = "/path/to/books/covers"
 book_extensions = ["fb2", "epub", "mobi", "pdf", "djvu", "zip"]
 scan_zip = true
 zip_codepage = "cp866"
 inpx_enable = false
+
+[covers]
+covers_path = "/path/to/books/covers"
+cover_max_dimension_px = 600  # Largest cover side in pixels; smaller images are kept unchanged
+cover_jpeg_quality = 85       # JPEG quality for resized covers (1-100)
+show_covers = true
 
 [database]
 url = "sqlite://ropds.db?mode=rwc"
@@ -22,7 +27,6 @@ subtitle = "Personal Library"
 max_items = 30
 split_items = 300
 auth_required = true
-show_covers = true
 alphabet_menu = true
 hide_doubles = true
 
