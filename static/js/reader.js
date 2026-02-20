@@ -42,7 +42,39 @@ function savePosition() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
-    }).catch(() => {}); // fire-and-forget
+    }).then(() => refreshHistorySidebar()).catch(() => {});
+}
+
+function refreshHistorySidebar() {
+    const list = document.getElementById('history-list');
+    if (!list) return;
+    fetch('/web/api/reading-history')
+        .then(r => r.json())
+        .then(items => {
+            list.innerHTML = items.map(item => {
+                // For the current book use live JS progress instead of DB value
+                const progress = item.book_id === bookId ? currentProgress : item.progress;
+                const pct = Math.round(progress * 100);
+                const active = item.book_id === bookId ? ' active' : '';
+                return `<a href="/web/reader/${item.book_id}"
+                    class="list-group-item list-group-item-action py-2 px-3${active}"
+                    data-book-id="${item.book_id}"
+                    onclick="event.preventDefault(); loadBook(${item.book_id}, '${item.format}');">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="text-truncate me-2 small">${item.title}</div>
+                        <span class="badge bg-secondary rounded-pill">${pct}%</span>
+                    </div>
+                    <small class="text-body-secondary">${item.updated_at}</small>
+                </a>`;
+            }).join('');
+        })
+        .catch(() => {});
+}
+
+// Refresh sidebar with live progress when the offcanvas is opened
+const historyOffcanvas = document.getElementById('reading-history');
+if (historyOffcanvas) {
+    historyOffcanvas.addEventListener('show.bs.offcanvas', refreshHistorySidebar);
 }
 
 function savePositionBeacon() {
@@ -83,6 +115,9 @@ if (format === 'pdf') {
 // ── PDF: native browser embed ───────────────────────────────────
 
 function initPdfReader() {
+    // Native embed doesn't expose page info to JS, so set a placeholder
+    // position to ensure save handlers don't bail on empty currentPosition.
+    if (!currentPosition) currentPosition = '1';
     const embed = document.createElement('embed');
     embed.src = bookUrl;
     embed.type = 'application/pdf';
@@ -90,6 +125,7 @@ function initPdfReader() {
     embed.style.height = '100%';
     embed.style.border = 'none';
     container.appendChild(embed);
+    savePosition();
 }
 
 // ── DJVU: djvu.js viewer ───────────────────────────────────────
@@ -106,40 +142,52 @@ async function initDjvuReader() {
     viewerDiv.style.height = '100%';
     container.appendChild(viewerDiv);
 
-    // Init viewer
+    // Detect current theme
+    const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+    // Init viewer with matching theme
     const viewer = new DjVu.Viewer();
     viewer.render(viewerDiv);
+    viewer.configure({ theme: isDark ? 'dark' : 'light' });
 
-    // Fetch book data and load
+    // Fetch book data and load (must await — returns a Promise)
     const resp = await fetch(bookUrl);
     const buf = await resp.arrayBuffer();
-    viewer.loadDocument(buf);
+    await viewer.loadDocument(buf);
 
-    // Restore saved page position
+    // Restore saved page position via configure()
     if (savedPos) {
         const page = parseInt(savedPos, 10);
         if (page > 0) {
-            // DjVu.js uses 1-based page numbers
-            setTimeout(() => viewer.setPageByNumber(page), 500);
+            viewer.configure({ pageNumber: page });
         }
     }
 
-    // Track page changes for position saving
-    let lastPage = 0;
-    setInterval(() => {
-        try {
-            const page = viewer.getPageNumber();
-            if (page && page !== lastPage) {
-                lastPage = page;
-                currentPosition = String(page);
-                const total = viewer.getPagesQuantity ? viewer.getPagesQuantity() : 0;
-                if (total > 0) {
-                    updateProgress(page / total);
-                }
-                debouncedSave();
-            }
-        } catch (_) {}
-    }, 2000);
+    // Track page changes via event (not polling)
+    const Events = DjVu.Viewer.Events;
+    const pagesSelector = DjVu.Viewer.get.pagesQuantity;
+
+    viewer.on(Events.PAGE_NUMBER_CHANGED, () => {
+        const page = viewer.getPageNumber();
+        if (page) {
+            currentPosition = String(page);
+            try {
+                const total = pagesSelector(viewer.store.getState());
+                if (total > 0) updateProgress(page / total);
+            } catch (_) {}
+            debouncedSave();
+        }
+    });
+
+    // Observe theme changes from the page toggle
+    const observer = new MutationObserver(() => {
+        const dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        viewer.configure({ theme: dark ? 'dark' : 'light' });
+    });
+    observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-bs-theme'],
+    });
 }
 
 function loadScript(src) {
