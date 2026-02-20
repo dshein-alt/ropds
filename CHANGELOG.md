@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026.02.20
 
 ### Added
 - Embedded book reader for EPUB, FB2, MOBI, DjVu, and PDF formats with reading position save/restore, reading history sidebar, and quick-access navbar button.
 - Reader controls: page navigation (buttons, keyboard, mouse wheel, swipe), progress slider, location counter, go-to-page, font zoom, and background color presets — with mobile-responsive layout.
 - `[reader]` configuration section with `enable` and `read_history_max` options.
+- Cover image resize and compression on save with configurable dimensions.
+- `[covers]` configuration section (extracted from `[library]` and `[opds]`) with admin settings panel.
+
+### Changed
+- Refactored covers configuration into a dedicated `[covers]` section.
 
 ## [0.6.2] - 2026.02.20
 
