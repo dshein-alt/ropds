@@ -3,7 +3,7 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 use ropds::db;
-use ropds::db::queries::{authors, books};
+use ropds::db::queries::{authors, books, series};
 
 use super::*;
 
@@ -100,6 +100,12 @@ async fn upload_file_and_publish() {
     // normalise_author_name reorders "Custom Author" → "Author Custom"
     assert_eq!(book_authors[0].full_name, "Author Custom");
 
+    // Series is preserved from parsed metadata when publish payload omits series fields
+    let book_series = series::get_for_book(&pool, book_id).await.unwrap();
+    assert_eq!(book_series.len(), 1);
+    assert_eq!(book_series[0].0.ser_name, "Test Series");
+    assert_eq!(book_series[0].1, 1);
+
     // Step 4: Verify file exists in library root
     assert!(
         lib_dir.path().join(&book.filename).exists(),
@@ -143,6 +149,8 @@ async fn upload_edit_metadata_on_publish() {
         "token": token,
         "title": "Overridden Title",
         "authors": ["New Author One", "New Author Two"],
+        "series_title": "Overridden Saga",
+        "series_index": 7,
         "genres": [],
         "csrf_token": csrf,
     });
@@ -157,6 +165,11 @@ async fn upload_edit_metadata_on_publish() {
 
     let book_authors = authors::get_for_book(&pool, book_id).await.unwrap();
     assert_eq!(book_authors.len(), 2, "should have 2 overridden authors");
+
+    let book_series = series::get_for_book(&pool, book_id).await.unwrap();
+    assert_eq!(book_series.len(), 1, "should have 1 overridden series");
+    assert_eq!(book_series[0].0.ser_name, "Overridden Saga");
+    assert_eq!(book_series[0].1, 7);
 }
 
 /// Upload page is forbidden without upload permission.

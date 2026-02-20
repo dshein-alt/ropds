@@ -1,3 +1,4 @@
+mod admin_series_tests;
 mod author_search_tests;
 mod book_search_tests;
 mod bookshelf_tests;
