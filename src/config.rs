@@ -14,6 +14,8 @@ pub struct Config {
     pub web: WebConfig,
     #[serde(default)]
     pub upload: UploadConfig,
+    #[serde(default)]
+    pub reader: ReaderConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -137,6 +139,25 @@ pub struct UploadConfig {
     /// Maximum upload file size in megabytes (default 100).
     #[serde(default = "default_max_upload_size_mb")]
     pub max_upload_size_mb: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReaderConfig {
+    /// Master switch for the embedded reader feature.
+    #[serde(default = "default_true")]
+    pub enable: bool,
+    /// Maximum number of reading positions stored per user (default 100).
+    #[serde(default = "default_read_history_max")]
+    pub read_history_max: i64,
+}
+
+impl Default for ReaderConfig {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            read_history_max: default_read_history_max(),
+        }
+    }
 }
 
 impl Default for WebConfig {
@@ -288,6 +309,10 @@ fn default_workers_num() -> usize {
     1
 }
 
+fn default_read_history_max() -> i64 {
+    100
+}
+
 fn default_language() -> String {
     "en".to_string()
 }
@@ -322,6 +347,8 @@ root_path = "/books"
         assert_eq!(config.opds.max_items, 30);
         assert!(config.opds.auth_required);
         assert_eq!(config.web.language, "en");
+        assert!(config.reader.enable);
+        assert_eq!(config.reader.read_history_max, 100);
     }
 
     #[test]
@@ -370,6 +397,10 @@ workers_num = 4
 [web]
 language = "ru"
 theme = "dark"
+
+[reader]
+enable = false
+read_history_max = 50
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
@@ -391,6 +422,8 @@ theme = "dark"
         assert_eq!(config.scanner.workers_num, 4);
         assert_eq!(config.web.language, "ru");
         assert_eq!(config.web.theme, "dark");
+        assert!(!config.reader.enable);
+        assert_eq!(config.reader.read_history_max, 50);
     }
 
     #[test]
