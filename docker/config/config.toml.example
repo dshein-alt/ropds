@@ -48,3 +48,7 @@ theme = "light"
 allow_upload = true
 upload_path = "/library/uploads"
 max_upload_size_mb = 100
+
+[reader]
+enable = true
+read_history_max = 100

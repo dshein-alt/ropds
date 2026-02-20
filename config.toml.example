@@ -48,3 +48,7 @@ theme = "light"
 allow_upload = false
 upload_path = "uploads"
 max_upload_size_mb = 100
+
+[reader]
+enable = true                  # Enable embedded book reader
+read_history_max = 100         # Max reading positions stored per user
