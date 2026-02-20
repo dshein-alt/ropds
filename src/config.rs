@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub server: ServerConfig,
     pub library: LibraryConfig,
+    #[serde(default)]
+    pub covers: CoversConfig,
     pub database: DatabaseConfig,
     pub opds: OpdsConfig,
     pub scanner: ScannerConfig,
@@ -33,8 +35,13 @@ pub struct ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct LibraryConfig {
     pub root_path: PathBuf,
-    #[serde(default = "default_covers_path")]
-    pub covers_path: PathBuf,
+    // Legacy keys kept for backward compatibility with pre-[covers] configs.
+    #[serde(default, alias = "covers_dir")]
+    pub covers_path: Option<PathBuf>,
+    #[serde(default)]
+    pub cover_max_dimension_px: Option<u32>,
+    #[serde(default)]
+    pub cover_jpeg_quality: Option<u8>,
     #[serde(default = "default_book_extensions")]
     pub book_extensions: Vec<String>,
     #[serde(default = "default_true")]
@@ -63,12 +70,25 @@ pub struct OpdsConfig {
     pub split_items: u32,
     #[serde(default = "default_true")]
     pub auth_required: bool,
-    #[serde(default = "default_true")]
-    pub show_covers: bool,
+    // Legacy key kept for backward compatibility with pre-[covers] configs.
+    #[serde(default)]
+    pub show_covers: Option<bool>,
     #[serde(default = "default_true")]
     pub alphabet_menu: bool,
     #[serde(default)]
     pub hide_doubles: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CoversConfig {
+    #[serde(default = "default_covers_path", alias = "covers_dir")]
+    pub covers_path: PathBuf,
+    #[serde(default = "default_cover_max_dimension_px")]
+    pub cover_max_dimension_px: u32,
+    #[serde(default = "default_cover_jpeg_quality")]
+    pub cover_jpeg_quality: u8,
+    #[serde(default = "default_true")]
+    pub show_covers: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -134,11 +154,35 @@ impl Config {
             path: path.to_path_buf(),
             source: e,
         })?;
-        let config: Config = toml::from_str(&content).map_err(|e| ConfigError::Parse {
+        let mut config: Config = toml::from_str(&content).map_err(|e| ConfigError::Parse {
             path: path.to_path_buf(),
             source: e,
         })?;
+        config.apply_legacy_cover_fallbacks();
         Ok(config)
+    }
+
+    fn apply_legacy_cover_fallbacks(&mut self) {
+        if self.covers.covers_path == default_covers_path()
+            && let Some(path) = self.library.covers_path.clone()
+        {
+            self.covers.covers_path = path;
+        }
+        if self.covers.cover_max_dimension_px == default_cover_max_dimension_px()
+            && let Some(max_px) = self.library.cover_max_dimension_px
+        {
+            self.covers.cover_max_dimension_px = max_px;
+        }
+        if self.covers.cover_jpeg_quality == default_cover_jpeg_quality()
+            && let Some(quality) = self.library.cover_jpeg_quality
+        {
+            self.covers.cover_jpeg_quality = quality;
+        }
+        if self.covers.show_covers == default_true()
+            && let Some(show) = self.opds.show_covers
+        {
+            self.covers.show_covers = show;
+        }
     }
 }
 
@@ -205,6 +249,25 @@ fn default_covers_path() -> PathBuf {
     PathBuf::from("covers")
 }
 
+fn default_cover_max_dimension_px() -> u32 {
+    600
+}
+
+fn default_cover_jpeg_quality() -> u8 {
+    85
+}
+
+impl Default for CoversConfig {
+    fn default() -> Self {
+        Self {
+            covers_path: default_covers_path(),
+            cover_max_dimension_px: default_cover_max_dimension_px(),
+            cover_jpeg_quality: default_cover_jpeg_quality(),
+            show_covers: default_true(),
+        }
+    }
+}
+
 fn default_schedule_minutes() -> Vec<u32> {
     vec![0]
 }
@@ -250,7 +313,10 @@ root_path = "/books"
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "0.0.0.0");
         assert_eq!(config.server.port, 8081);
-        assert_eq!(config.library.covers_path, PathBuf::from("covers"));
+        assert_eq!(config.covers.covers_path, PathBuf::from("covers"));
+        assert_eq!(config.covers.cover_max_dimension_px, 600);
+        assert_eq!(config.covers.cover_jpeg_quality, 85);
+        assert!(config.covers.show_covers);
         assert_eq!(config.library.root_path, PathBuf::from("/books"));
         assert_eq!(config.database.url, "sqlite://ropds.db");
         assert_eq!(config.opds.max_items, 30);
@@ -268,7 +334,6 @@ log_level = "debug"
 
 [library]
 root_path = "/media/books"
-covers_path = "/tmp/covers"
 book_extensions = ["fb2", "epub"]
 scan_zip = false
 zip_codepage = "utf-8"
@@ -283,9 +348,14 @@ subtitle = "Home books"
 max_items = 50
 split_items = 200
 auth_required = false
-show_covers = false
 alphabet_menu = false
 hide_doubles = true
+
+[covers]
+covers_path = "/tmp/covers"
+cover_max_dimension_px = 512
+cover_jpeg_quality = 80
+show_covers = false
 
 [scanner]
 schedule_minutes = [30]
@@ -304,7 +374,10 @@ theme = "dark"
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 9090);
-        assert_eq!(config.library.covers_path, PathBuf::from("/tmp/covers"));
+        assert_eq!(config.covers.covers_path, PathBuf::from("/tmp/covers"));
+        assert_eq!(config.covers.cover_max_dimension_px, 512);
+        assert_eq!(config.covers.cover_jpeg_quality, 80);
+        assert!(!config.covers.show_covers);
         assert_eq!(config.library.root_path, PathBuf::from("/media/books"));
         assert!(!config.library.scan_zip);
         assert!(config.library.inpx_enable);
@@ -318,5 +391,27 @@ theme = "dark"
         assert_eq!(config.scanner.workers_num, 4);
         assert_eq!(config.web.language, "ru");
         assert_eq!(config.web.theme, "dark");
+    }
+
+    #[test]
+    fn test_parse_legacy_cover_options_in_library_and_opds() {
+        let toml_str = r#"
+[server]
+[library]
+root_path = "/books"
+covers_dir = "/books/covers"
+cover_max_dimension_px = 500
+cover_jpeg_quality = 70
+[database]
+[opds]
+show_covers = false
+[scanner]
+"#;
+        let mut config: Config = toml::from_str(toml_str).unwrap();
+        config.apply_legacy_cover_fallbacks();
+        assert_eq!(config.covers.covers_path, PathBuf::from("/books/covers"));
+        assert_eq!(config.covers.cover_max_dimension_px, 500);
+        assert_eq!(config.covers.cover_jpeg_quality, 70);
+        assert!(!config.covers.show_covers);
     }
 }
