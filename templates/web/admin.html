@@ -258,7 +258,17 @@
             <tr><td class="text-body-secondary">scan_zip</td><td>{% if cfg_scan_zip %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
             <tr><td class="text-body-secondary">zip_codepage</td><td><code>{{ cfg_zip_codepage }}</code></td></tr>
             <tr><td class="text-body-secondary">inpx_enable</td><td>{% if cfg_inpx_enable %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
-            <tr><td class="text-body-secondary">covers_path</td><td><code>{{ cfg_covers_path }}</code></td></tr>
+          </tbody>
+        </table>
+
+        {# Covers #}
+        <h6 class="mt-3">{{ t.admin.section_covers }}</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr><td class="text-body-secondary" style="width:40%">covers_path</td><td><code>{{ cfg_covers_path }}</code></td></tr>
+            <tr><td class="text-body-secondary">cover_max_dimension_px</td><td><code>{{ cfg_cover_max_dimension_px }}</code></td></tr>
+            <tr><td class="text-body-secondary">cover_jpeg_quality</td><td><code>{{ cfg_cover_jpeg_quality }}</code></td></tr>
+            <tr><td class="text-body-secondary">show_covers</td><td>{% if cfg_show_covers %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
           </tbody>
         </table>
 
@@ -271,7 +281,6 @@
             <tr><td class="text-body-secondary">max_items</td><td><code>{{ cfg_max_items }}</code></td></tr>
             <tr><td class="text-body-secondary">split_items</td><td><code>{{ cfg_split_items }}</code></td></tr>
             <tr><td class="text-body-secondary">auth_required</td><td>{% if cfg_auth_required %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
-            <tr><td class="text-body-secondary">show_covers</td><td>{% if cfg_show_covers %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
             <tr><td class="text-body-secondary">alphabet_menu</td><td>{% if cfg_alphabet_menu %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
             <tr><td class="text-body-secondary">hide_doubles</td><td>{% if cfg_hide_doubles %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-x-lg text-danger"></i>{% endif %}</td></tr>
           </tbody>
