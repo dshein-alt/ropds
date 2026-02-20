@@ -129,9 +129,9 @@ async fn configure_sqlite(pool: &sqlx::AnyPool) -> Result<(), sqlx::Error> {
 
 async fn run_migrations(pool: &sqlx::AnyPool, backend: DbBackend) -> Result<(), sqlx::Error> {
     let migrator = match backend {
-        DbBackend::Sqlite => sqlx::migrate!("./migrations"),
-        DbBackend::Postgres => sqlx::migrate!("./migrations_pg"),
-        DbBackend::Mysql => sqlx::migrate!("./migrations_mysql"),
+        DbBackend::Sqlite => sqlx::migrate!("./migrations/sqlite"),
+        DbBackend::Postgres => sqlx::migrate!("./migrations/pg"),
+        DbBackend::Mysql => sqlx::migrate!("./migrations/mysql"),
     };
     migrator.run(pool).await?;
     Ok(())

@@ -12,8 +12,6 @@ COPY templates ./templates
 COPY locales ./locales
 COPY static ./static
 COPY migrations ./migrations
-COPY migrations_pg ./migrations_pg
-COPY migrations_mysql ./migrations_mysql
 
 RUN cargo build --release --bin ropds
 
