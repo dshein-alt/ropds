@@ -34,12 +34,14 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         return image_response(NOCOVER_SVG, "image/svg+xml");
     }
 
-    let covers_dir = state.config.library.covers_path.clone();
+    let covers_dir = state.config.covers.covers_path.clone();
     let root = state.config.library.root_path.clone();
     let path = book.path.clone();
     let filename = book.filename.clone();
     let format = book.format.clone();
     let cat_type = book.cat_type;
+    let cover_max_dimension_px = state.config.covers.cover_max_dimension_px;
+    let cover_jpeg_quality = state.config.covers.cover_jpeg_quality;
 
     // Try disk cache first, then fallback to re-extraction from book file
     let cover_result = tokio::task::spawn_blocking(move || {
@@ -50,13 +52,19 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
 
         // 2. Fallback: re-extract from the book file
         let extracted = extract_book_cover(&root, &path, &filename, &format, cat_type)?;
+        let (cover_data, cover_mime) = crate::scanner::normalize_cover_for_storage_with_options(
+            &extracted.0,
+            &extracted.1,
+            cover_max_dimension_px,
+            cover_jpeg_quality,
+        );
 
         // Save extracted cover to disk for next time
-        let ext = mime_to_ext(&extracted.1);
+        let ext = mime_to_ext(&cover_mime);
         let save_path = covers_dir.join(format!("{book_id}.{ext}"));
-        let _ = std::fs::write(&save_path, &extracted.0);
+        let _ = std::fs::write(&save_path, &cover_data);
 
-        Some(extracted)
+        Some((cover_data, cover_mime))
     })
     .await;
 

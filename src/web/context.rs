@@ -68,7 +68,7 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
 
     // App config
     ctx.insert("app_title", &state.config.opds.title);
-    ctx.insert("show_covers", &state.config.opds.show_covers);
+    ctx.insert("show_covers", &state.config.covers.show_covers);
     ctx.insert("alphabet_menu", &state.config.opds.alphabet_menu);
     ctx.insert("split_items", &state.config.opds.split_items);
     ctx.insert("auth_required", &state.config.opds.auth_required);

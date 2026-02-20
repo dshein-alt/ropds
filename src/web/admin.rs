@@ -118,15 +118,23 @@ pub async fn admin_page(
     ctx.insert("cfg_inpx_enable", &state.config.library.inpx_enable);
     ctx.insert(
         "cfg_covers_path",
-        &state.config.library.covers_path.display().to_string(),
+        &state.config.covers.covers_path.display().to_string(),
     );
+    ctx.insert(
+        "cfg_cover_max_dimension_px",
+        &state.config.covers.cover_max_dimension_px,
+    );
+    ctx.insert(
+        "cfg_cover_jpeg_quality",
+        &state.config.covers.cover_jpeg_quality,
+    );
+    ctx.insert("cfg_show_covers", &state.config.covers.show_covers);
 
     ctx.insert("cfg_opds_title", &state.config.opds.title);
     ctx.insert("cfg_opds_subtitle", &state.config.opds.subtitle);
     ctx.insert("cfg_max_items", &state.config.opds.max_items);
     ctx.insert("cfg_split_items", &state.config.opds.split_items);
     ctx.insert("cfg_auth_required", &state.config.opds.auth_required);
-    ctx.insert("cfg_show_covers", &state.config.opds.show_covers);
     ctx.insert("cfg_alphabet_menu", &state.config.opds.alphabet_menu);
     ctx.insert("cfg_hide_doubles", &state.config.opds.hide_doubles);
 
@@ -1260,8 +1268,8 @@ fn format_uptime(total_secs: u64, ctx: &tera::Context) -> String {
 mod tests {
     use super::*;
     use crate::config::{
-        Config, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig, ServerConfig,
-        UploadConfig, WebConfig,
+        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig,
+        ServerConfig, UploadConfig, WebConfig,
     };
     use crate::db::{DbPool, create_test_pool};
     use crate::web::auth::sign_session;
@@ -1281,11 +1289,19 @@ mod tests {
             },
             library: LibraryConfig {
                 root_path: PathBuf::from("/tmp/books"),
-                covers_path: PathBuf::from("/tmp/covers"),
+                covers_path: None,
+                cover_max_dimension_px: None,
+                cover_jpeg_quality: None,
                 book_extensions: vec!["fb2".to_string()],
                 scan_zip: true,
                 zip_codepage: "cp866".to_string(),
                 inpx_enable: false,
+            },
+            covers: CoversConfig {
+                covers_path: PathBuf::from("/tmp/covers"),
+                cover_max_dimension_px: 600,
+                cover_jpeg_quality: 85,
+                show_covers: true,
             },
             database: DatabaseConfig {
                 url: "sqlite::memory:".to_string(),
@@ -1296,7 +1312,7 @@ mod tests {
                 max_items: 30,
                 split_items: 300,
                 auth_required: true,
-                show_covers: true,
+                show_covers: None,
                 alphabet_menu: true,
                 hide_doubles: false,
             },

@@ -738,7 +738,9 @@ pub async fn publish(
         upload_state.size,
         CatType::Normal,
         &meta,
-        &state.config.library.covers_path,
+        &state.config.covers.covers_path,
+        state.config.covers.cover_max_dimension_px,
+        state.config.covers.cover_jpeg_quality,
     )
     .await
     {

@@ -93,8 +93,8 @@ pub fn router(state: AppState) -> Router<AppState> {
 mod tests {
     use super::*;
     use crate::config::{
-        Config, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig, ServerConfig,
-        UploadConfig, WebConfig,
+        Config, CoversConfig, DatabaseConfig, LibraryConfig, OpdsConfig, ScannerConfig,
+        ServerConfig, UploadConfig, WebConfig,
     };
     use crate::db::create_test_pool;
     use crate::web::i18n::Translations;
@@ -112,11 +112,19 @@ mod tests {
             },
             library: LibraryConfig {
                 root_path: PathBuf::from("/tmp/books"),
-                covers_path: PathBuf::from("/tmp/covers"),
+                covers_path: None,
+                cover_max_dimension_px: None,
+                cover_jpeg_quality: None,
                 book_extensions: vec!["fb2".to_string(), "epub".to_string(), "zip".to_string()],
                 scan_zip: true,
                 zip_codepage: "cp866".to_string(),
                 inpx_enable: false,
+            },
+            covers: CoversConfig {
+                covers_path: PathBuf::from("/tmp/covers"),
+                cover_max_dimension_px: 600,
+                cover_jpeg_quality: 85,
+                show_covers: true,
             },
             database: DatabaseConfig {
                 url: "sqlite::memory:".to_string(),
@@ -127,7 +135,7 @@ mod tests {
                 max_items: 30,
                 split_items: 300,
                 auth_required: true,
-                show_covers: true,
+                show_covers: None,
                 alphabet_menu: true,
                 hide_doubles: false,
             },
