@@ -13,12 +13,73 @@
     body { min-height: 0 !important; }
     #reader-slider { height: 20px; }
     #reader-footer .btn { min-width: 32px; }
-    #reader-container { min-height: 0; }
+    #reader-container {
+      min-height: 0;
+      --reader-frame-left: 12px;
+      --reader-frame-right: 12px;
+      --reader-frame-center: 50%;
+    }
+    html[data-bs-theme="light"] {
+      --reader-page-border: #c9ced6;
+      --reader-page-divider: #d7dce3;
+    }
+    html[data-bs-theme="dark"] {
+      --reader-page-border: rgba(255, 255, 255, 0.24);
+      --reader-page-divider: rgba(255, 255, 255, 0.16);
+    }
+    body[data-format="epub"] #reader-container,
+    body[data-format="fb2"] #reader-container,
+    body[data-format="mobi"] #reader-container {
+      padding: 10px;
+    }
     #reader-container > foliate-view {
       display: block;
       width: 100%;
       height: 100%;
       min-height: 0;
+    }
+    body[data-format="epub"] #reader-container > foliate-view,
+    body[data-format="fb2"] #reader-container > foliate-view,
+    body[data-format="mobi"] #reader-container > foliate-view {
+      border-radius: 9px;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    body[data-format="epub"] #reader-container::before,
+    body[data-format="fb2"] #reader-container::before,
+    body[data-format="mobi"] #reader-container::before {
+      content: "";
+      position: absolute;
+      top: 10px;
+      bottom: 10px;
+      left: var(--reader-frame-left);
+      right: var(--reader-frame-right);
+      border: 1px solid var(--reader-page-border);
+      border-radius: 9px;
+      pointer-events: none;
+      z-index: 2;
+    }
+    body[data-format="epub"] #reader-container::after,
+    body[data-format="fb2"] #reader-container::after,
+    body[data-format="mobi"] #reader-container::after {
+      content: "";
+      position: absolute;
+      top: 10px;
+      bottom: 10px;
+      left: var(--reader-frame-center);
+      width: 1px;
+      transform: translateX(-50%);
+      background: var(--reader-page-divider);
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0.85;
+    }
+    @media (max-width: 900px) {
+      body[data-format="epub"] #reader-container::after,
+      body[data-format="fb2"] #reader-container::after,
+      body[data-format="mobi"] #reader-container::after {
+        display: none;
+      }
     }
     #reader-footer {
       padding-bottom: env(safe-area-inset-bottom, 0);
