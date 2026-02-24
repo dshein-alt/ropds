@@ -234,7 +234,8 @@
     {# Filled by reader.js #}
   </div>
 
-  {# ── Reader Footer Toolbar ──────────────────────────────── #}
+  {# ── Reader Footer Toolbar (foliate formats only) ────────── #}
+  {% if book_format == "epub" or book_format == "fb2" or book_format == "mobi" %}
   <nav class="navbar navbar-dark bg-dark py-0 flex-shrink-0 border-top border-secondary" id="reader-footer">
     <div class="container-fluid px-1 py-1">
       <div class="d-flex align-items-center gap-1 w-100">
@@ -273,6 +274,7 @@
       </div>
     </div>
   </nav>
+  {% endif %}
 
   <script src="/static/js/bootstrap.bundle.min.js"></script>
   <script src="/static/js/ropds.js?v={{ version }}"></script>
