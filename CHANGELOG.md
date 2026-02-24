@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026.02.24
+
+### Added
+- MOBI metadata and cover extraction during library scanning.
+- Expanded automated test coverage for MOBI import workflows.
+
+### Changed
+- Updated project documentation and highlights for current format support.
+- Added benchmark results documentation.
+
+### Fixed
+- Improved security of automated release notes publishing.
+
 ## [0.7.1] - 2026.02.24
 
 ### Added
