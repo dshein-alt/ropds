@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::EnvFilter;
 
 use ropds::build_router;
@@ -45,10 +46,16 @@ async fn main() {
         config.server.session_secret = format!("ropds-auto-{seed}");
     }
 
-    // Setup tracing/logging
+    // Setup tracing/logging — debug/info/trace → stdout, warn/error → stderr
     let filter =
         EnvFilter::try_new(&config.server.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let writer = std::io::stdout
+        .with_min_level(tracing::Level::INFO)
+        .and(std::io::stderr.with_max_level(tracing::Level::WARN));
+    tracing_subscriber::fmt()
+        .with_writer(writer)
+        .with_env_filter(filter)
+        .init();
 
     // Validate scanner schedule config
     if let Err(e) = ropds::scheduler::validate_config(&config.scanner) {
