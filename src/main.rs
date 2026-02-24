@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 use ropds::build_router;
 use ropds::config::Config;

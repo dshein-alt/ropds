@@ -44,6 +44,7 @@ dashmap = "6"
 quick-xml = "0.39"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "pnm"] }
+mobi = "0.8"
 
 # URL encoding
 urlencoding = "2"
