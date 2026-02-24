@@ -28,7 +28,7 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 - Automatic background scanning with configurable schedule
 - Parallel scanning with Rayon thread pools
 - Supports books inside ZIP archives and INPX index files
-- Metadata extraction for FB2 and EPUB (title, authors, genres, series, covers, annotations)
+- Metadata extraction for FB2, EPUB, and MOBI (title, authors, genres, series, covers, annotations)
 - Optional PDF/DjVu cover generation via external tools (`pdftoppm`, `ddjvu`)
 
 **OPDS Catalog**
@@ -175,7 +175,7 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 | EPUB | Full (OPF metadata) | Embedded |
 | PDF | Title, author (via `pdfinfo`) | First page (via `pdftoppm`) |
 | DjVu | Filename only | First page (via `ddjvu`) |
-| MOBI | Filename only | — |
+| MOBI | Title, author, description, language, date | Embedded |
 | DOC, DOCX | Filename only | — |
 
 Books inside **ZIP archives** are scanned transparently. **INPX** index files are supported as an alternative to scanning individual archives.
