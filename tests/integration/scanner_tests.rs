@@ -22,18 +22,19 @@ async fn scan_adds_books_from_files() {
             "test_book.epub",
             "test_book.pdf",
             "test_book.djvu",
+            "test_book.mobi",
         ],
     );
 
     let stats = scanner::run_scan(&pool, &config).await.unwrap();
-    assert_eq!(stats.books_added, 4, "should add 4 books");
+    assert_eq!(stats.books_added, 5, "should add 5 books");
     assert_eq!(stats.books_skipped, 0, "nothing to skip on first scan");
 
     // Verify counters
     counters::update_all(&pool).await.unwrap();
     let all = counters::get_all(&pool).await.unwrap();
     let allbooks = all.iter().find(|c| c.name == "allbooks").unwrap().value;
-    assert_eq!(allbooks, 4);
+    assert_eq!(allbooks, 5);
 }
 
 /// Books inside ZIP archives are scanned.
@@ -235,6 +236,38 @@ async fn scan_epub_metadata() {
     assert_eq!(book_series.len(), 1);
     assert_eq!(book_series[0].0.ser_name, "EPUB Test Series");
     assert_eq!(book_series[0].1, 2); // series index
+}
+
+/// MOBI metadata is parsed correctly.
+#[tokio::test]
+async fn scan_mobi_metadata() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["test_book.mobi"]);
+
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let book = books::find_by_path_and_filename(&pool, "", "test_book.mobi")
+        .await
+        .unwrap()
+        .expect("test_book.mobi should exist");
+    assert_eq!(book.title, "Test MOBI Book");
+    assert_eq!(book.cover, 1, "should have a cover");
+
+    let book_authors = authors::get_for_book(&pool, book.id).await.unwrap();
+    assert_eq!(book_authors.len(), 1);
+    assert_eq!(book_authors[0].full_name, "Tolkien J. R. R.");
+
+    // MOBI has no genres or series
+    let book_genres = genres::get_for_book(&pool, book.id, "en").await.unwrap();
+    assert_eq!(book_genres.len(), 0, "MOBI has no genre metadata");
+    let book_series = series::get_for_book(&pool, book.id).await.unwrap();
+    assert_eq!(book_series.len(), 0, "MOBI has no series metadata");
 }
 
 /// Cyrillic, digit-prefixed, and symbol-prefixed titles get correct lang_code.
