@@ -87,6 +87,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "${{ steps.changelog.outputs.notes }}"
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "$NOTES"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ steps.changelog.outputs.notes }}
