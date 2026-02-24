@@ -1,6 +1,7 @@
 pub mod epub;
 pub mod fb2;
 pub mod inpx;
+pub mod mobi;
 
 /// Metadata extracted from a single book file.
 #[derive(Debug, Clone, Default)]

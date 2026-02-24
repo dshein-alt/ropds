@@ -693,6 +693,7 @@ pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
             let file = fs::File::open(path)?;
             parsers::epub::parse(file).map_err(|e| ScanError::Parse(e.to_string()))
         }
+        "mobi" => parsers::mobi::parse(reader).map_err(|e| ScanError::Parse(e.to_string())),
         "pdf" => {
             let fallback_title = path
                 .file_stem()
@@ -786,6 +787,7 @@ pub fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMe
             let cursor = Cursor::new(data);
             parsers::epub::parse(cursor).map_err(|e| ScanError::Parse(e.to_string()))
         }
+        "mobi" => parsers::mobi::parse_bytes(data).map_err(|e| ScanError::Parse(e.to_string())),
         "pdf" => {
             let fallback_title = Path::new(filename)
                 .file_stem()
