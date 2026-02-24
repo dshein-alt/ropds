@@ -270,93 +270,6 @@ async function initFoliateReader() {
         type: res.headers.get('content-type')?.split(';')[0]?.trim() || '',
     });
     await view.open(file);
-    let frameSyncQueued = false;
-
-    // Keep decorative frame lines equally spaced from visible content.
-    const syncReaderFrame = () => {
-        if (view.renderer?.tagName !== 'FOLIATE-PAGINATOR') return;
-        const doc = view.renderer.getContents?.()[0]?.doc;
-        const iframe = doc?.defaultView?.frameElement;
-        if (!doc || !iframe) return;
-
-        const win = doc.defaultView;
-        const viewportWidth = win.innerWidth;
-        const viewportHeight = win.innerHeight;
-        if (!viewportWidth || !viewportHeight) return;
-
-        let minX = Number.POSITIVE_INFINITY;
-        let maxX = Number.NEGATIVE_INFINITY;
-        const includeRect = (rect) => {
-            if (!rect || rect.width < 2 || rect.height < 2) return;
-            if (rect.bottom <= 0 || rect.top >= viewportHeight) return;
-            if (rect.right <= 0 || rect.left >= viewportWidth) return;
-            minX = Math.min(minX, Math.max(0, rect.left));
-            maxX = Math.max(maxX, Math.min(viewportWidth, rect.right));
-        };
-
-        const root = doc.body || doc.documentElement;
-        if (!root) return;
-
-        const walker = doc.createTreeWalker(
-            root,
-            NodeFilter.SHOW_TEXT,
-            {
-                acceptNode(node) {
-                    return node.nodeValue && node.nodeValue.trim()
-                        ? NodeFilter.FILTER_ACCEPT
-                        : NodeFilter.FILTER_REJECT;
-                },
-            }
-        );
-        const textRange = doc.createRange();
-        let scanned = 0;
-        let textNode = walker.nextNode();
-        while (textNode && scanned < 1200) {
-            scanned += 1;
-            textRange.selectNodeContents(textNode);
-            for (const rect of textRange.getClientRects()) includeRect(rect);
-            textNode = walker.nextNode();
-        }
-        textRange.detach?.();
-
-        const mediaNodes = root.querySelectorAll('img, svg, video, canvas');
-        for (const node of mediaNodes) includeRect(node.getBoundingClientRect());
-
-        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
-
-        // Mirror around spread center so both side lines keep equal distance.
-        const centerX = viewportWidth / 2;
-        const sidePadding = 16;
-        const halfSpan = Math.max(centerX - minX, maxX - centerX) + sidePadding;
-        const frameLeftX = Math.max(0, centerX - halfSpan);
-        const frameRightX = Math.min(viewportWidth, centerX + halfSpan);
-        if (frameRightX - frameLeftX < 120) return;
-
-        const containerRect = container.getBoundingClientRect();
-        const iframeRect = iframe.getBoundingClientRect();
-        const frameLeft = iframeRect.left - containerRect.left + frameLeftX;
-        const frameRight = iframeRect.left - containerRect.left + frameRightX;
-
-        const leftInset = Math.max(10, Math.round(frameLeft));
-        const rightInset = Math.max(10, Math.round(containerRect.width - frameRight));
-        const innerWidth = containerRect.width - leftInset - rightInset;
-        if (innerWidth < 200) return;
-
-        container.style.setProperty('--reader-frame-left', `${leftInset}px`);
-        container.style.setProperty('--reader-frame-right', `${rightInset}px`);
-        container.style.setProperty('--reader-frame-center', `${Math.round(leftInset + innerWidth / 2)}px`);
-    };
-
-    const queueFrameSync = () => {
-        if (frameSyncQueued) return;
-        frameSyncQueued = true;
-        requestAnimationFrame(() => {
-            frameSyncQueued = false;
-            try {
-                syncReaderFrame();
-            } catch (_) {}
-        });
-    };
 
     // ── Footer toolbar elements ────────────────────────────────
     const locSpan   = document.getElementById('reader-loc');
@@ -492,9 +405,7 @@ async function initFoliateReader() {
     view.addEventListener('load', ({ detail: { doc } }) => {
         doc.addEventListener('keydown', handleKeyNav);
         doc.addEventListener('wheel', handleWheel, { passive: false });
-        queueFrameSync();
     });
-    window.addEventListener('resize', queueFrameSync);
 
     // ── Progress slider state (declared early — used in relocate handler) ─
     let sliderDragging = false;
@@ -512,7 +423,6 @@ async function initFoliateReader() {
             gotoInput.max = totalLocs;
             gotoInput.placeholder = `1 – ${totalLocs}`;
         }
-        queueFrameSync();
         debouncedSave();
     });
 
@@ -523,7 +433,6 @@ async function initFoliateReader() {
         view.renderer.next();
     }
     applyTheme();
-    queueFrameSync();
 
     // ── Navigation: buttons ────────────────────────────────────
     btnPrev.addEventListener('click', () => view.goLeft());
