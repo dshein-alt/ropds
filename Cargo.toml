@@ -1,6 +1,6 @@
 [package]
 name = "ropds"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -33,7 +33,7 @@ thiserror = "2"
 sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite", "postgres", "mysql", "chrono", "migrate"] }
 
 # Date/time
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 time = "0.3"
 
 # Scanner: filesystem, archives, XML parsing, images, parallelism
@@ -60,13 +60,13 @@ argon2 = "0.5"
 clap = { version = "4.5", features = ["derive"] }
 
 # Testcontainers (opt-in, for Docker-based integration tests)
-testcontainers-modules = { version = "0.14", optional = true, features = ["postgres", "mariadb"] }
+testcontainers-modules = { version = "0.15", optional = true, features = ["postgres", "mariadb"] }
 
 [features]
 test-postgres = ["testcontainers-modules"]
 test-mysql = ["testcontainers-modules"]
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "3.26"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

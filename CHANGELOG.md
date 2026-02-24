@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026.02.24
+
+### Added
+- Decorative page frame borders and center divider for EPUB, FB2, and MOBI reader.
+- Split logging output: debug/info/trace to stdout, warn/error to stderr.
+
+### Changed
+- Moved theme switcher, language selector, and account menu from the first navbar row into the search bar row; nav links now spread evenly across the first row.
+
+### Fixed
+- Reader footer toolbar now only renders for foliate-based formats (EPUB, FB2, MOBI).
+- Fixed page frame border misalignment caused by unreliable dynamic content scanning; replaced with static CSS positioning.
+
 ## [0.7.0] - 2026.02.20
 
 ### Added
