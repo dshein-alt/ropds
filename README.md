@@ -13,12 +13,12 @@
 
 The goal is simple: **a personal library server you can set up once and forget about.** Easy to deploy on a home server or VPS for yourself, family, and friends.
 
-- **Fast & resource-friendly** — written in Rust with production-grade async libraries (Axum, Tokio, SQLx)
-- **Single binary** — no runtime dependencies, containers are optional
-- **Docker-ready** — compose bundle for SQLite, PostgreSQL, and MySQL/MariaDB deployments
-- **Zero-config database** — SQLite by default, just point it at your book collection
+- **Fast & resource-friendly** — single Rust binary, no runtime dependencies, containers optional
+- **Easy deployment** — SQLite out of the box with Docker bundles for PostgreSQL and MySQL/MariaDB
 - **OPDS 1.2 compatible** — works with any OPDS reader (KOReader, Moon+ Reader, Librera, etc.)
-- **Clean web UI** — browse, search, and download books from any browser
+- **Built-in book reader** — read EPUB, FB2, MOBI, DjVu, and PDF directly in the browser with position sync
+- **Bookshelf & uploads** — personal reading lists and book uploads with auto-extracted metadata
+- **Responsive web UI** — browse, search, and manage your library with light/dark theme
 
 This project is also an **educational pet-project** exploring modern Rust ecosystem and heavy use of **competitive LLM coding agents** throughout development.
 
@@ -175,7 +175,8 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 | EPUB | Full (OPF metadata) | Embedded |
 | PDF | Title, author (via `pdfinfo`) | First page (via `pdftoppm`) |
 | DjVu | Filename only | First page (via `ddjvu`) |
-| MOBI, DOC, DOCX | Filename only | — |
+| MOBI | Filename only | — |
+| DOC, DOCX | Filename only | — |
 
 Books inside **ZIP archives** are scanned transparently. **INPX** index files are supported as an alternative to scanning individual archives.
 
@@ -198,6 +199,10 @@ Migrations run automatically on startup. Backend-specific migration sets are emb
 | Password hashing | Argon2 |
 | XML parsing | quick-xml |
 | Parallelism | Rayon + DashMap |
+
+## Performance
+
+See [BENCHMARK.md](BENCHMARK.md) for Apache Bench results (~29K req/s, ~135K req/s with keep-alive).
 
 ## License
 
