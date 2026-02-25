@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026.02.25
+
+### Added
+- Added OPDS language facet navigation with localized language choices.
+- Added alphabet drill-down and pagination for OPDS author and series browsing.
+- Added integration tests for OPDS language facet routes.
+
+### Changed
+- Expanded OPDS feed localization coverage for English and Russian.
+- Updated language filtering so "all languages" browsing works consistently in OPDS feeds.
+- Added and published a coverage report for unit and integration tests.
+
+### Fixed
+- Improved OPDS compatibility for cover thumbnail links in clients.
+- Fixed OPDS OpenSearch behavior in feed responses.
+
 ## [0.7.4] - 2026.02.25
 
 ### Changed
