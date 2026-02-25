@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] - 2026.02.25
+
+### Changed
+- Enforced lockfile validation in Docker build stage.
+
+### Fixed
+- Fixed OPDS catalog, author, series, and book browsing returning 400 errors on base routes with axum 0.8 clients.
+
 ## [0.7.3] - 2026.02.25
 
 ### Added
