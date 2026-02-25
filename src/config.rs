@@ -93,6 +93,38 @@ pub struct CoversConfig {
     pub show_covers: bool,
 }
 
+const DEFAULT_COVER_SCALE_TO: u32 = 600;
+const DEFAULT_COVER_QUALITY: u8 = 85;
+
+/// Validated cover image settings (max dimension and JPEG quality).
+#[derive(Debug, Clone, Copy)]
+pub struct CoverImageConfig {
+    scale_to: u32,
+    jpeg_quality: u8,
+}
+
+impl CoverImageConfig {
+    pub fn new(max_size: u32, quality: u8) -> Self {
+        let scale_to = if max_size == 0 { DEFAULT_COVER_SCALE_TO } else { max_size };
+        let jpeg_quality = if (1..=100).contains(&quality) { quality } else { DEFAULT_COVER_QUALITY };
+        Self { scale_to, jpeg_quality }
+    }
+
+    pub fn scale_to(&self) -> u32 {
+        self.scale_to
+    }
+
+    pub fn jpeg_quality(&self) -> u8 {
+        self.jpeg_quality
+    }
+}
+
+impl From<&CoversConfig> for CoverImageConfig {
+    fn from(cfg: &CoversConfig) -> Self {
+        Self::new(cfg.cover_max_dimension_px, cfg.cover_jpeg_quality)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScannerConfig {
     /// Minutes to fire at (0..=59). Empty = every minute.
