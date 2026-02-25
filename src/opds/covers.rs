@@ -51,8 +51,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         }
 
         // 2. Fallback: re-extract from the book file
-        let extracted =
-            extract_book_cover(&root, &path, &filename, &format, cat_type, cover_cfg)?;
+        let extracted = extract_book_cover(&root, &path, &filename, &format, cat_type, cover_cfg)?;
         let (cover_data, cover_mime) = crate::scanner::normalize_cover_for_storage_with_options(
             &extracted.0,
             &extracted.1,

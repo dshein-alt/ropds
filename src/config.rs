@@ -105,9 +105,20 @@ pub struct CoverImageConfig {
 
 impl CoverImageConfig {
     pub fn new(max_size: u32, quality: u8) -> Self {
-        let scale_to = if max_size == 0 { DEFAULT_COVER_SCALE_TO } else { max_size };
-        let jpeg_quality = if (1..=100).contains(&quality) { quality } else { DEFAULT_COVER_QUALITY };
-        Self { scale_to, jpeg_quality }
+        let scale_to = if max_size == 0 {
+            DEFAULT_COVER_SCALE_TO
+        } else {
+            max_size
+        };
+        let jpeg_quality = if (1..=100).contains(&quality) {
+            quality
+        } else {
+            DEFAULT_COVER_QUALITY
+        };
+        Self {
+            scale_to,
+            jpeg_quality,
+        }
     }
 
     pub fn scale_to(&self) -> u32 {

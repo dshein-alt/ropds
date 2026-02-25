@@ -53,8 +53,7 @@ pub fn render_first_page_jpeg_from_bytes(
         .map_err(DjvuRenderError::DecodeOutput)?;
 
     let mut jpeg = Cursor::new(Vec::new());
-    let mut encoder =
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, jpeg_quality);
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, jpeg_quality);
     encoder
         .encode_image(&image)
         .map_err(DjvuRenderError::EncodeJpeg)?;

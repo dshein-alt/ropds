@@ -566,11 +566,9 @@ async fn process_zip(
             let ext = ze.extension.clone();
             let filename = ze.filename.clone();
             let cover_cfg = ctx.cover_image_cfg;
-            tokio::task::spawn_blocking(move || {
-                parse_book_bytes(&data, &ext, &filename, cover_cfg)
-            })
-            .await
-            .map_err(|e| ScanError::Internal(e.to_string()))?
+            tokio::task::spawn_blocking(move || parse_book_bytes(&data, &ext, &filename, cover_cfg))
+                .await
+                .map_err(|e| ScanError::Internal(e.to_string()))?
         };
 
         let meta = match meta {
@@ -1624,8 +1622,7 @@ root_path = "/tmp"
     #[test]
     fn test_cover_helpers_and_rel_path() {
         let dir = tempdir().unwrap();
-        save_cover(dir.path(), 42, b"cover", "image/png", test_cover_cfg())
-        .unwrap();
+        save_cover(dir.path(), 42, b"cover", "image/png", test_cover_cfg()).unwrap();
         let png = dir.path().join("42.png");
         assert!(png.exists());
 
