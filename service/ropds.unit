@@ -1,0 +1,21 @@
+[Unit]
+Description=ROPDS (Rust OPDS Server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ropds
+Group=ropds
+WorkingDirectory=/opt/ropds
+ExecStart=/opt/ropds/ropds --config /opt/ropds/config.toml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/ropds
+
+[Install]
+WantedBy=multi-user.target

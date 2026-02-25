@@ -144,6 +144,22 @@ url = "sqlite://ropds.db?mode=rwc"
 ./target/release/ropds --scan
 ```
 
+## Systemd-сервис
+
+Используйте шаблон юнита из `service/ropds.unit` (сервис запускается от пользователя `ropds`).
+
+```bash
+sudo useradd --system --home /opt/ropds --shell /usr/sbin/nologin ropds || true
+sudo install -d -o ropds -g ropds /opt/ropds
+sudo install -m 0755 target/release/ropds /opt/ropds/ropds
+sudo install -m 0644 config.toml /opt/ropds/config.toml
+sudo install -m 0644 service/ropds.unit /etc/systemd/system/ropds.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ropds.service
+sudo systemctl status ropds.service
+sudo journalctl -u ropds.service -f
+```
+
 ## Docker
 
 Для контейнерного развёртывания используйте готовый набор в [`docker/`](docker/):

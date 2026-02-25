@@ -144,6 +144,22 @@ To scan the library once without starting the server:
 ./target/release/ropds --scan
 ```
 
+## Systemd Service
+
+Use the template unit file from `service/ropds.unit` (it runs under the `ropds` user account).
+
+```bash
+sudo useradd --system --home /opt/ropds --shell /usr/sbin/nologin ropds || true
+sudo install -d -o ropds -g ropds /opt/ropds
+sudo install -m 0755 target/release/ropds /opt/ropds/ropds
+sudo install -m 0644 config.toml /opt/ropds/config.toml
+sudo install -m 0644 service/ropds.unit /etc/systemd/system/ropds.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ropds.service
+sudo systemctl status ropds.service
+sudo journalctl -u ropds.service -f
+```
+
 ## Docker
 
 For containerized deployment, use the ready-to-run bundle in [`docker/`](docker/):
