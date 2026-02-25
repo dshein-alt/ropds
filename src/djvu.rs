@@ -3,8 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_SCALE_TO: u32 = 600;
-const DEFAULT_JPEG_QUALITY: u8 = 85;
+use crate::config::CoverImageConfig;
 
 pub fn ddjvu_available() -> bool {
     Command::new("ddjvu")
@@ -15,12 +14,21 @@ pub fn ddjvu_available() -> bool {
         .is_ok()
 }
 
-pub fn render_first_page_jpeg_from_path(path: &Path) -> Result<Vec<u8>, DjvuRenderError> {
+pub fn render_first_page_jpeg_from_path(
+    path: &Path,
+    cover_cfg: CoverImageConfig,
+) -> Result<Vec<u8>, DjvuRenderError> {
     let djvu_data = std::fs::read(path).map_err(DjvuRenderError::ReadInput)?;
-    render_first_page_jpeg_from_bytes(&djvu_data)
+    render_first_page_jpeg_from_bytes(&djvu_data, cover_cfg)
 }
 
-pub fn render_first_page_jpeg_from_bytes(djvu_data: &[u8]) -> Result<Vec<u8>, DjvuRenderError> {
+pub fn render_first_page_jpeg_from_bytes(
+    djvu_data: &[u8],
+    cover_cfg: CoverImageConfig,
+) -> Result<Vec<u8>, DjvuRenderError> {
+    let scale_to = cover_cfg.scale_to();
+    let jpeg_quality = cover_cfg.jpeg_quality();
+
     let temp_dir = temp_work_dir();
     std::fs::create_dir_all(&temp_dir).map_err(DjvuRenderError::CreateTempDir)?;
     let _cleanup = TempDirCleanup(temp_dir.clone());
@@ -30,7 +38,7 @@ pub fn render_first_page_jpeg_from_bytes(djvu_data: &[u8]) -> Result<Vec<u8>, Dj
 
     let output = Command::new("ddjvu")
         .arg("-page=1")
-        .arg(format!("-size={}x{}", DEFAULT_SCALE_TO, DEFAULT_SCALE_TO))
+        .arg(format!("-size={scale_to}x{scale_to}"))
         .arg("-format=ppm")
         .arg(&input_djvu)
         .arg("-")
@@ -46,7 +54,7 @@ pub fn render_first_page_jpeg_from_bytes(djvu_data: &[u8]) -> Result<Vec<u8>, Dj
 
     let mut jpeg = Cursor::new(Vec::new());
     let mut encoder =
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, DEFAULT_JPEG_QUALITY);
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, jpeg_quality);
     encoder
         .encode_image(&image)
         .map_err(DjvuRenderError::EncodeJpeg)?;
@@ -103,16 +111,23 @@ mod tests {
         assert!(s1.contains("ropds-djvuthumb-"));
     }
 
+    fn test_cover_cfg() -> CoverImageConfig {
+        CoverImageConfig::new(0, 0)
+    }
+
     #[test]
     fn test_render_first_page_from_missing_path() {
-        let err = render_first_page_jpeg_from_path(Path::new("/definitely/missing/file.djvu"))
-            .unwrap_err();
+        let err = render_first_page_jpeg_from_path(
+            Path::new("/definitely/missing/file.djvu"),
+            test_cover_cfg(),
+        )
+        .unwrap_err();
         assert!(matches!(err, DjvuRenderError::ReadInput(_)));
     }
 
     #[test]
     fn test_render_first_page_from_invalid_bytes_errors() {
-        let err = render_first_page_jpeg_from_bytes(b"not a djvu").unwrap_err();
+        let err = render_first_page_jpeg_from_bytes(b"not a djvu", test_cover_cfg()).unwrap_err();
         assert!(matches!(
             err,
             DjvuRenderError::Spawn(_)

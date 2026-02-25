@@ -5,6 +5,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use image::imageops::FilterType;
 
+use crate::config::CoverImageConfig;
 use crate::db::models;
 use crate::db::queries::books;
 use crate::state::AppState;
@@ -40,8 +41,7 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
     let filename = book.filename.clone();
     let format = book.format.clone();
     let cat_type = book.cat_type;
-    let cover_max_dimension_px = state.config.covers.cover_max_dimension_px;
-    let cover_jpeg_quality = state.config.covers.cover_jpeg_quality;
+    let cover_cfg = CoverImageConfig::from(&state.config.covers);
 
     // Try disk cache first, then fallback to re-extraction from book file
     let cover_result = tokio::task::spawn_blocking(move || {
@@ -51,12 +51,12 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
         }
 
         // 2. Fallback: re-extract from the book file
-        let extracted = extract_book_cover(&root, &path, &filename, &format, cat_type)?;
+        let extracted =
+            extract_book_cover(&root, &path, &filename, &format, cat_type, cover_cfg)?;
         let (cover_data, cover_mime) = crate::scanner::normalize_cover_for_storage_with_options(
             &extracted.0,
             &extracted.1,
-            cover_max_dimension_px,
-            cover_jpeg_quality,
+            cover_cfg,
         );
 
         // Save extracted cover to disk for next time
@@ -119,6 +119,7 @@ fn extract_book_cover(
     filename: &str,
     format: &str,
     cat_type: i32,
+    cover_cfg: CoverImageConfig,
 ) -> Option<(Vec<u8>, String)> {
     let data = read_book_file(root, book_path, filename, cat_type).ok()?;
 
@@ -137,7 +138,7 @@ fn extract_book_cover(
             let opf_data = read_zip_vec(&mut archive, &opf_path).ok()?;
             extract_epub_cover(&opf_data, &opf_path, &mut archive)
         }
-        "pdf" => match crate::pdf::render_first_page_jpeg_from_bytes(&data) {
+        "pdf" => match crate::pdf::render_first_page_jpeg_from_bytes(&data, cover_cfg) {
             Ok(jpg) => Some((jpg, "image/jpeg".to_string())),
             Err(e) => {
                 tracing::warn!(
@@ -149,7 +150,7 @@ fn extract_book_cover(
                 None
             }
         },
-        "djvu" => match crate::djvu::render_first_page_jpeg_from_bytes(&data) {
+        "djvu" => match crate::djvu::render_first_page_jpeg_from_bytes(&data, cover_cfg) {
             Ok(jpg) => Some((jpg, "image/jpeg".to_string())),
             Err(e) => {
                 tracing::warn!(

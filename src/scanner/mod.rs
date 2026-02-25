@@ -16,7 +16,7 @@ use image::{DynamicImage, ExtendedColorType, ImageEncoder};
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
-use crate::config::Config;
+use crate::config::{Config, CoverImageConfig};
 use crate::db::DbPool;
 use crate::db::models::{AvailStatus, CatType};
 use crate::db::queries::{authors, books, catalogs, counters, genres, series};
@@ -128,8 +128,7 @@ struct ScanContext {
     pool: DbPool,
     root: PathBuf,
     covers_path: PathBuf,
-    cover_max_dimension_px: u32,
-    cover_jpeg_quality: u8,
+    cover_image_cfg: CoverImageConfig,
     extensions: HashSet<String>,
     stats: Arc<ScanStats>,
     // Config flags
@@ -183,8 +182,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         pool: pool.clone(),
         root: root.clone(),
         covers_path: covers_path.clone(),
-        cover_max_dimension_px: config.covers.cover_max_dimension_px,
-        cover_jpeg_quality: config.covers.cover_jpeg_quality,
+        cover_image_cfg: CoverImageConfig::from(&config.covers),
         extensions,
         stats: Arc::clone(&stats),
         skip_unchanged: config.scanner.skip_unchanged,
@@ -475,7 +473,8 @@ async fn process_file(
     let meta = tokio::task::spawn_blocking({
         let path = path.to_path_buf();
         let ext = extension.to_string();
-        move || parse_book_file(&path, &ext)
+        let cover_cfg = ctx.cover_image_cfg;
+        move || parse_book_file(&path, &ext, cover_cfg)
     })
     .await
     .map_err(|e| ScanError::Internal(e.to_string()))??;
@@ -566,9 +565,12 @@ async fn process_zip(
             let data = ze.data.clone();
             let ext = ze.extension.clone();
             let filename = ze.filename.clone();
-            tokio::task::spawn_blocking(move || parse_book_bytes(&data, &ext, &filename))
-                .await
-                .map_err(|e| ScanError::Internal(e.to_string()))?
+            let cover_cfg = ctx.cover_image_cfg;
+            tokio::task::spawn_blocking(move || {
+                parse_book_bytes(&data, &ext, &filename, cover_cfg)
+            })
+            .await
+            .map_err(|e| ScanError::Internal(e.to_string()))?
         };
 
         let meta = match meta {
@@ -683,7 +685,11 @@ async fn process_inpx(
 // ---------------------------------------------------------------------------
 
 /// Parse a book file from disk by extension.
-pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
+pub fn parse_book_file(
+    path: &Path,
+    ext: &str,
+    cover_cfg: CoverImageConfig,
+) -> Result<BookMeta, ScanError> {
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
     match ext {
@@ -727,7 +733,7 @@ pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
                 meta.title = fallback_title;
             }
 
-            match crate::pdf::render_first_page_jpeg_from_path(path) {
+            match crate::pdf::render_first_page_jpeg_from_path(path, cover_cfg) {
                 Ok(cover) => {
                     meta.cover_data = Some(cover);
                     meta.cover_type = "image/jpeg".to_string();
@@ -750,7 +756,7 @@ pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
                 ..Default::default()
             };
 
-            match crate::djvu::render_first_page_jpeg_from_path(path) {
+            match crate::djvu::render_first_page_jpeg_from_path(path, cover_cfg) {
                 Ok(cover) => {
                     meta.cover_data = Some(cover);
                     meta.cover_type = "image/jpeg".to_string();
@@ -777,7 +783,12 @@ pub fn parse_book_file(path: &Path, ext: &str) -> Result<BookMeta, ScanError> {
 }
 
 /// Parse book metadata from in-memory bytes.
-pub fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMeta, ScanError> {
+pub fn parse_book_bytes(
+    data: &[u8],
+    ext: &str,
+    filename: &str,
+    cover_cfg: CoverImageConfig,
+) -> Result<BookMeta, ScanError> {
     match ext {
         "fb2" => {
             let reader = BufReader::new(Cursor::new(data));
@@ -818,7 +829,7 @@ pub fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMe
                 meta.title = fallback_title;
             }
 
-            match crate::pdf::render_first_page_jpeg_from_bytes(data) {
+            match crate::pdf::render_first_page_jpeg_from_bytes(data, cover_cfg) {
                 Ok(cover) => {
                     meta.cover_data = Some(cover);
                     meta.cover_type = "image/jpeg".to_string();
@@ -841,7 +852,7 @@ pub fn parse_book_bytes(data: &[u8], ext: &str, filename: &str) -> Result<BookMe
                 ..Default::default()
             };
 
-            match crate::djvu::render_first_page_jpeg_from_bytes(data) {
+            match crate::djvu::render_first_page_jpeg_from_bytes(data, cover_cfg) {
                 Ok(cover) => {
                     meta.cover_data = Some(cover);
                     meta.cover_type = "image/jpeg".to_string();
@@ -1098,6 +1109,7 @@ async fn cached_ensure_series(ctx: &ScanContext, ser_name: &str) -> Result<i64, 
 
 /// Insert a book record and link authors, genres, series (scanner-internal,
 /// uses DashMap-cached ensure functions).
+#[allow(clippy::too_many_arguments)]
 async fn ctx_insert_book_with_meta(
     ctx: &ScanContext,
     catalog_id: i64,
@@ -1155,8 +1167,7 @@ async fn ctx_insert_book_with_meta(
             book_id,
             cover_data,
             &meta.cover_type,
-            ctx.cover_max_dimension_px,
-            ctx.cover_jpeg_quality,
+            ctx.cover_image_cfg,
         )
     {
         warn!("Failed to save cover for book {book_id}: {e}");
@@ -1196,6 +1207,7 @@ async fn ctx_insert_book_with_meta(
 /// Insert a book record and link authors, genres, series.
 /// Saves cover image to `covers_path` if present.
 /// (Public API — used by upload handler.)
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_book_with_meta(
     pool: &DbPool,
     catalog_id: i64,
@@ -1206,8 +1218,7 @@ pub async fn insert_book_with_meta(
     cat_type: CatType,
     meta: &BookMeta,
     covers_path: &Path,
-    cover_max_dimension_px: u32,
-    cover_jpeg_quality: u8,
+    cover_cfg: CoverImageConfig,
 ) -> Result<i64, ScanError> {
     let title = if meta.title.is_empty() {
         Path::new(filename)
@@ -1256,8 +1267,7 @@ pub async fn insert_book_with_meta(
             book_id,
             cover_data,
             &meta.cover_type,
-            cover_max_dimension_px,
-            cover_jpeg_quality,
+            cover_cfg,
         )
     {
         warn!("Failed to save cover for book {book_id}: {e}");
@@ -1350,17 +1360,13 @@ async fn try_skip_inpx_archive(
 // Covers & utilities
 // ---------------------------------------------------------------------------
 
-const DEFAULT_COVER_MAX_DIMENSION_PX: u32 = 600;
-const DEFAULT_COVER_JPEG_QUALITY: u8 = 85;
-
 pub(crate) fn normalize_cover_for_storage_with_options(
     data: &[u8],
     mime: &str,
-    max_dimension_px: u32,
-    jpeg_quality: u8,
+    cover_cfg: CoverImageConfig,
 ) -> (Vec<u8>, String) {
-    let max_dimension_px = sanitize_cover_max_dimension(max_dimension_px);
-    let jpeg_quality = sanitize_cover_jpeg_quality(jpeg_quality);
+    let max_dimension_px = cover_cfg.scale_to();
+    let jpeg_quality = cover_cfg.jpeg_quality();
 
     let Ok(img) = image::load_from_memory(data) else {
         // Keep original bytes if decoder can't parse this format.
@@ -1397,11 +1403,10 @@ pub fn save_cover(
     book_id: i64,
     data: &[u8],
     mime: &str,
-    max_dimension_px: u32,
-    jpeg_quality: u8,
+    cover_cfg: CoverImageConfig,
 ) -> Result<(), std::io::Error> {
     let (normalized_data, normalized_mime) =
-        normalize_cover_for_storage_with_options(data, mime, max_dimension_px, jpeg_quality);
+        normalize_cover_for_storage_with_options(data, mime, cover_cfg);
     let ext = mime_to_ext(&normalized_mime);
     let path = covers_path.join(format!("{book_id}.{ext}"));
     fs::write(&path, normalized_data)
@@ -1420,22 +1425,6 @@ fn normalize_mime(mime: &str) -> &str {
         "image/png" => "image/png",
         "image/gif" => "image/gif",
         _ => "image/jpeg",
-    }
-}
-
-fn sanitize_cover_max_dimension(max_dimension_px: u32) -> u32 {
-    if max_dimension_px == 0 {
-        DEFAULT_COVER_MAX_DIMENSION_PX
-    } else {
-        max_dimension_px
-    }
-}
-
-fn sanitize_cover_jpeg_quality(jpeg_quality: u8) -> u8 {
-    if jpeg_quality == 0 {
-        DEFAULT_COVER_JPEG_QUALITY
-    } else {
-        jpeg_quality.min(100)
     }
 }
 
@@ -1504,6 +1493,10 @@ mod tests {
     use std::io::Write;
     use tempfile::tempdir;
 
+    fn test_cover_cfg() -> CoverImageConfig {
+        CoverImageConfig::new(0, 0)
+    }
+
     fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
         let file = fs::File::create(path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
@@ -1530,7 +1523,7 @@ mod tests {
 
     #[test]
     fn test_parse_book_bytes_fallback_for_unknown_ext() {
-        let meta = parse_book_bytes(b"ignored", "txt", "my-file.txt").unwrap();
+        let meta = parse_book_bytes(b"ignored", "txt", "my-file.txt", test_cover_cfg()).unwrap();
         assert_eq!(meta.title, "my-file");
     }
 
@@ -1539,7 +1532,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("book.unknown");
         fs::write(&path, b"data").unwrap();
-        let meta = parse_book_file(&path, "unknown").unwrap();
+        let meta = parse_book_file(&path, "unknown", test_cover_cfg()).unwrap();
         assert_eq!(meta.title, "book");
     }
 
@@ -1631,14 +1624,7 @@ root_path = "/tmp"
     #[test]
     fn test_cover_helpers_and_rel_path() {
         let dir = tempdir().unwrap();
-        save_cover(
-            dir.path(),
-            42,
-            b"cover",
-            "image/png",
-            DEFAULT_COVER_MAX_DIMENSION_PX,
-            DEFAULT_COVER_JPEG_QUALITY,
-        )
+        save_cover(dir.path(), 42, b"cover", "image/png", test_cover_cfg())
         .unwrap();
         let png = dir.path().join("42.png");
         assert!(png.exists());
@@ -1666,12 +1652,9 @@ root_path = "/tmp"
             .write_to(&mut small_png, image::ImageFormat::Png)
             .unwrap();
         let small_bytes = small_png.into_inner();
-        let (same_data, same_mime) = normalize_cover_for_storage_with_options(
-            &small_bytes,
-            "image/png",
-            DEFAULT_COVER_MAX_DIMENSION_PX,
-            DEFAULT_COVER_JPEG_QUALITY,
-        );
+        let cfg = test_cover_cfg();
+        let (same_data, same_mime) =
+            normalize_cover_for_storage_with_options(&small_bytes, "image/png", cfg);
         assert_eq!(same_mime, "image/png");
         assert_eq!(same_data, small_bytes);
 
@@ -1680,21 +1663,18 @@ root_path = "/tmp"
         large
             .write_to(&mut large_png, image::ImageFormat::Png)
             .unwrap();
-        let (resized_data, resized_mime) = normalize_cover_for_storage_with_options(
-            &large_png.into_inner(),
-            "image/png",
-            DEFAULT_COVER_MAX_DIMENSION_PX,
-            DEFAULT_COVER_JPEG_QUALITY,
-        );
+        let (resized_data, resized_mime) =
+            normalize_cover_for_storage_with_options(&large_png.into_inner(), "image/png", cfg);
         assert_eq!(resized_mime, "image/png");
         let resized = image::load_from_memory(&resized_data).unwrap();
         let (w, h) = resized.dimensions();
-        assert_eq!(w.max(h), DEFAULT_COVER_MAX_DIMENSION_PX);
+        assert_eq!(w.max(h), cfg.scale_to());
     }
 
     #[test]
     fn test_parse_book_bytes_invalid_epub_returns_parse_error() {
-        let err = parse_book_bytes(b"not-an-epub", "epub", "bad.epub").unwrap_err();
+        let err =
+            parse_book_bytes(b"not-an-epub", "epub", "bad.epub", test_cover_cfg()).unwrap_err();
         assert!(matches!(err, ScanError::Parse(_)));
     }
 }

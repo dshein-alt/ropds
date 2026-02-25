@@ -2,8 +2,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_SCALE_TO: u32 = 600;
-const DEFAULT_JPEG_QUALITY: u8 = 85;
+use crate::config::CoverImageConfig;
 
 pub fn pdftoppm_available() -> bool {
     Command::new("pdftoppm")
@@ -29,12 +28,18 @@ pub struct PdfMetadata {
     pub author: Option<String>,
 }
 
-pub fn render_first_page_jpeg_from_path(path: &Path) -> Result<Vec<u8>, PdfRenderError> {
+pub fn render_first_page_jpeg_from_path(
+    path: &Path,
+    cover_cfg: CoverImageConfig,
+) -> Result<Vec<u8>, PdfRenderError> {
     let pdf_data = std::fs::read(path).map_err(PdfRenderError::ReadInput)?;
-    render_first_page_jpeg_from_bytes(&pdf_data)
+    render_first_page_jpeg_from_bytes(&pdf_data, cover_cfg)
 }
 
-pub fn render_first_page_jpeg_from_bytes(pdf_data: &[u8]) -> Result<Vec<u8>, PdfRenderError> {
+pub fn render_first_page_jpeg_from_bytes(
+    pdf_data: &[u8],
+    cover_cfg: CoverImageConfig,
+) -> Result<Vec<u8>, PdfRenderError> {
     let temp_dir = temp_work_dir();
     std::fs::create_dir_all(&temp_dir).map_err(PdfRenderError::CreateTempDir)?;
     let _cleanup = TempDirCleanup(temp_dir.clone());
@@ -45,7 +50,7 @@ pub fn render_first_page_jpeg_from_bytes(pdf_data: &[u8]) -> Result<Vec<u8>, Pdf
 
     std::fs::write(&input_pdf, pdf_data).map_err(PdfRenderError::WriteInput)?;
 
-    let jpegopt = format!("quality={DEFAULT_JPEG_QUALITY}");
+    let jpegopt = format!("quality={}", cover_cfg.jpeg_quality());
     let status = Command::new("pdftoppm")
         .arg("-f")
         .arg("1")
@@ -54,7 +59,7 @@ pub fn render_first_page_jpeg_from_bytes(pdf_data: &[u8]) -> Result<Vec<u8>, Pdf
         .arg("-jpegopt")
         .arg(jpegopt)
         .arg("-scale-to")
-        .arg(DEFAULT_SCALE_TO.to_string())
+        .arg(cover_cfg.scale_to().to_string())
         .arg(&input_pdf)
         .arg(&output_base)
         .status()
@@ -195,16 +200,23 @@ Producer: ignored
         assert!(s1.contains("ropds-pdfthumb-"));
     }
 
+    fn test_cover_cfg() -> CoverImageConfig {
+        CoverImageConfig::new(0, 0)
+    }
+
     #[test]
     fn test_render_first_page_from_missing_path() {
-        let err = render_first_page_jpeg_from_path(Path::new("/definitely/missing/file.pdf"))
-            .unwrap_err();
+        let err = render_first_page_jpeg_from_path(
+            Path::new("/definitely/missing/file.pdf"),
+            test_cover_cfg(),
+        )
+        .unwrap_err();
         assert!(matches!(err, PdfRenderError::ReadInput(_)));
     }
 
     #[test]
     fn test_render_first_page_from_invalid_bytes_errors() {
-        let err = render_first_page_jpeg_from_bytes(b"not a pdf").unwrap_err();
+        let err = render_first_page_jpeg_from_bytes(b"not a pdf", test_cover_cfg()).unwrap_err();
         assert!(matches!(
             err,
             PdfRenderError::Spawn(_)

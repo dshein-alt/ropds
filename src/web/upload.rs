@@ -425,8 +425,9 @@ pub async fn upload_file(
     // 8. Parse metadata (in blocking task to avoid blocking the async runtime)
     let book_ext_clone = book_ext.clone();
     let temp_file_clone = temp_file.clone();
+    let cover_cfg = crate::config::CoverImageConfig::from(&state.config.covers);
     let meta_result = tokio::task::spawn_blocking(move || {
-        crate::scanner::parse_book_file(&temp_file_clone, &book_ext_clone)
+        crate::scanner::parse_book_file(&temp_file_clone, &book_ext_clone, cover_cfg)
     })
     .await;
 
@@ -729,6 +730,7 @@ pub async fn publish(
         }
     };
 
+    let cover_cfg = crate::config::CoverImageConfig::from(&state.config.covers);
     let book_id = match crate::scanner::insert_book_with_meta(
         &state.db,
         catalog_id,
@@ -739,8 +741,7 @@ pub async fn publish(
         CatType::Normal,
         &meta,
         &state.config.covers.covers_path,
-        state.config.covers.cover_max_dimension_px,
-        state.config.covers.cover_jpeg_quality,
+        cover_cfg,
     )
     .await
     {
