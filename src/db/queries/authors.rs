@@ -38,10 +38,11 @@ pub async fn get_by_lang_code_prefix(
 ) -> Result<Vec<Author>, sqlx::Error> {
     let pattern = format!("{prefix}%");
     let sql = pool.sql(
-        "SELECT * FROM authors WHERE lang_code = ? AND search_full_name LIKE ? \
+        "SELECT * FROM authors WHERE (? = 0 OR lang_code = ?) AND search_full_name LIKE ? \
          ORDER BY search_full_name LIMIT ? OFFSET ?",
     );
     sqlx::query_as::<_, Author>(&sql)
+        .bind(lang_code)
         .bind(lang_code)
         .bind(&pattern)
         .bind(limit)
@@ -285,6 +286,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(prefix.len(), 2);
+        let all_langs = get_by_lang_code_prefix(&pool, 0, "", 100, 0).await.unwrap();
+        assert_eq!(all_langs.len(), 3);
 
         let groups = get_name_prefix_groups(&pool, 2, "A").await.unwrap();
         assert_eq!(groups, vec![("AL".to_string(), 2)]);
