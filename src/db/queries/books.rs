@@ -246,6 +246,7 @@ pub async fn find_by_path_and_filename(
         .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn insert(
     pool: &DbPool,
     catalog_id: i64,

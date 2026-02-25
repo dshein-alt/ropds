@@ -74,19 +74,19 @@ fn extract_cover(mobi: &mobi::Mobi) -> (Option<Vec<u8>>, String) {
     if let Some(offset) = cover_offset {
         let record_idx = first_image + offset;
         let all = raw_records.range(0..);
-        if let Some(record) = all.get(record_idx) {
-            if let Some(result) = try_image_data(record.content) {
-                return result;
-            }
+        if let Some(record) = all.get(record_idx)
+            && let Some(result) = try_image_data(record.content)
+        {
+            return result;
         }
     }
 
     // Fallback: first image record from the filtered list.
     let images = mobi.image_records();
-    if let Some(record) = images.first() {
-        if let Some(result) = try_image_data(record.content) {
-            return result;
-        }
+    if let Some(record) = images.first()
+        && let Some(result) = try_image_data(record.content)
+    {
+        return result;
     }
 
     (None, String::new())
