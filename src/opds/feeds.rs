@@ -445,25 +445,93 @@ pub async fn authors_root(
     .await
 }
 
-/// GET /opds/authors/:lang_code/ — Authors starting with letter prefix.
+/// GET /opds/authors/:lang_code/ — Alphabet drill-down for authors.
 /// GET /opds/authors/:lang_code/:prefix/ — Drill down by prefix.
 pub async fn authors_feed(
     State(state): State<AppState>,
     Path(params): Path<AuthorsParams>,
 ) -> Response {
-    let max_items = state.config.opds.max_items as i32;
     let lang_code = params.lang_code;
     let prefix = params.prefix.unwrap_or_default();
+    let split_items = state.config.opds.split_items as i64;
 
     let mut fb = FeedBuilder::new();
     let self_href = if prefix.is_empty() {
         format!("/opds/authors/{lang_code}/")
     } else {
-        format!("/opds/authors/{lang_code}/{prefix}/")
+        format!(
+            "/opds/authors/{lang_code}/{}/",
+            urlencoding::encode(&prefix)
+        )
     };
     let _ = fb.begin_feed(
         &format!("tag:authors:{lang_code}:{prefix}"),
         "Authors",
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+
+    let groups = authors::get_name_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
+        .await
+        .unwrap_or_default();
+
+    for (prefix_str, count) in &groups {
+        if *count >= split_items {
+            let href = format!(
+                "/opds/authors/{lang_code}/{}/",
+                urlencoding::encode(prefix_str)
+            );
+            let _ = fb.write_nav_entry(
+                &format!("ap:{prefix_str}"),
+                prefix_str,
+                &href,
+                &format!("{count}"),
+                DEFAULT_UPDATED,
+            );
+        } else {
+            let href = format!(
+                "/opds/authors/{lang_code}/{}/list/",
+                urlencoding::encode(prefix_str)
+            );
+            let _ = fb.write_nav_entry(
+                &format!("ap:{prefix_str}"),
+                prefix_str,
+                &href,
+                &format!("{count}"),
+                DEFAULT_UPDATED,
+            );
+        }
+    }
+
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
+    }
+}
+
+/// GET /opds/authors/:lang_code/:prefix/list/ — Paginated author listing for a prefix.
+/// GET /opds/authors/:lang_code/:prefix/list/:page/
+pub async fn authors_list(
+    State(state): State<AppState>,
+    Path(params): Path<AuthorsListParams>,
+) -> Response {
+    let max_items = state.config.opds.max_items as i32;
+    let lang_code = params.lang_code;
+    let prefix = params.prefix;
+    let page = params.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * max_items;
+
+    let mut fb = FeedBuilder::new();
+    let self_href = format!(
+        "/opds/authors/{lang_code}/{}/list/{page}/",
+        urlencoding::encode(&prefix)
+    );
+    let _ = fb.begin_feed(
+        &format!("tag:authors:{lang_code}:{prefix}:list:{page}"),
+        &format!("Authors: {prefix}"),
         "",
         DEFAULT_UPDATED,
         &self_href,
@@ -476,10 +544,31 @@ pub async fn authors_feed(
         lang_code,
         &prefix.to_uppercase(),
         max_items,
-        0,
+        offset,
     )
     .await
     .unwrap_or_default();
+
+    let has_next = author_list.len() as i32 >= max_items;
+    let has_prev = page > 1;
+    let encoded_prefix = urlencoding::encode(&prefix);
+    let prev_href = if has_prev {
+        Some(format!(
+            "/opds/authors/{lang_code}/{encoded_prefix}/list/{}/",
+            page - 1
+        ))
+    } else {
+        None
+    };
+    let next_href = if has_next {
+        Some(format!(
+            "/opds/authors/{lang_code}/{encoded_prefix}/list/{}/",
+            page + 1
+        ))
+    } else {
+        None
+    };
+    let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
     for author in &author_list {
         let href = format!("/opds/search/books/a/{}/", author.id);
@@ -515,21 +604,21 @@ pub async fn series_root(
     .await
 }
 
-/// GET /opds/series/:lang_code/
-/// GET /opds/series/:lang_code/:prefix/
+/// GET /opds/series/:lang_code/ — Alphabet drill-down for series.
+/// GET /opds/series/:lang_code/:prefix/ — Drill down by prefix.
 pub async fn series_feed(
     State(state): State<AppState>,
     Path(params): Path<AuthorsParams>,
 ) -> Response {
-    let max_items = state.config.opds.max_items as i32;
     let lang_code = params.lang_code;
     let prefix = params.prefix.unwrap_or_default();
+    let split_items = state.config.opds.split_items as i64;
 
     let mut fb = FeedBuilder::new();
     let self_href = if prefix.is_empty() {
         format!("/opds/series/{lang_code}/")
     } else {
-        format!("/opds/series/{lang_code}/{prefix}/")
+        format!("/opds/series/{lang_code}/{}/", urlencoding::encode(&prefix))
     };
     let _ = fb.begin_feed(
         &format!("tag:series:{lang_code}:{prefix}"),
@@ -541,10 +630,101 @@ pub async fn series_feed(
     );
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-    let series_list =
-        series::get_by_lang_code_prefix(&state.db, lang_code, &prefix.to_uppercase(), max_items, 0)
-            .await
-            .unwrap_or_default();
+    let groups = series::get_name_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
+        .await
+        .unwrap_or_default();
+
+    for (prefix_str, count) in &groups {
+        if *count >= split_items {
+            let href = format!(
+                "/opds/series/{lang_code}/{}/",
+                urlencoding::encode(prefix_str)
+            );
+            let _ = fb.write_nav_entry(
+                &format!("sp:{prefix_str}"),
+                prefix_str,
+                &href,
+                &format!("{count}"),
+                DEFAULT_UPDATED,
+            );
+        } else {
+            let href = format!(
+                "/opds/series/{lang_code}/{}/list/",
+                urlencoding::encode(prefix_str)
+            );
+            let _ = fb.write_nav_entry(
+                &format!("sp:{prefix_str}"),
+                prefix_str,
+                &href,
+                &format!("{count}"),
+                DEFAULT_UPDATED,
+            );
+        }
+    }
+
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
+    }
+}
+
+/// GET /opds/series/:lang_code/:prefix/list/ — Paginated series listing for a prefix.
+/// GET /opds/series/:lang_code/:prefix/list/:page/
+pub async fn series_list(
+    State(state): State<AppState>,
+    Path(params): Path<AuthorsListParams>,
+) -> Response {
+    let max_items = state.config.opds.max_items as i32;
+    let lang_code = params.lang_code;
+    let prefix = params.prefix;
+    let page = params.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * max_items;
+
+    let mut fb = FeedBuilder::new();
+    let self_href = format!(
+        "/opds/series/{lang_code}/{}/list/{page}/",
+        urlencoding::encode(&prefix)
+    );
+    let _ = fb.begin_feed(
+        &format!("tag:series:{lang_code}:{prefix}:list:{page}"),
+        &format!("Series: {prefix}"),
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+
+    let series_list = series::get_by_lang_code_prefix(
+        &state.db,
+        lang_code,
+        &prefix.to_uppercase(),
+        max_items,
+        offset,
+    )
+    .await
+    .unwrap_or_default();
+
+    let has_next = series_list.len() as i32 >= max_items;
+    let has_prev = page > 1;
+    let encoded_prefix = urlencoding::encode(&prefix);
+    let prev_href = if has_prev {
+        Some(format!(
+            "/opds/series/{lang_code}/{encoded_prefix}/list/{}/",
+            page - 1
+        ))
+    } else {
+        None
+    };
+    let next_href = if has_next {
+        Some(format!(
+            "/opds/series/{lang_code}/{encoded_prefix}/list/{}/",
+            page + 1
+        ))
+    } else {
+        None
+    };
+    let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
     for ser in &series_list {
         let href = format!("/opds/search/books/s/{}/", ser.id);
@@ -1215,6 +1395,13 @@ pub struct LangQuery {
 pub struct AuthorsParams {
     pub lang_code: i32,
     pub prefix: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct AuthorsListParams {
+    pub lang_code: i32,
+    pub prefix: String,
+    pub page: Option<i32>,
 }
 
 #[derive(serde::Deserialize)]

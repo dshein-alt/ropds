@@ -116,3 +116,64 @@ async fn browse_cyrillic_authors() {
         "should show Cyrillic 'И' letter group for Иванов"
     );
 }
+
+/// OPDS authors drill-down returns prefix groups.
+#[tokio::test]
+async fn opds_authors_drill_down() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(
+        lib_dir.path(),
+        &["test_book.fb2", "no_cover.fb2", "author_no_genre.fb2"],
+    );
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+
+    // lang_code=2 (Latin) — should return OPDS feed with prefix groups
+    let app = test_router(state.clone());
+    let resp = get(app, "/opds/authors/2/").await;
+    assert_eq!(resp.status(), 200);
+    let xml = body_string(resp).await;
+    assert!(xml.contains("<feed"), "should return an OPDS feed");
+    // With few test authors, entries link to /list/ (count < split_items)
+    assert!(
+        xml.contains("/opds/authors/2/") && xml.contains("/list/"),
+        "should contain list links for small prefix groups"
+    );
+}
+
+/// OPDS authors list returns paginated author entries.
+#[tokio::test]
+async fn opds_authors_list() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(
+        lib_dir.path(),
+        &["test_book.fb2", "no_cover.fb2", "author_no_genre.fb2"],
+    );
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+
+    // List authors starting with "D" (Doe John — normalised as "Last First")
+    let app = test_router(state.clone());
+    let resp = get(app, "/opds/authors/2/D/list/").await;
+    assert_eq!(resp.status(), 200);
+    let xml = body_string(resp).await;
+    assert!(xml.contains("<feed"), "should return an OPDS feed");
+    assert!(xml.contains("Doe"), "should list authors starting with D");
+    // Each author should link to their books
+    assert!(
+        xml.contains("/opds/search/books/a/"),
+        "should contain book-by-author links"
+    );
+}

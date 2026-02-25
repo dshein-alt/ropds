@@ -118,3 +118,67 @@ async fn browse_cyrillic_series() {
         "should show Cyrillic 'С' letter group for Серия"
     );
 }
+
+/// OPDS series drill-down returns prefix groups.
+#[tokio::test]
+async fn opds_series_drill_down() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(
+        lib_dir.path(),
+        &["test_book.fb2", "no_cover.fb2", "series_no_genre.fb2"],
+    );
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+
+    // lang_code=2 (Latin) — should return OPDS feed with prefix groups
+    let app = test_router(state.clone());
+    let resp = get(app, "/opds/series/2/").await;
+    assert_eq!(resp.status(), 200);
+    let xml = body_string(resp).await;
+    assert!(xml.contains("<feed"), "should return an OPDS feed");
+    // With few test series, entries link to /list/ (count < split_items)
+    assert!(
+        xml.contains("/opds/series/2/") && xml.contains("/list/"),
+        "should contain list links for small prefix groups"
+    );
+}
+
+/// OPDS series list returns paginated series entries.
+#[tokio::test]
+async fn opds_series_list() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(
+        lib_dir.path(),
+        &["test_book.fb2", "no_cover.fb2", "series_no_genre.fb2"],
+    );
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    let state = test_app_state(pool, config);
+
+    // List series starting with "T" (Test Series)
+    let app = test_router(state.clone());
+    let resp = get(app, "/opds/series/2/T/list/").await;
+    assert_eq!(resp.status(), 200);
+    let xml = body_string(resp).await;
+    assert!(xml.contains("<feed"), "should return an OPDS feed");
+    assert!(
+        xml.contains("Test Series"),
+        "should list series starting with T"
+    );
+    // Each series should link to its books
+    assert!(
+        xml.contains("/opds/search/books/s/"),
+        "should contain book-by-series links"
+    );
+}
