@@ -92,18 +92,30 @@ pub async fn root_feed(State(state): State<AppState>, headers: axum::http::Heade
 }
 
 /// GET /opds/catalogs/
+pub async fn catalogs_root(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    build_catalogs_feed(&state, &headers, 0, 1).await
+}
+
 /// GET /opds/catalogs/:cat_id/
 /// GET /opds/catalogs/:cat_id/:page/
 pub async fn catalogs_feed(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    path: Option<Path<CatalogsParams>>,
+    Path(p): Path<CatalogsParams>,
 ) -> Response {
-    let lang = detect_opds_lang(&headers, &state.config);
-    let (cat_id, page) = match path {
-        Some(Path(p)) => (p.cat_id, p.page.unwrap_or(1).max(1)),
-        None => (0, 1),
-    };
+    build_catalogs_feed(&state, &headers, p.cat_id, p.page.unwrap_or(1).max(1)).await
+}
+
+async fn build_catalogs_feed(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    cat_id: i64,
+    page: i32,
+) -> Response {
+    let lang = detect_opds_lang(headers, &state.config);
     let max_items = state.config.opds.max_items as i32;
     let offset = (page - 1) * max_items;
 
@@ -170,7 +182,7 @@ pub async fn catalogs_feed(
         let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
         for book in &book_list {
-            write_book_entry(&mut fb, &state, book, &lang).await;
+            write_book_entry(&mut fb, state, book, &lang).await;
         }
     }
 
@@ -181,192 +193,192 @@ pub async fn catalogs_feed(
 }
 
 /// GET /opds/authors/ — Language/script selection for authors.
+pub async fn authors_root() -> Response {
+    lang_selection_feed("Authors", "/opds/authors/").await
+}
+
 /// GET /opds/authors/:lang_code/ — Authors starting with letter prefix.
 /// GET /opds/authors/:lang_code/:prefix/ — Drill down by prefix.
 pub async fn authors_feed(
     State(state): State<AppState>,
-    path: Option<Path<AuthorsParams>>,
+    Path(params): Path<AuthorsParams>,
 ) -> Response {
     let max_items = state.config.opds.max_items as i32;
+    let lang_code = params.lang_code;
+    let prefix = params.prefix.unwrap_or_default();
 
-    match path {
-        None => {
-            // Language selection
-            lang_selection_feed("Authors", "/opds/authors/").await
-        }
-        Some(Path(params)) => {
-            let lang_code = params.lang_code;
-            let prefix = params.prefix.unwrap_or_default();
+    let mut fb = FeedBuilder::new();
+    let self_href = if prefix.is_empty() {
+        format!("/opds/authors/{lang_code}/")
+    } else {
+        format!("/opds/authors/{lang_code}/{prefix}/")
+    };
+    let _ = fb.begin_feed(
+        &format!("tag:authors:{lang_code}:{prefix}"),
+        "Authors",
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            let mut fb = FeedBuilder::new();
-            let self_href = if prefix.is_empty() {
-                format!("/opds/authors/{lang_code}/")
-            } else {
-                format!("/opds/authors/{lang_code}/{prefix}/")
-            };
-            let _ = fb.begin_feed(
-                &format!("tag:authors:{lang_code}:{prefix}"),
-                "Authors",
-                "",
-                DEFAULT_UPDATED,
-                &self_href,
-                "/opds/",
-            );
-            let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let author_list = authors::get_by_lang_code_prefix(
+        &state.db,
+        lang_code,
+        &prefix.to_uppercase(),
+        max_items,
+        0,
+    )
+    .await
+    .unwrap_or_default();
 
-            let author_list = authors::get_by_lang_code_prefix(
-                &state.db,
-                lang_code,
-                &prefix.to_uppercase(),
-                max_items,
-                0,
-            )
-            .await
-            .unwrap_or_default();
+    for author in &author_list {
+        let href = format!("/opds/search/books/a/{}/", author.id);
+        let _ = fb.write_nav_entry(
+            &format!("a:{}", author.id),
+            &author.full_name,
+            &href,
+            "",
+            DEFAULT_UPDATED,
+        );
+    }
 
-            for author in &author_list {
-                let href = format!("/opds/search/books/a/{}/", author.id);
-                let _ = fb.write_nav_entry(
-                    &format!("a:{}", author.id),
-                    &author.full_name,
-                    &href,
-                    "",
-                    DEFAULT_UPDATED,
-                );
-            }
-
-            match fb.finish() {
-                Ok(body) => atom_response(body),
-                Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
-            }
-        }
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
     }
 }
 
 /// GET /opds/series/ — Language/script selection for series.
+pub async fn series_root() -> Response {
+    lang_selection_feed("Series", "/opds/series/").await
+}
+
 /// GET /opds/series/:lang_code/
 /// GET /opds/series/:lang_code/:prefix/
 pub async fn series_feed(
     State(state): State<AppState>,
-    path: Option<Path<AuthorsParams>>,
+    Path(params): Path<AuthorsParams>,
 ) -> Response {
     let max_items = state.config.opds.max_items as i32;
+    let lang_code = params.lang_code;
+    let prefix = params.prefix.unwrap_or_default();
 
-    match path {
-        None => lang_selection_feed("Series", "/opds/series/").await,
-        Some(Path(params)) => {
-            let lang_code = params.lang_code;
-            let prefix = params.prefix.unwrap_or_default();
+    let mut fb = FeedBuilder::new();
+    let self_href = if prefix.is_empty() {
+        format!("/opds/series/{lang_code}/")
+    } else {
+        format!("/opds/series/{lang_code}/{prefix}/")
+    };
+    let _ = fb.begin_feed(
+        &format!("tag:series:{lang_code}:{prefix}"),
+        "Series",
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            let mut fb = FeedBuilder::new();
-            let self_href = if prefix.is_empty() {
-                format!("/opds/series/{lang_code}/")
-            } else {
-                format!("/opds/series/{lang_code}/{prefix}/")
-            };
-            let _ = fb.begin_feed(
-                &format!("tag:series:{lang_code}:{prefix}"),
-                "Series",
-                "",
-                DEFAULT_UPDATED,
-                &self_href,
-                "/opds/",
-            );
-            let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let series_list = series::get_by_lang_code_prefix(
+        &state.db,
+        lang_code,
+        &prefix.to_uppercase(),
+        max_items,
+        0,
+    )
+    .await
+    .unwrap_or_default();
 
-            let series_list = series::get_by_lang_code_prefix(
-                &state.db,
-                lang_code,
-                &prefix.to_uppercase(),
-                max_items,
-                0,
-            )
-            .await
-            .unwrap_or_default();
+    for ser in &series_list {
+        let href = format!("/opds/search/books/s/{}/", ser.id);
+        let _ = fb.write_nav_entry(
+            &format!("s:{}", ser.id),
+            &ser.ser_name,
+            &href,
+            "",
+            DEFAULT_UPDATED,
+        );
+    }
 
-            for ser in &series_list {
-                let href = format!("/opds/search/books/s/{}/", ser.id);
-                let _ = fb.write_nav_entry(
-                    &format!("s:{}", ser.id),
-                    &ser.ser_name,
-                    &href,
-                    "",
-                    DEFAULT_UPDATED,
-                );
-            }
-
-            match fb.finish() {
-                Ok(body) => atom_response(body),
-                Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
-            }
-        }
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
     }
 }
 
 /// GET /opds/genres/ — Genre sections.
-/// GET /opds/genres/:section/ — Genres in section.
-pub async fn genres_feed(
+pub async fn genres_root(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    path: Option<Path<(String,)>>,
 ) -> Response {
     let lang = detect_opds_lang(&headers, &state.config);
     let mut fb = FeedBuilder::new();
 
-    match path {
-        None => {
-            // Show genre sections
-            let _ = fb.begin_feed(
-                "tag:genres",
-                "Genres",
-                "",
-                DEFAULT_UPDATED,
-                "/opds/genres/",
-                "/opds/",
-            );
-            let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.begin_feed(
+        "tag:genres",
+        "Genres",
+        "",
+        DEFAULT_UPDATED,
+        "/opds/genres/",
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-            let sections = genres::get_sections(&state.db, &lang)
-                .await
-                .unwrap_or_default();
-            for (i, (code, name)) in sections.iter().enumerate() {
-                let href = format!("/opds/genres/{}/", urlencoding::encode(code));
-                let _ = fb.write_nav_entry(&format!("gs:{i}"), name, &href, "", DEFAULT_UPDATED);
-            }
-        }
-        Some(Path((section_code,))) => {
-            let self_href = format!("/opds/genres/{}/", urlencoding::encode(&section_code));
+    let sections = genres::get_sections(&state.db, &lang)
+        .await
+        .unwrap_or_default();
+    for (i, (code, name)) in sections.iter().enumerate() {
+        let href = format!("/opds/genres/{}/", urlencoding::encode(code));
+        let _ = fb.write_nav_entry(&format!("gs:{i}"), name, &href, "", DEFAULT_UPDATED);
+    }
 
-            let genre_list = genres::get_by_section(&state.db, &section_code, &lang)
-                .await
-                .unwrap_or_default();
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
+    }
+}
 
-            let section_title = genre_list
-                .first()
-                .map(|g| g.section.clone())
-                .unwrap_or_else(|| section_code.clone());
+/// GET /opds/genres/:section/ — Genres in section.
+pub async fn genres_by_section(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((section_code,)): Path<(String,)>,
+) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config);
+    let mut fb = FeedBuilder::new();
 
-            let _ = fb.begin_feed(
-                &format!("tag:genres:{section_code}"),
-                &section_title,
-                "",
-                DEFAULT_UPDATED,
-                &self_href,
-                "/opds/",
-            );
-            let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let self_href = format!("/opds/genres/{}/", urlencoding::encode(&section_code));
 
-            for genre in &genre_list {
-                let href = format!("/opds/search/books/g/{}/", genre.id);
-                let _ = fb.write_nav_entry(
-                    &format!("g:{}", genre.id),
-                    &genre.subsection,
-                    &href,
-                    &genre.code,
-                    DEFAULT_UPDATED,
-                );
-            }
-        }
+    let genre_list = genres::get_by_section(&state.db, &section_code, &lang)
+        .await
+        .unwrap_or_default();
+
+    let section_title = genre_list
+        .first()
+        .map(|g| g.section.clone())
+        .unwrap_or_else(|| section_code.clone());
+
+    let _ = fb.begin_feed(
+        &format!("tag:genres:{section_code}"),
+        &section_title,
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+
+    for genre in &genre_list {
+        let href = format!("/opds/search/books/g/{}/", genre.id);
+        let _ = fb.write_nav_entry(
+            &format!("g:{}", genre.id),
+            &genre.subsection,
+            &href,
+            &genre.code,
+            DEFAULT_UPDATED,
+        );
     }
 
     match fb.finish() {
@@ -376,71 +388,69 @@ pub async fn genres_feed(
 }
 
 /// GET /opds/books/ — Language selection for books by title.
+pub async fn books_root() -> Response {
+    lang_selection_feed("Books", "/opds/books/").await
+}
+
 /// GET /opds/books/:lang_code/
+/// GET /opds/books/:lang_code/:prefix/
 pub async fn books_feed(
     State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-    path: Option<Path<AuthorsParams>>,
+    Path(params): Path<AuthorsParams>,
 ) -> Response {
-    let _lang = detect_opds_lang(&headers, &state.config);
-    match path {
-        None => lang_selection_feed("Books", "/opds/books/").await,
-        Some(Path(params)) => {
-            let lang_code = params.lang_code;
-            let prefix = params.prefix.unwrap_or_default();
-            let split_items = state.config.opds.split_items as i64;
+    let lang_code = params.lang_code;
+    let prefix = params.prefix.unwrap_or_default();
+    let split_items = state.config.opds.split_items as i64;
 
-            let mut fb = FeedBuilder::new();
-            let self_href = if prefix.is_empty() {
-                format!("/opds/books/{lang_code}/")
-            } else {
-                format!("/opds/books/{lang_code}/{}/", urlencoding::encode(&prefix))
-            };
-            let _ = fb.begin_feed(
-                &format!("tag:books:{lang_code}:{prefix}"),
-                "Books",
-                "",
-                DEFAULT_UPDATED,
-                &self_href,
-                "/opds/",
+    let mut fb = FeedBuilder::new();
+    let self_href = if prefix.is_empty() {
+        format!("/opds/books/{lang_code}/")
+    } else {
+        format!("/opds/books/{lang_code}/{}/", urlencoding::encode(&prefix))
+    };
+    let _ = fb.begin_feed(
+        &format!("tag:books:{lang_code}:{prefix}"),
+        "Books",
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        "/opds/",
+    );
+    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+
+    let groups =
+        books::get_title_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
+            .await
+            .unwrap_or_default();
+
+    for (prefix_str, count) in &groups {
+        if *count >= split_items {
+            let href = format!(
+                "/opds/books/{lang_code}/{}/",
+                urlencoding::encode(prefix_str)
             );
-            let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
-
-            let groups =
-                books::get_title_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
-                    .await
-                    .unwrap_or_default();
-
-            for (prefix_str, count) in &groups {
-                if *count >= split_items {
-                    let href = format!(
-                        "/opds/books/{lang_code}/{}/",
-                        urlencoding::encode(prefix_str)
-                    );
-                    let _ = fb.write_nav_entry(
-                        &format!("bp:{prefix_str}"),
-                        prefix_str,
-                        &href,
-                        &format!("{count}"),
-                        DEFAULT_UPDATED,
-                    );
-                } else {
-                    let href = format!("/opds/search/books/b/{}/", urlencoding::encode(prefix_str));
-                    let _ = fb.write_nav_entry(
-                        &format!("bp:{prefix_str}"),
-                        prefix_str,
-                        &href,
-                        &format!("{count}"),
-                        DEFAULT_UPDATED,
-                    );
-                }
-            }
-
-            match fb.finish() {
-                Ok(body) => atom_response(body),
-                Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
-            }
+            let _ = fb.write_nav_entry(
+                &format!("bp:{prefix_str}"),
+                prefix_str,
+                &href,
+                &format!("{count}"),
+                DEFAULT_UPDATED,
+            );
+        } else {
+            let href = format!("/opds/search/books/b/{}/", urlencoding::encode(prefix_str));
+            let _ = fb.write_nav_entry(
+                &format!("bp:{prefix_str}"),
+                prefix_str,
+                &href,
+                &format!("{count}"),
+                DEFAULT_UPDATED,
+            );
         }
+    }
+
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
     }
 }
 
@@ -730,20 +740,34 @@ pub async fn search_series_feed(
 }
 
 /// GET /opds/bookshelf/
+pub async fn bookshelf_root(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    build_bookshelf_feed(&state, &headers, 1).await
+}
+
 /// GET /opds/bookshelf/:page/
 pub async fn bookshelf_feed(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    path: Option<Path<(i32,)>>,
+    Path((page,)): Path<(i32,)>,
 ) -> Response {
-    let lang = detect_opds_lang(&headers, &state.config);
-    let user_id = match super::auth::get_user_id_from_headers(&state.db, &headers).await {
+    build_bookshelf_feed(&state, &headers, page.max(1)).await
+}
+
+async fn build_bookshelf_feed(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    page: i32,
+) -> Response {
+    let lang = detect_opds_lang(headers, &state.config);
+    let user_id = match super::auth::get_user_id_from_headers(&state.db, headers).await {
         Some(uid) => uid,
         None => return error_response(StatusCode::UNAUTHORIZED, "Authentication required"),
     };
 
     let max_items = state.config.opds.max_items as i32;
-    let page = path.map(|Path((p,))| p).unwrap_or(1).max(1);
     let offset = (page - 1) * max_items;
 
     let mut fb = FeedBuilder::new();
@@ -785,7 +809,7 @@ pub async fn bookshelf_feed(
     let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
 
     for book in &book_list {
-        write_book_entry(&mut fb, &state, book, &lang).await;
+        write_book_entry(&mut fb, state, book, &lang).await;
     }
 
     match fb.finish() {

@@ -41,22 +41,22 @@ pub fn router(state: AppState) -> Router<AppState> {
         // Root feed
         .route("/", get(feeds::root_feed))
         // Catalogs
-        .route("/catalogs/", get(feeds::catalogs_feed))
+        .route("/catalogs/", get(feeds::catalogs_root))
         .route("/catalogs/{cat_id}/", get(feeds::catalogs_feed))
         .route("/catalogs/{cat_id}/{page}/", get(feeds::catalogs_feed))
         // Authors
-        .route("/authors/", get(feeds::authors_feed))
+        .route("/authors/", get(feeds::authors_root))
         .route("/authors/{lang_code}/", get(feeds::authors_feed))
         .route("/authors/{lang_code}/{prefix}/", get(feeds::authors_feed))
         // Series
-        .route("/series/", get(feeds::series_feed))
+        .route("/series/", get(feeds::series_root))
         .route("/series/{lang_code}/", get(feeds::series_feed))
         .route("/series/{lang_code}/{prefix}/", get(feeds::series_feed))
         // Genres
-        .route("/genres/", get(feeds::genres_feed))
-        .route("/genres/{section}/", get(feeds::genres_feed))
+        .route("/genres/", get(feeds::genres_root))
+        .route("/genres/{section}/", get(feeds::genres_by_section))
         // Books by title
-        .route("/books/", get(feeds::books_feed))
+        .route("/books/", get(feeds::books_root))
         .route("/books/{lang_code}/", get(feeds::books_feed))
         .route("/books/{lang_code}/{prefix}/", get(feeds::books_feed))
         // OpenSearch
@@ -91,7 +91,7 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(feeds::search_series_feed),
         )
         // Bookshelf
-        .route("/bookshelf/", get(feeds::bookshelf_feed))
+        .route("/bookshelf/", get(feeds::bookshelf_root))
         .route("/bookshelf/{page}/", get(feeds::bookshelf_feed))
         // Download
         .route("/download/{book_id}/{zip_flag}/", get(download::download))
