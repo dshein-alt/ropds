@@ -13,7 +13,7 @@ COPY locales ./locales
 COPY static ./static
 COPY migrations ./migrations
 
-RUN cargo build --release --bin ropds
+RUN cargo build --release --locked --bin ropds
 
 FROM debian:trixie-slim AS runtime
 
