@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
@@ -10,13 +10,125 @@ use super::xml::{self, FeedBuilder};
 const DEFAULT_UPDATED: &str = "2024-01-01T00:00:00Z";
 
 /// Extract primary language from Accept-Language header, fallback to config default.
-fn detect_opds_lang(headers: &axum::http::HeaderMap, config: &crate::config::Config) -> String {
+fn detect_opds_lang(
+    headers: &axum::http::HeaderMap,
+    config: &crate::config::Config,
+    query_lang: Option<&str>,
+) -> String {
+    if let Some(lang) = query_lang.and_then(normalize_locale_code) {
+        return lang;
+    }
     if let Some(accept_lang) = headers.get("accept-language").and_then(|v| v.to_str().ok()) {
         let primary = accept_lang.split(',').next().unwrap_or("en");
-        let lang = primary.split(&['-', ';'][..]).next().unwrap_or("en");
-        return lang.to_lowercase();
+        let lang = primary.split(&['-', ';'][..]).next().unwrap_or("en").trim();
+        if let Some(lang) = normalize_locale_code(lang) {
+            return lang;
+        }
     }
-    config.web.language.clone()
+    normalize_locale_code(&config.web.language).unwrap_or_else(|| "en".to_string())
+}
+
+fn normalize_locale_code(locale: &str) -> Option<String> {
+    let normalized = locale.trim().to_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        Some(normalized)
+    } else {
+        None
+    }
+}
+
+fn locale_label(state: &AppState, locale: &str) -> String {
+    if let Some(v) = state.translations.get(locale)
+        && let Some(label) = v
+            .get("lang")
+            .and_then(|s| s.get(locale))
+            .and_then(|s| s.as_str())
+    {
+        return label.to_string();
+    }
+    match locale {
+        "en" => "English".to_string(),
+        "ru" => "Русский".to_string(),
+        _ => locale.to_uppercase(),
+    }
+}
+
+fn tr(state: &AppState, lang: &str, section: &str, key: &str, fallback: &str) -> String {
+    let locale = crate::web::i18n::get_locale(state.translations.as_ref(), lang);
+    locale
+        .get(section)
+        .and_then(|v| v.get(key))
+        .and_then(|v| v.as_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn locale_choices(state: &AppState) -> Vec<String> {
+    let mut locales: Vec<String> = state
+        .translations
+        .keys()
+        .filter_map(|l| normalize_locale_code(l))
+        .collect();
+    if locales.is_empty() {
+        locales.push(
+            normalize_locale_code(&state.config.web.language).unwrap_or_else(|| "en".to_string()),
+        );
+    }
+    locales.sort();
+    locales.dedup();
+    locales
+}
+
+fn add_lang_query(href: &str, lang: &str) -> String {
+    let encoded = urlencoding::encode(lang);
+    if href.contains('?') {
+        format!("{href}&lang={encoded}")
+    } else {
+        format!("{href}?lang={encoded}")
+    }
+}
+
+fn write_language_facets_for_href(
+    fb: &mut FeedBuilder,
+    state: &AppState,
+    selected_lang: &str,
+    target_href: &str,
+) {
+    for locale in locale_choices(state) {
+        let facet_href = add_lang_query(target_href, &locale);
+        let label = locale_label(state, &locale);
+        let _ = fb.write_facet_link(
+            &facet_href,
+            xml::NAV_TYPE,
+            &label,
+            "Language",
+            locale == selected_lang,
+        );
+    }
+}
+
+fn write_language_facets_as_root_lang_paths(
+    fb: &mut FeedBuilder,
+    state: &AppState,
+    selected_lang: &str,
+) {
+    for locale in locale_choices(state) {
+        let href = format!("/opds/lang/{}/", urlencoding::encode(&locale));
+        let label = locale_label(state, &locale);
+        let _ = fb.write_facet_link(
+            &href,
+            xml::NAV_TYPE,
+            &label,
+            "Language",
+            locale == selected_lang,
+        );
+    }
 }
 
 fn atom_response(body: Vec<u8>) -> Response {
@@ -33,7 +145,83 @@ fn error_response(status: StatusCode, msg: &str) -> Response {
 }
 
 /// GET /opds/ — Root navigation feed.
-pub async fn root_feed(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+pub async fn root_feed(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    build_root_feed(&state, &headers, q.lang.as_deref()).await
+}
+
+/// GET /opds/lang/:locale/ — Root feed forced to a specific locale.
+pub async fn root_feed_for_locale(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((locale,)): Path<(String,)>,
+) -> Response {
+    build_root_feed(&state, &headers, Some(locale.as_str())).await
+}
+
+async fn build_root_feed(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    query_lang: Option<&str>,
+) -> Response {
+    let lang = detect_opds_lang(headers, &state.config, query_lang);
+    let by_catalogs = tr(state, &lang, "opds", "root_by_catalogs", "By Catalogs");
+    let by_authors = tr(state, &lang, "opds", "root_by_authors", "By Authors");
+    let by_genres = tr(state, &lang, "opds", "root_by_genres", "By Genres");
+    let by_series = tr(state, &lang, "opds", "root_by_series", "By Series");
+    let by_title = tr(state, &lang, "opds", "root_by_title", "By Title");
+    let language_facets = tr(
+        state,
+        &lang,
+        "opds",
+        "root_language_facets",
+        "Language facets",
+    );
+    let by_catalogs_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_catalogs",
+        "Browse by directory tree",
+    );
+    let by_authors_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_authors",
+        "Browse by author",
+    );
+    let by_genres_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_genres",
+        "Browse by genre",
+    );
+    let by_series_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_series",
+        "Browse by series",
+    );
+    let by_title_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_title",
+        "Browse by book title",
+    );
+    let language_facets_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_language_facets",
+        "Switch OPDS language facet",
+    );
     let title = &state.config.opds.title;
     let subtitle = &state.config.opds.subtitle;
 
@@ -52,34 +240,62 @@ pub async fn root_feed(State(state): State<AppState>, headers: axum::http::Heade
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error");
     }
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    write_language_facets_as_root_lang_paths(&mut fb, state, &lang);
 
-    let entries = [
+    let entries: Vec<(&str, String, String, String)> = vec![
         (
             "m:1",
-            "By Catalogs",
-            "/opds/catalogs/",
-            "Browse by directory tree",
+            by_catalogs,
+            add_lang_query("/opds/catalogs/", &lang),
+            by_catalogs_content,
         ),
-        ("m:2", "By Authors", "/opds/authors/", "Browse by author"),
-        ("m:3", "By Genres", "/opds/genres/", "Browse by genre"),
-        ("m:4", "By Series", "/opds/series/", "Browse by series"),
-        ("m:5", "By Title", "/opds/books/", "Browse by book title"),
+        (
+            "m:2",
+            by_authors,
+            add_lang_query("/opds/authors/", &lang),
+            by_authors_content,
+        ),
+        (
+            "m:3",
+            by_genres,
+            add_lang_query("/opds/genres/", &lang),
+            by_genres_content,
+        ),
+        (
+            "m:4",
+            by_series,
+            add_lang_query("/opds/series/", &lang),
+            by_series_content,
+        ),
+        (
+            "m:5",
+            by_title,
+            add_lang_query("/opds/books/", &lang),
+            by_title_content,
+        ),
+        (
+            "m:7",
+            language_facets,
+            add_lang_query("/opds/facets/languages/", &lang),
+            language_facets_content,
+        ),
     ];
     for (id, title, href, content) in &entries {
         let _ = fb.write_nav_entry(id, title, href, content, DEFAULT_UPDATED);
     }
 
     if state.config.opds.auth_required
-        && let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, &headers).await
+        && let Some(user_id) = super::auth::get_user_id_from_headers(&state.db, headers).await
     {
         let count = crate::db::queries::bookshelf::count_by_user(&state.db, user_id)
             .await
             .unwrap_or(0);
-        let content = format!("Books read: {count}");
+        let books_read_prefix = tr(state, &lang, "opds", "books_read_prefix", "Books read");
+        let content = format!("{books_read_prefix}: {count}");
         let _ = fb.write_nav_entry(
             "m:6",
-            "Book shelf",
-            "/opds/bookshelf/",
+            &tr(state, &lang, "opds", "root_bookshelf", "Book shelf"),
+            &add_lang_query("/opds/bookshelf/", &lang),
             &content,
             DEFAULT_UPDATED,
         );
@@ -95,8 +311,9 @@ pub async fn root_feed(State(state): State<AppState>, headers: axum::http::Heade
 pub async fn catalogs_root(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    build_catalogs_feed(&state, &headers, 0, 1).await
+    build_catalogs_feed(&state, &headers, q.lang.as_deref(), 0, 1).await
 }
 
 /// GET /opds/catalogs/:cat_id/
@@ -105,25 +322,34 @@ pub async fn catalogs_feed(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(p): Path<CatalogsParams>,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    build_catalogs_feed(&state, &headers, p.cat_id, p.page.unwrap_or(1).max(1)).await
+    build_catalogs_feed(
+        &state,
+        &headers,
+        q.lang.as_deref(),
+        p.cat_id,
+        p.page.unwrap_or(1).max(1),
+    )
+    .await
 }
 
 async fn build_catalogs_feed(
     state: &AppState,
     headers: &axum::http::HeaderMap,
+    query_lang: Option<&str>,
     cat_id: i64,
     page: i32,
 ) -> Response {
-    let lang = detect_opds_lang(headers, &state.config);
+    let lang = detect_opds_lang(headers, &state.config, query_lang);
     let max_items = state.config.opds.max_items as i32;
     let offset = (page - 1) * max_items;
 
     let mut fb = FeedBuilder::new();
     let self_href = if cat_id == 0 {
-        "/opds/catalogs/".to_string()
+        add_lang_query("/opds/catalogs/", &lang)
     } else {
-        format!("/opds/catalogs/{cat_id}/{page}/")
+        add_lang_query(&format!("/opds/catalogs/{cat_id}/{page}/"), &lang)
     };
     let _ = fb.begin_feed(
         &format!("tag:catalogs:{cat_id}:{page}"),
@@ -131,9 +357,13 @@ async fn build_catalogs_feed(
         "",
         DEFAULT_UPDATED,
         &self_href,
-        "/opds/",
+        &add_lang_query("/opds/", &lang),
     );
-    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+    write_language_facets_for_href(&mut fb, state, &lang, "/opds/catalogs/");
 
     // Child catalogs (only on page 1 — subcatalogs are not paginated)
     if page == 1 {
@@ -148,7 +378,7 @@ async fn build_catalogs_feed(
         };
 
         for cat in &cats {
-            let href = format!("/opds/catalogs/{}/", cat.id);
+            let href = add_lang_query(&format!("/opds/catalogs/{}/", cat.id), &lang);
             let _ = fb.write_nav_entry(
                 &format!("c:{}", cat.id),
                 &cat.cat_name,
@@ -170,12 +400,18 @@ async fn build_catalogs_feed(
         let has_next = book_list.len() as i32 >= max_items;
         let has_prev = page > 1;
         let prev_href = if has_prev {
-            Some(format!("/opds/catalogs/{cat_id}/{}/", page - 1))
+            Some(add_lang_query(
+                &format!("/opds/catalogs/{cat_id}/{}/", page - 1),
+                &lang,
+            ))
         } else {
             None
         };
         let next_href = if has_next {
-            Some(format!("/opds/catalogs/{cat_id}/{}/", page + 1))
+            Some(add_lang_query(
+                &format!("/opds/catalogs/{cat_id}/{}/", page + 1),
+                &lang,
+            ))
         } else {
             None
         };
@@ -193,8 +429,20 @@ async fn build_catalogs_feed(
 }
 
 /// GET /opds/authors/ — Language/script selection for authors.
-pub async fn authors_root() -> Response {
-    lang_selection_feed("Authors", "/opds/authors/").await
+pub async fn authors_root(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    lang_selection_feed(
+        &state,
+        &headers,
+        q.lang.as_deref(),
+        "authors",
+        "Authors",
+        "/opds/authors/",
+    )
+    .await
 }
 
 /// GET /opds/authors/:lang_code/ — Authors starting with letter prefix.
@@ -251,8 +499,20 @@ pub async fn authors_feed(
 }
 
 /// GET /opds/series/ — Language/script selection for series.
-pub async fn series_root() -> Response {
-    lang_selection_feed("Series", "/opds/series/").await
+pub async fn series_root(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    lang_selection_feed(
+        &state,
+        &headers,
+        q.lang.as_deref(),
+        "series",
+        "Series",
+        "/opds/series/",
+    )
+    .await
 }
 
 /// GET /opds/series/:lang_code/
@@ -281,15 +541,10 @@ pub async fn series_feed(
     );
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-    let series_list = series::get_by_lang_code_prefix(
-        &state.db,
-        lang_code,
-        &prefix.to_uppercase(),
-        max_items,
-        0,
-    )
-    .await
-    .unwrap_or_default();
+    let series_list =
+        series::get_by_lang_code_prefix(&state.db, lang_code, &prefix.to_uppercase(), max_items, 0)
+            .await
+            .unwrap_or_default();
 
     for ser in &series_list {
         let href = format!("/opds/search/books/s/{}/", ser.id);
@@ -312,8 +567,9 @@ pub async fn series_feed(
 pub async fn genres_root(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    let lang = detect_opds_lang(&headers, &state.config);
+    let lang = detect_opds_lang(&headers, &state.config, q.lang.as_deref());
     let mut fb = FeedBuilder::new();
 
     let _ = fb.begin_feed(
@@ -321,16 +577,23 @@ pub async fn genres_root(
         "Genres",
         "",
         DEFAULT_UPDATED,
-        "/opds/genres/",
-        "/opds/",
+        &add_lang_query("/opds/genres/", &lang),
+        &add_lang_query("/opds/", &lang),
     );
-    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+    write_language_facets_for_href(&mut fb, &state, &lang, "/opds/genres/");
 
     let sections = genres::get_sections(&state.db, &lang)
         .await
         .unwrap_or_default();
     for (i, (code, name)) in sections.iter().enumerate() {
-        let href = format!("/opds/genres/{}/", urlencoding::encode(code));
+        let href = add_lang_query(
+            &format!("/opds/genres/{}/", urlencoding::encode(code)),
+            &lang,
+        );
         let _ = fb.write_nav_entry(&format!("gs:{i}"), name, &href, "", DEFAULT_UPDATED);
     }
 
@@ -345,11 +608,15 @@ pub async fn genres_by_section(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path((section_code,)): Path<(String,)>,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    let lang = detect_opds_lang(&headers, &state.config);
+    let lang = detect_opds_lang(&headers, &state.config, q.lang.as_deref());
     let mut fb = FeedBuilder::new();
 
-    let self_href = format!("/opds/genres/{}/", urlencoding::encode(&section_code));
+    let self_href = add_lang_query(
+        &format!("/opds/genres/{}/", urlencoding::encode(&section_code)),
+        &lang,
+    );
 
     let genre_list = genres::get_by_section(&state.db, &section_code, &lang)
         .await
@@ -366,12 +633,21 @@ pub async fn genres_by_section(
         "",
         DEFAULT_UPDATED,
         &self_href,
-        "/opds/",
+        &add_lang_query("/opds/", &lang),
     );
-    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+    write_language_facets_for_href(
+        &mut fb,
+        &state,
+        &lang,
+        &format!("/opds/genres/{}/", urlencoding::encode(&section_code)),
+    );
 
     for genre in &genre_list {
-        let href = format!("/opds/search/books/g/{}/", genre.id);
+        let href = add_lang_query(&format!("/opds/search/books/g/{}/", genre.id), &lang);
         let _ = fb.write_nav_entry(
             &format!("g:{}", genre.id),
             &genre.subsection,
@@ -387,9 +663,75 @@ pub async fn genres_by_section(
     }
 }
 
+/// GET /opds/facets/languages/ — OPDS language facet links.
+pub async fn language_facets_feed(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    let lang = detect_opds_lang(&headers, &state.config, q.lang.as_deref());
+    let self_href = add_lang_query("/opds/facets/languages/", &lang);
+    let facets_title = tr(&state, &lang, "opds", "facet_title", "Language facets");
+    let browse_prefix = tr(
+        &state,
+        &lang,
+        "opds",
+        "facet_browse_catalog_in",
+        "Browse OPDS catalog in",
+    );
+
+    let mut fb = FeedBuilder::new();
+    let _ = fb.begin_feed(
+        "tag:facets:languages",
+        &facets_title,
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        &add_lang_query("/opds/", &lang),
+    );
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+
+    // Dedicated language facet feed should provide robust client-compatible
+    // links without relying on query string support.
+    write_language_facets_as_root_lang_paths(&mut fb, &state, &lang);
+
+    for locale in locale_choices(&state) {
+        let href = format!("/opds/lang/{}/", urlencoding::encode(&locale));
+        let label = locale_label(&state, &locale);
+        let content = format!("{browse_prefix} {label}");
+        let _ = fb.write_nav_entry(
+            &format!("lf:{locale}"),
+            &label,
+            &href,
+            &content,
+            DEFAULT_UPDATED,
+        );
+    }
+
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
+    }
+}
+
 /// GET /opds/books/ — Language selection for books by title.
-pub async fn books_root() -> Response {
-    lang_selection_feed("Books", "/opds/books/").await
+pub async fn books_root(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    lang_selection_feed(
+        &state,
+        &headers,
+        q.lang.as_deref(),
+        "books",
+        "Books",
+        "/opds/books/",
+    )
+    .await
 }
 
 /// GET /opds/books/:lang_code/
@@ -418,10 +760,9 @@ pub async fn books_feed(
     );
     let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
 
-    let groups =
-        books::get_title_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
-            .await
-            .unwrap_or_default();
+    let groups = books::get_title_prefix_groups(&state.db, lang_code, &prefix.to_uppercase())
+        .await
+        .unwrap_or_default();
 
     for (prefix_str, count) in &groups {
         if *count >= split_items {
@@ -505,8 +846,9 @@ pub async fn search_books_feed(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(params): Path<SearchBooksParams>,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    let lang = detect_opds_lang(&headers, &state.config);
+    let lang = detect_opds_lang(&headers, &state.config, q.lang.as_deref());
     let max_items = state.config.opds.max_items as i32;
     let page = params.page.unwrap_or(1).max(1);
     let offset = (page - 1) * max_items;
@@ -514,11 +856,14 @@ pub async fn search_books_feed(
     let terms = &params.terms;
 
     let mut fb = FeedBuilder::new();
-    let self_href = format!(
-        "/opds/search/books/{}/{}/{}/",
-        search_type,
-        urlencoding::encode(terms),
-        page
+    let self_href = add_lang_query(
+        &format!(
+            "/opds/search/books/{}/{}/{}/",
+            search_type,
+            urlencoding::encode(terms),
+            page
+        ),
+        &lang,
     );
     let _ = fb.begin_feed(
         &format!("tag:search:books:{search_type}:{terms}:{page}"),
@@ -526,9 +871,12 @@ pub async fn search_books_feed(
         "",
         DEFAULT_UPDATED,
         &self_href,
-        "/opds/",
+        &add_lang_query("/opds/", &lang),
     );
-    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
 
     let hide_doubles = state.config.opds.hide_doubles;
     let book_list = match search_type.as_str() {
@@ -572,6 +920,7 @@ pub async fn search_books_feed(
             urlencoding::encode(terms),
             page - 1
         ))
+        .map(|href| add_lang_query(&href, &lang))
     } else {
         None
     };
@@ -582,6 +931,7 @@ pub async fn search_books_feed(
             urlencoding::encode(terms),
             page + 1
         ))
+        .map(|href| add_lang_query(&href, &lang))
     } else {
         None
     };
@@ -743,8 +1093,9 @@ pub async fn search_series_feed(
 pub async fn bookshelf_root(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    build_bookshelf_feed(&state, &headers, 1).await
+    build_bookshelf_feed(&state, &headers, q.lang.as_deref(), 1).await
 }
 
 /// GET /opds/bookshelf/:page/
@@ -752,16 +1103,18 @@ pub async fn bookshelf_feed(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path((page,)): Path<(i32,)>,
+    Query(q): Query<LangQuery>,
 ) -> Response {
-    build_bookshelf_feed(&state, &headers, page.max(1)).await
+    build_bookshelf_feed(&state, &headers, q.lang.as_deref(), page.max(1)).await
 }
 
 async fn build_bookshelf_feed(
     state: &AppState,
     headers: &axum::http::HeaderMap,
+    query_lang: Option<&str>,
     page: i32,
 ) -> Response {
-    let lang = detect_opds_lang(headers, &state.config);
+    let lang = detect_opds_lang(headers, &state.config, query_lang);
     let user_id = match super::auth::get_user_id_from_headers(&state.db, headers).await {
         Some(uid) => uid,
         None => return error_response(StatusCode::UNAUTHORIZED, "Authentication required"),
@@ -771,16 +1124,20 @@ async fn build_bookshelf_feed(
     let offset = (page - 1) * max_items;
 
     let mut fb = FeedBuilder::new();
-    let self_href = format!("/opds/bookshelf/{page}/");
+    let self_href = add_lang_query(&format!("/opds/bookshelf/{page}/"), &lang);
     let _ = fb.begin_feed(
         &format!("tag:bookshelf:{page}"),
         "Book shelf",
         "",
         DEFAULT_UPDATED,
         &self_href,
-        "/opds/",
+        &add_lang_query("/opds/", &lang),
     );
-    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+    write_language_facets_for_href(&mut fb, state, &lang, "/opds/bookshelf/");
 
     let book_list = crate::db::queries::bookshelf::get_by_user(
         &state.db,
@@ -797,12 +1154,18 @@ async fn build_bookshelf_feed(
     let has_next = book_list.len() as i32 >= max_items;
     let has_prev = page > 1;
     let prev_href = if has_prev {
-        Some(format!("/opds/bookshelf/{}/", page - 1))
+        Some(add_lang_query(
+            &format!("/opds/bookshelf/{}/", page - 1),
+            &lang,
+        ))
     } else {
         None
     };
     let next_href = if has_next {
-        Some(format!("/opds/bookshelf/{}/", page + 1))
+        Some(add_lang_query(
+            &format!("/opds/bookshelf/{}/", page + 1),
+            &lang,
+        ))
     } else {
         None
     };
@@ -824,6 +1187,7 @@ pub async fn opensearch(_state: State<AppState>) -> Response {
 <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
     <ShortName>ropds</ShortName>
     <LongName>Rust OPDS Server</LongName>
+    <Description>Search the OPDS catalog</Description>
     <Url type="application/atom+xml" template="/opds/search/{searchTerms}/" />
     <SyndicationRight>open</SyndicationRight>
     <AdultContent>false</AdultContent>
@@ -841,6 +1205,11 @@ pub async fn opensearch(_state: State<AppState>) -> Response {
 }
 
 // ---- Helper types and functions ----
+
+#[derive(serde::Deserialize, Default)]
+pub struct LangQuery {
+    pub lang: Option<String>,
+}
 
 #[derive(serde::Deserialize)]
 pub struct AuthorsParams {
@@ -862,24 +1231,64 @@ pub struct SearchBooksParams {
 }
 
 /// Generate the language/script selection feed.
-async fn lang_selection_feed(title: &str, base_href: &str) -> Response {
+async fn lang_selection_feed(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    query_lang: Option<&str>,
+    nav_key: &str,
+    fallback_title: &str,
+    base_href: &str,
+) -> Response {
+    let lang = detect_opds_lang(headers, &state.config, query_lang);
+    let title = tr(state, &lang, "nav", nav_key, fallback_title);
+    let all_label = tr(state, &lang, "browse", "all_languages", "All");
+    let cyrillic_label = tr(state, &lang, "browse", "cyrillic", "Cyrillic");
+    let latin_label = tr(state, &lang, "browse", "latin", "Latin");
+    let digits_label = tr(state, &lang, "browse", "digits", "Digits");
+    let other_label = tr(state, &lang, "browse", "other", "Other");
+
     let mut fb = FeedBuilder::new();
+    let self_href = add_lang_query(base_href, &lang);
     let _ = fb.begin_feed(
         &format!("tag:lang:{title}"),
-        title,
+        &title,
         "",
         DEFAULT_UPDATED,
-        base_href,
-        "/opds/",
+        &self_href,
+        &add_lang_query("/opds/", &lang),
     );
-    let _ = fb.write_search_links("/opds/search/", "/opds/search/{searchTerms}/");
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+    write_language_facets_for_href(&mut fb, state, &lang, base_href);
 
     let entries = [
-        ("l:0", "All", format!("{base_href}0/")),
-        ("l:1", "Cyrillic", format!("{base_href}1/")),
-        ("l:2", "Latin", format!("{base_href}2/")),
-        ("l:3", "Digits", format!("{base_href}3/")),
-        ("l:9", "Other", format!("{base_href}9/")),
+        (
+            "l:0",
+            all_label,
+            add_lang_query(&format!("{base_href}0/"), &lang),
+        ),
+        (
+            "l:1",
+            cyrillic_label,
+            add_lang_query(&format!("{base_href}1/"), &lang),
+        ),
+        (
+            "l:2",
+            latin_label,
+            add_lang_query(&format!("{base_href}2/"), &lang),
+        ),
+        (
+            "l:3",
+            digits_label,
+            add_lang_query(&format!("{base_href}3/"), &lang),
+        ),
+        (
+            "l:9",
+            other_label,
+            add_lang_query(&format!("{base_href}9/"), &lang),
+        ),
     ];
     for (id, label, href) in &entries {
         let _ = fb.write_nav_entry(id, label, href, "", DEFAULT_UPDATED);
@@ -966,6 +1375,8 @@ async fn write_book_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::create_test_pool;
+    use crate::web::i18n::Translations;
     use axum::body::to_bytes;
     use axum::http::HeaderMap;
 
@@ -994,17 +1405,25 @@ language = "{default_lang}"
             "accept-language",
             "fr-CA,fr;q=0.9,en;q=0.8".parse().unwrap(),
         );
-        assert_eq!(detect_opds_lang(&headers, &cfg), "fr");
+        assert_eq!(detect_opds_lang(&headers, &cfg, None), "fr");
 
         headers.insert("accept-language", "RU;q=0.8,en".parse().unwrap());
-        assert_eq!(detect_opds_lang(&headers, &cfg), "ru");
+        assert_eq!(detect_opds_lang(&headers, &cfg, None), "ru");
     }
 
     #[test]
     fn test_detect_opds_lang_fallback_to_config() {
         let cfg = test_config("de");
         let headers = HeaderMap::new();
-        assert_eq!(detect_opds_lang(&headers, &cfg), "de");
+        assert_eq!(detect_opds_lang(&headers, &cfg, None), "de");
+    }
+
+    #[test]
+    fn test_detect_opds_lang_prefers_query_lang() {
+        let cfg = test_config("en");
+        let mut headers = HeaderMap::new();
+        headers.insert("accept-language", "fr".parse().unwrap());
+        assert_eq!(detect_opds_lang(&headers, &cfg, Some("ru")), "ru");
     }
 
     #[tokio::test]
@@ -1026,7 +1445,51 @@ language = "{default_lang}"
 
     #[tokio::test]
     async fn test_lang_selection_feed_contains_expected_entries() {
-        let response = lang_selection_feed("By Authors", "/opds/authors/").await;
+        let cfg = test_config("en");
+        let db = create_test_pool().await;
+        let tera = tera::Tera::default();
+        let mut translations = Translations::new();
+        translations.insert(
+            "en".to_string(),
+            serde_json::json!({
+                "nav": { "authors": "Authors" },
+                "browse": {
+                    "all_languages": "All languages",
+                    "cyrillic": "Cyrillic",
+                    "latin": "Latin",
+                    "digits": "Digits",
+                    "other": "Other"
+                },
+                "lang": { "en": "English", "ru": "Русский" }
+            }),
+        );
+        translations.insert(
+            "ru".to_string(),
+            serde_json::json!({
+                "nav": { "authors": "Авторы" },
+                "browse": {
+                    "all_languages": "Все языки",
+                    "cyrillic": "Кириллица",
+                    "latin": "Латиница",
+                    "digits": "Цифры",
+                    "other": "Другие"
+                },
+                "lang": { "en": "English", "ru": "Русский" }
+            }),
+        );
+        let state = AppState::new(cfg, db, tera, translations, false, false);
+        let mut headers = HeaderMap::new();
+        headers.insert("accept-language", "ru".parse().unwrap());
+
+        let response = lang_selection_feed(
+            &state,
+            &headers,
+            Some("ru"),
+            "authors",
+            "Authors",
+            "/opds/authors/",
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.headers().get(header::CONTENT_TYPE).unwrap(),
@@ -1035,9 +1498,21 @@ language = "{default_lang}"
 
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let xml = String::from_utf8(bytes.to_vec()).unwrap();
-        assert!(xml.contains("By Authors"));
-        assert!(xml.contains("/opds/authors/1/"));
-        assert!(xml.contains("Cyrillic"));
-        assert!(xml.contains("Digits"));
+        assert!(xml.contains("Авторы"));
+        assert!(xml.contains("/opds/authors/1/?lang=ru"));
+        assert!(xml.contains("Кириллица"));
+        assert!(xml.contains("Цифры"));
+    }
+
+    #[test]
+    fn test_add_lang_query_helper() {
+        assert_eq!(
+            add_lang_query("/opds/genres/", "ru"),
+            "/opds/genres/?lang=ru"
+        );
+        assert_eq!(
+            add_lang_query("/opds/genres/?page=1", "en"),
+            "/opds/genres/?page=1&lang=en"
+        );
     }
 }

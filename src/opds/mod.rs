@@ -40,6 +40,7 @@ pub fn router(state: AppState) -> Router<AppState> {
     let protected = Router::new()
         // Root feed
         .route("/", get(feeds::root_feed))
+        .route("/lang/{locale}/", get(feeds::root_feed_for_locale))
         // Catalogs
         .route("/catalogs/", get(feeds::catalogs_root))
         .route("/catalogs/{cat_id}/", get(feeds::catalogs_feed))
@@ -55,6 +56,9 @@ pub fn router(state: AppState) -> Router<AppState> {
         // Genres
         .route("/genres/", get(feeds::genres_root))
         .route("/genres/{section}/", get(feeds::genres_by_section))
+        // OPDS facets
+        .route("/facets/languages", get(feeds::language_facets_feed))
+        .route("/facets/languages/", get(feeds::language_facets_feed))
         // Books by title
         .route("/books/", get(feeds::books_root))
         .route("/books/{lang_code}/", get(feeds::books_feed))
