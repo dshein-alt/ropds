@@ -12,7 +12,9 @@ pub const OPENSEARCH_TYPE: &str = "application/opensearchdescription+xml";
 /// OPDS link relations.
 pub const REL_ACQUISITION: &str = "http://opds-spec.org/acquisition/open-access";
 pub const REL_IMAGE: &str = "http://opds-spec.org/image";
-pub const REL_THUMBNAIL: &str = "http://opds-spec.org/thumbnail";
+pub const REL_THUMBNAIL: &str = "http://opds-spec.org/image/thumbnail";
+pub const REL_THUMBNAIL_LEGACY: &str = "http://opds-spec.org/thumbnail";
+pub const REL_FACET: &str = "http://opds-spec.org/facet";
 
 /// Book format MIME types.
 pub fn mime_for_format(format: &str) -> &'static str {
@@ -203,6 +205,8 @@ impl FeedBuilder {
             let thumb_href = format!("/opds/thumb/{book_id}/");
             self.write_link(&cover_href, REL_IMAGE, "image/jpeg", None)?;
             self.write_link(&thumb_href, REL_THUMBNAIL, "image/jpeg", None)?;
+            // Keep legacy relation for broader client compatibility.
+            self.write_link(&thumb_href, REL_THUMBNAIL_LEGACY, "image/jpeg", None)?;
         }
 
         Ok(())
@@ -293,6 +297,26 @@ impl FeedBuilder {
         Ok(())
     }
 
+    /// Write an OPDS facet link.
+    pub fn write_facet_link(
+        &mut self,
+        href: &str,
+        link_type: &str,
+        title: &str,
+        facet_group: &str,
+        active: bool,
+    ) -> Result<(), quick_xml::Error> {
+        let mut el = BytesStart::new("link");
+        el.push_attribute(("href", href));
+        el.push_attribute(("rel", REL_FACET));
+        el.push_attribute(("type", link_type));
+        el.push_attribute(("title", title));
+        el.push_attribute(("opds:facetGroup", facet_group));
+        el.push_attribute(("opds:activeFacet", if active { "true" } else { "false" }));
+        self.writer.write_event(Event::Empty(el))?;
+        Ok(())
+    }
+
     fn write_text_element(&mut self, tag: &str, text: &str) -> Result<(), quick_xml::Error> {
         self.writer
             .write_event(Event::Start(BytesStart::new(tag)))?;
@@ -378,6 +402,7 @@ mod tests {
         assert!(xml.contains("/opds/download/1/1/"));
         assert!(xml.contains(REL_IMAGE));
         assert!(xml.contains(REL_THUMBNAIL));
+        assert!(xml.contains(REL_THUMBNAIL_LEGACY));
         assert!(xml.contains("Author A"));
         assert!(xml.contains("term=\"sf\""));
         assert!(xml.contains("type=\"text/html\""));
@@ -403,5 +428,32 @@ mod tests {
         let xml = String::from_utf8(fb.finish().unwrap()).unwrap();
         assert!(xml.contains("/opds/download/2/0/"));
         assert!(!xml.contains("/opds/download/2/1/"));
+    }
+
+    #[test]
+    fn test_write_facet_link() {
+        let mut fb = FeedBuilder::new();
+        fb.begin_feed(
+            "tag:facets",
+            "Facets",
+            "",
+            "2024-01-01T00:00:00Z",
+            "/opds/facets/",
+            "/opds/",
+        )
+        .unwrap();
+        fb.write_facet_link(
+            "/opds/genres/?lang=ru",
+            NAV_TYPE,
+            "Russian",
+            "Language",
+            true,
+        )
+        .unwrap();
+        let xml = String::from_utf8(fb.finish().unwrap()).unwrap();
+        assert!(xml.contains(REL_FACET));
+        assert!(xml.contains("opds:facetGroup=\"Language\""));
+        assert!(xml.contains("opds:activeFacet=\"true\""));
+        assert!(xml.contains("title=\"Russian\""));
     }
 }
