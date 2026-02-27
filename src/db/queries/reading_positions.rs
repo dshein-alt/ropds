@@ -1,4 +1,5 @@
 use sqlx::FromRow;
+use std::collections::HashMap;
 
 use crate::db::DbPool;
 
@@ -114,6 +115,39 @@ pub async fn get_last_read_book_id(
         .fetch_optional(pool.inner())
         .await?;
     Ok(row.map(|(id,)| id))
+}
+
+/// Get reading progress for a set of books for one user.
+pub async fn get_progress_map(
+    pool: &DbPool,
+    user_id: i64,
+    book_ids: &[i64],
+) -> Result<HashMap<i64, f64>, sqlx::Error> {
+    if book_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let placeholders = std::iter::repeat("?")
+        .take(book_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let raw = format!(
+        "SELECT book_id, progress FROM reading_positions \
+         WHERE user_id = ? AND book_id IN ({placeholders})"
+    );
+    let sql = pool.sql(&raw);
+
+    let mut query = sqlx::query_as::<_, (i64, f64)>(&sql).bind(user_id);
+    for book_id in book_ids {
+        query = query.bind(*book_id);
+    }
+
+    let rows = query.fetch_all(pool.inner()).await?;
+    let mut map = HashMap::with_capacity(rows.len());
+    for (book_id, progress) in rows {
+        map.insert(book_id, progress.clamp(0.0, 1.0));
+    }
+    Ok(map)
 }
 
 /// Delete reading positions beyond the `keep` most recent for a user.
@@ -409,5 +443,27 @@ mod tests {
         // No reading history for unknown user
         let last = get_last_read_book_id(&pool, 99999).await.unwrap();
         assert!(last.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_progress_map_returns_only_requested_books() {
+        let pool = create_test_pool().await;
+        let user_id = insert_user(&pool, "progress_user").await;
+        let cat_id = ensure_catalog(&pool).await;
+        let b1 = insert_book(&pool, cat_id, "Progress Book A").await;
+        let b2 = insert_book(&pool, cat_id, "Progress Book B").await;
+        let b3 = insert_book(&pool, cat_id, "Progress Book C").await;
+
+        save_position(&pool, user_id, b1, "cfi1", 0.2, 100)
+            .await
+            .unwrap();
+        save_position(&pool, user_id, b2, "cfi2", 0.8, 100)
+            .await
+            .unwrap();
+
+        let map = get_progress_map(&pool, user_id, &[b1, b3]).await.unwrap();
+        assert_eq!(map.len(), 1);
+        assert!((map[&b1] - 0.2).abs() < f64::EPSILON);
+        assert!(!map.contains_key(&b3));
     }
 }
