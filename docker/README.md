@@ -61,11 +61,7 @@ Each compose file mounts:
 - `./config/*.toml -> /app/config/config.toml` (read-only)
 - `${ROPDS_LIBRARY_ROOT} -> /library` (read-write)
 
-The image is self-contained and already includes:
-
-- `/app/locales`
-
-Web templates and static assets are embedded into the release binary at build time.
+Web templates, static assets, and locales are embedded into the release binary at build time.
 
 Runtime creates/uses:
 

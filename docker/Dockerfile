@@ -30,7 +30,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/ropds /app/ropds
-COPY --from=builder /build/locales /app/locales
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/wait-for-db.sh /usr/local/bin/wait-for-db.sh

@@ -61,11 +61,7 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 - `./config/*.toml -> /app/config/config.toml` (только чтение)
 - `${ROPDS_LIBRARY_ROOT} -> /library` (чтение и запись)
 
-Docker-образ полностью автономен и уже содержит:
-
-- `/app/locales`
-
-Веб-шаблоны и статические файлы встраиваются в release-бинарник на этапе сборки.
+Веб-шаблоны, статические файлы и локали встраиваются в release-бинарник на этапе сборки.
 
 Во время работы создаются и используются:
 
