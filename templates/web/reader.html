@@ -198,7 +198,7 @@
   <nav class="navbar navbar-dark bg-dark navbar-expand py-1 flex-shrink-0" id="reader-header">
     <div class="container-fluid px-2">
       <div class="d-flex align-items-center gap-2 w-100">
-        <a href="/web" class="btn btn-sm btn-outline-light" title="{{ t.nav.home }}">
+        <a href="{{ back_url | default(value='/web') }}" class="btn btn-sm btn-outline-light" title="{{ t.nav.home }}">
           <i class="bi bi-arrow-left"></i>
         </a>
 

@@ -10,13 +10,14 @@ use axum::body::Body;
 #[cfg(not(debug_assertions))]
 use axum::body::Bytes;
 use axum::extract::Path;
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 #[cfg(not(debug_assertions))]
 use include_dir::{Dir, include_dir};
 use sha2::{Digest, Sha256};
 
 const STATIC_CACHE_CONTROL: &str = "public, max-age=3600";
+const SERVICE_WORKER_CACHE_CONTROL: &str = "no-cache";
 
 #[cfg(not(debug_assertions))]
 static EMBEDDED_ASSETS: Dir<'_> = include_dir!("$OUT_DIR/embedded_assets");
@@ -129,6 +130,8 @@ async fn debug_static_asset(path: String, headers: HeaderMap) -> Response {
     let Some(normalized) = normalize_static_path(&path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let is_service_worker = is_service_worker_asset(&normalized);
+    let cache_control = cache_control_for_path(&normalized);
 
     let full_path = FsPath::new("static").join(&normalized);
     let bytes = match tokio::fs::read(&full_path).await {
@@ -148,16 +151,20 @@ async fn debug_static_asset(path: String, headers: HeaderMap) -> Response {
 
     let etag = build_etag(&bytes);
     if matches_if_none_match(if_none_match, &etag) {
-        return not_modified_response(&etag);
+        return not_modified_response(&etag, cache_control, is_service_worker);
     }
 
-    let content_type = mime_guess::from_path(&normalized)
-        .first_or_octet_stream()
-        .essence_str()
-        .to_string();
+    let content_type = static_content_type(&normalized);
     let content_length = bytes.len();
 
-    ok_response(Body::from(bytes), &content_type, &etag, content_length)
+    ok_response(
+        Body::from(bytes),
+        &content_type,
+        &etag,
+        content_length,
+        cache_control,
+        is_service_worker,
+    )
 }
 
 #[cfg(not(debug_assertions))]
@@ -169,13 +176,15 @@ fn embedded_static_asset(path: String, headers: HeaderMap) -> Response {
     let Some(normalized) = normalize_static_path(&path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let is_service_worker = is_service_worker_asset(&normalized);
+    let cache_control = cache_control_for_path(&normalized);
 
     let Some(asset) = EMBEDDED_STATIC_FILES.get(&normalized) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
     if matches_if_none_match(if_none_match, &asset.etag) {
-        return not_modified_response(&asset.etag);
+        return not_modified_response(&asset.etag, cache_control, is_service_worker);
     }
 
     let content_length = asset.bytes.len();
@@ -184,6 +193,8 @@ fn embedded_static_asset(path: String, headers: HeaderMap) -> Response {
         asset.content_type.as_str(),
         asset.etag.as_str(),
         content_length,
+        cache_control,
+        is_service_worker,
     )
 }
 
@@ -205,10 +216,7 @@ fn collect_embedded_static_files(
         };
 
         let bytes = Bytes::from_static(file.contents());
-        let content_type = mime_guess::from_path(&relative)
-            .first_or_octet_stream()
-            .essence_str()
-            .to_string();
+        let content_type = static_content_type(&relative);
         let etag = embedded_static_metadata::etag_for_path(&relative)
             .map(|value| value.to_string())
             .unwrap_or_else(|| {
@@ -244,25 +252,33 @@ fn collect_embedded_static_files(
     }
 }
 
-fn not_modified_response(etag: &str) -> Response {
+fn not_modified_response(etag: &str, cache_control: &str, is_service_worker: bool) -> Response {
     let mut response = Response::new(Body::empty());
     *response.status_mut() = StatusCode::NOT_MODIFIED;
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static(STATIC_CACHE_CONTROL),
-    );
+    if let Ok(value) = HeaderValue::from_str(cache_control) {
+        response.headers_mut().insert(header::CACHE_CONTROL, value);
+    }
     if let Ok(value) = HeaderValue::from_str(etag) {
         response.headers_mut().insert(header::ETAG, value);
+    }
+    if is_service_worker {
+        insert_service_worker_allowed_header(response.headers_mut());
     }
     response
 }
 
-fn ok_response(body: Body, content_type: &str, etag: &str, content_length: usize) -> Response {
+fn ok_response(
+    body: Body,
+    content_type: &str,
+    etag: &str,
+    content_length: usize,
+    cache_control: &str,
+    is_service_worker: bool,
+) -> Response {
     let mut response = Response::new(body);
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static(STATIC_CACHE_CONTROL),
-    );
+    if let Ok(value) = HeaderValue::from_str(cache_control) {
+        response.headers_mut().insert(header::CACHE_CONTROL, value);
+    }
     if let Ok(value) = HeaderValue::from_str(content_type) {
         response.headers_mut().insert(header::CONTENT_TYPE, value);
     }
@@ -272,7 +288,40 @@ fn ok_response(body: Body, content_type: &str, etag: &str, content_length: usize
     if let Ok(value) = HeaderValue::from_str(&content_length.to_string()) {
         response.headers_mut().insert(header::CONTENT_LENGTH, value);
     }
+    if is_service_worker {
+        insert_service_worker_allowed_header(response.headers_mut());
+    }
     response
+}
+
+fn static_content_type(path: &str) -> String {
+    if path.ends_with(".webmanifest") {
+        "application/manifest+json".to_string()
+    } else {
+        mime_guess::from_path(path)
+            .first_or_octet_stream()
+            .essence_str()
+            .to_string()
+    }
+}
+
+fn is_service_worker_asset(path: &str) -> bool {
+    path == "sw.js"
+}
+
+fn cache_control_for_path(path: &str) -> &'static str {
+    if is_service_worker_asset(path) {
+        SERVICE_WORKER_CACHE_CONTROL
+    } else {
+        STATIC_CACHE_CONTROL
+    }
+}
+
+fn insert_service_worker_allowed_header(headers: &mut HeaderMap) {
+    headers.insert(
+        HeaderName::from_static("service-worker-allowed"),
+        HeaderValue::from_static("/"),
+    );
 }
 
 pub(crate) fn normalize_static_path(path: &str) -> Option<String> {
@@ -314,7 +363,10 @@ fn strip_weak_etag(value: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_etag, matches_if_none_match, normalize_static_path};
+    use super::{
+        build_etag, cache_control_for_path, matches_if_none_match, normalize_static_path,
+        static_content_type,
+    };
 
     #[test]
     fn normalize_static_path_accepts_valid_segments() {
@@ -344,5 +396,23 @@ mod tests {
         assert!(matches_if_none_match(Some(&format!("W/{etag}")), &etag));
         assert!(matches_if_none_match(Some("*"), &etag));
         assert!(!matches_if_none_match(Some("\"different\""), &etag));
+    }
+
+    #[test]
+    fn static_content_type_handles_webmanifest() {
+        assert_eq!(
+            static_content_type("manifest.webmanifest"),
+            "application/manifest+json"
+        );
+        assert!(static_content_type("js/ropds.js").contains("javascript"));
+    }
+
+    #[test]
+    fn cache_control_varies_for_service_worker() {
+        assert_eq!(cache_control_for_path("sw.js"), "no-cache");
+        assert_eq!(
+            cache_control_for_path("js/ropds.js"),
+            "public, max-age=3600"
+        );
     }
 }

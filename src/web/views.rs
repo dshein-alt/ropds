@@ -132,8 +132,19 @@ pub struct RecentBooksParams {
     pub page: i32,
 }
 
+#[derive(Deserialize)]
+pub struct ReaderOpenParams {
+    #[serde(rename = "return")]
+    pub return_to: Option<String>,
+}
+
 fn default_m() -> String {
     "m".to_string()
+}
+
+fn sanitize_internal_redirect(path: Option<&str>) -> &str {
+    path.filter(|value| value.starts_with('/') && !value.starts_with("//") && !value.contains('\\'))
+        .unwrap_or("/web")
 }
 
 fn session_user_id(state: &AppState, jar: &CookieJar) -> Option<i64> {
@@ -896,11 +907,7 @@ pub async fn set_language(
         .max_age(time::Duration::days(365))
         .build();
     let jar = jar.add(cookie);
-    let redirect = params
-        .redirect
-        .as_deref()
-        .filter(|r| r.starts_with('/') && !r.starts_with("//"))
-        .unwrap_or("/web");
+    let redirect = sanitize_internal_redirect(params.redirect.as_deref());
     (jar, Redirect::to(redirect))
 }
 
@@ -968,11 +975,12 @@ fn is_reader_format(format: &str) -> bool {
     matches!(format, "epub" | "fb2" | "mobi" | "djvu" | "pdf")
 }
 
-/// GET /web/reader/:book_id — reader page (opens in new tab)
+/// GET /web/reader/:book_id — reader page
 pub async fn web_reader(
     State(state): State<AppState>,
     jar: CookieJar,
     Path(book_id): Path<i64>,
+    Query(params): Query<ReaderOpenParams>,
 ) -> Response {
     if !state.config.reader.enable {
         return (StatusCode::NOT_FOUND, "Reader is disabled").into_response();
@@ -1046,6 +1054,8 @@ pub async fn web_reader(
     ctx.insert("saved_position", &saved_position);
     ctx.insert("saved_progress", &saved_progress);
     ctx.insert("recent_books", &recent_books);
+    let back_url = sanitize_internal_redirect(params.return_to.as_deref());
+    ctx.insert("back_url", &back_url);
 
     // CSRF token for position save API
     if let Some(cookie) = jar.get("session") {
@@ -1641,6 +1651,22 @@ mod tests {
     #[test]
     fn test_default_m() {
         assert_eq!(default_m(), "m".to_string());
+    }
+
+    #[test]
+    fn test_sanitize_internal_redirect() {
+        assert_eq!(sanitize_internal_redirect(Some("/web/books")), "/web/books");
+        assert_eq!(
+            sanitize_internal_redirect(Some("/web/books?page=2&q=test")),
+            "/web/books?page=2&q=test"
+        );
+        assert_eq!(sanitize_internal_redirect(Some("//evil.example")), "/web");
+        assert_eq!(
+            sanitize_internal_redirect(Some("https://evil.example")),
+            "/web"
+        );
+        assert_eq!(sanitize_internal_redirect(Some(r"/web\reader")), "/web");
+        assert_eq!(sanitize_internal_redirect(None), "/web");
     }
 
     #[test]

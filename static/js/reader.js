@@ -562,6 +562,20 @@ async function initFoliateReader() {
 // ── History sidebar: load book in current reader ────────────────
 
 window.loadBook = function(newBookId, newFormat) {
-    // Navigate to the new book in the same reader tab
-    window.location.href = '/web/reader/' + newBookId;
+    // Navigate to the new book in the same reader tab while preserving
+    // the original page to return to from the reader toolbar back button.
+    let returnTo = "";
+    try {
+        const current = new URL(window.location.href);
+        const candidate = current.searchParams.get("return") || "";
+        if (candidate.startsWith("/") && !candidate.startsWith("//") && candidate.indexOf("\\") === -1) {
+            returnTo = candidate;
+        }
+    } catch (_error) {}
+
+    const next = new URL("/web/reader/" + newBookId, window.location.origin);
+    if (returnTo) {
+        next.searchParams.set("return", returnTo);
+    }
+    window.location.href = next.toString();
 };

@@ -54,6 +54,181 @@
   };
 })();
 
+// Register service worker for installable PWA behavior
+(function () {
+  if (!("serviceWorker" in navigator)) return;
+
+  const isSecureHost =
+    window.isSecureContext ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "::1";
+
+  if (!isSecureHost) return;
+
+  window.addEventListener("load", function () {
+    navigator.serviceWorker
+      .register("/static/sw.js", { scope: "/" })
+      .catch(function (error) {
+        console.warn("Service worker registration failed:", error);
+      });
+  });
+})();
+
+// Preserve source page when opening the reader: /web/reader/:id?return=<page-url>
+(function () {
+  function isSafeInternalPath(path) {
+    return typeof path === "string" && path.startsWith("/") && !path.startsWith("//") && path.indexOf("\\") === -1;
+  }
+
+  function sourcePageForReaderReturn() {
+    const current = new URL(window.location.href);
+    if (current.pathname.indexOf("/web/reader/") === 0) {
+      const existing = current.searchParams.get("return");
+      if (isSafeInternalPath(existing)) {
+        return existing;
+      }
+    }
+    return current.pathname + current.search;
+  }
+
+  function rewriteReaderHref(href) {
+    if (!href || href === "#") return href;
+
+    let url;
+    try {
+      url = new URL(href, window.location.origin);
+    } catch (_error) {
+      return href;
+    }
+
+    if (url.origin !== window.location.origin) return href;
+    if (url.pathname.indexOf("/web/reader/") !== 0) return href;
+    if (url.searchParams.has("return")) return url.toString();
+
+    const sourcePage = sourcePageForReaderReturn();
+    if (!isSafeInternalPath(sourcePage)) return url.toString();
+
+    url.searchParams.set("return", sourcePage);
+    return url.toString();
+  }
+
+  function patchReaderLink(link) {
+    const href = link.getAttribute("href");
+    if (!href) return;
+    const rewritten = rewriteReaderHref(href);
+    if (rewritten && rewritten !== href) {
+      link.setAttribute("href", rewritten);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("a[href*='/web/reader/']").forEach(function (link) {
+      patchReaderLink(link);
+    });
+  });
+
+  document.addEventListener(
+    "click",
+    function (event) {
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      if (!target || typeof target.closest !== "function") return;
+      const link = target.closest("a[href*='/web/reader/']");
+      if (!link) return;
+      patchReaderLink(link);
+    },
+    true
+  );
+})();
+
+// In standalone/PWA mode open reader links in the same app window.
+(function () {
+  const PWA_SESSION_FLAG = "ropds-pwa-mode";
+
+  function markPwaSessionFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("pwa") === "1") {
+        sessionStorage.setItem(PWA_SESSION_FLAG, "1");
+      }
+    } catch (_error) {}
+  }
+
+  function hasPwaSessionFlag() {
+    try {
+      return sessionStorage.getItem(PWA_SESSION_FLAG) === "1";
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function isStandaloneDisplayMode() {
+    if (hasPwaSessionFlag()) {
+      return true;
+    }
+    if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+      return true;
+    }
+    if (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) {
+      return true;
+    }
+    if (window.matchMedia && window.matchMedia("(display-mode: minimal-ui)").matches) {
+      return true;
+    }
+    if (window.matchMedia && window.matchMedia("(display-mode: window-controls-overlay)").matches) {
+      return true;
+    }
+    if (window.navigator.standalone === true) {
+      return true;
+    }
+    return document.referrer.indexOf("android-app://") === 0;
+  }
+
+  function isReaderLinkInCurrentOrigin(link) {
+    const href = link.getAttribute("href");
+    if (!href || href === "#") return false;
+    try {
+      const url = new URL(href, window.location.origin);
+      return url.origin === window.location.origin && url.pathname.indexOf("/web/reader/") === 0;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  markPwaSessionFromUrl();
+
+  if (!isStandaloneDisplayMode()) return;
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("a[target='_blank']").forEach(function (link) {
+      if (isReaderLinkInCurrentOrigin(link)) {
+        link.setAttribute("target", "_self");
+      }
+    });
+  });
+
+  document.addEventListener(
+    "click",
+    function (event) {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const target = event.target;
+      if (!target || typeof target.closest !== "function") return;
+
+      const link = target.closest("a[target='_blank']");
+      if (!link) return;
+      if (!isReaderLinkInCurrentOrigin(link)) return;
+
+      event.preventDefault();
+      window.location.assign(link.href);
+    },
+    true
+  );
+})();
+
 // Search type switcher
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
