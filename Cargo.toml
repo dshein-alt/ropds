@@ -9,10 +9,12 @@ license = "MIT OR Apache-2.0"
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
 
 # Templates
 tera = "1"
+include_dir = "0.7"
+mime_guess = "2"
 
 # Cookies (for language preference)
 axum-extra = { version = "0.12.5", features = ["cookie"] }
@@ -71,3 +73,11 @@ test-mysql = ["testcontainers-modules"]
 tempfile = "3.26"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+[build-dependencies]
+walkdir = "2"
+oxc_allocator = "0.115.0"
+oxc_codegen = "0.115.0"
+oxc_minifier = "0.115.0"
+oxc_parser = "0.115.0"
+oxc_span = "0.115.0"
