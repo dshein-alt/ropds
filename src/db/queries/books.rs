@@ -1,4 +1,4 @@
-use crate::db::DbPool;
+use crate::db::{DbBackend, DbPool};
 
 use crate::db::models::{AvailStatus, Book, CatType};
 
@@ -20,7 +20,7 @@ pub async fn get_by_catalog(
     if hide_doubles {
         let sql = pool.sql(
             "SELECT * FROM books WHERE catalog_id = ? AND avail > 0 \
-             AND id IN (SELECT MIN(id) FROM books WHERE catalog_id = ? AND avail > 0 GROUP BY search_title) \
+             AND id IN (SELECT MIN(id) FROM books WHERE catalog_id = ? AND avail > 0 GROUP BY search_title, author_key) \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -57,7 +57,7 @@ pub async fn get_by_author(
              WHERE ba.author_id = ? AND b.avail > 0 \
              AND b.id IN (SELECT MIN(b2.id) FROM books b2 \
                JOIN book_authors ba2 ON ba2.book_id = b2.id \
-               WHERE ba2.author_id = ? AND b2.avail > 0 GROUP BY b2.search_title) \
+               WHERE ba2.author_id = ? AND b2.avail > 0 GROUP BY b2.search_title, b2.author_key) \
              ORDER BY b.search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -97,7 +97,7 @@ pub async fn get_by_genre(
              WHERE bg.genre_id = ? AND b.avail > 0 \
              AND b.id IN (SELECT MIN(b2.id) FROM books b2 \
                JOIN book_genres bg2 ON bg2.book_id = b2.id \
-               WHERE bg2.genre_id = ? AND b2.avail > 0 GROUP BY b2.search_title) \
+               WHERE bg2.genre_id = ? AND b2.avail > 0 GROUP BY b2.search_title, b2.author_key) \
              ORDER BY b.search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -137,7 +137,7 @@ pub async fn get_by_series(
              WHERE bs.series_id = ? AND b.avail > 0 \
              AND b.id IN (SELECT MIN(b2.id) FROM books b2 \
                JOIN book_series bs2 ON bs2.book_id = b2.id \
-               WHERE bs2.series_id = ? AND b2.avail > 0 GROUP BY b2.search_title) \
+               WHERE bs2.series_id = ? AND b2.avail > 0 GROUP BY b2.search_title, b2.author_key) \
              ORDER BY bs.ser_no, b.search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -174,7 +174,7 @@ pub async fn search_by_title(
     if hide_doubles {
         let sql = pool.sql(
             "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
-             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title) \
+             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title, author_key) \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -209,7 +209,7 @@ pub async fn search_by_title_prefix(
     if hide_doubles {
         let sql = pool.sql(
             "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
-             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title) \
+             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title, author_key) \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -406,7 +406,7 @@ pub async fn get_recent_added(
     if hide_doubles {
         let sql = pool.sql(
             "SELECT * FROM books WHERE avail > 0 \
-             AND id IN (SELECT MAX(id) FROM books WHERE avail > 0 GROUP BY search_title) \
+             AND id IN (SELECT MAX(id) FROM books WHERE avail > 0 GROUP BY search_title, author_key) \
              ORDER BY reg_date DESC, id DESC LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
@@ -429,7 +429,8 @@ pub async fn get_recent_added(
 /// Count available books in the recently added view.
 pub async fn count_recent_added(pool: &DbPool, hide_doubles: bool) -> Result<i64, sqlx::Error> {
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT search_title) FROM books WHERE avail > 0"
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books WHERE avail > 0 \
+         GROUP BY search_title, author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books WHERE avail > 0"
     };
@@ -446,7 +447,9 @@ pub async fn count_by_title_search(
 ) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT search_title) FROM books WHERE search_title LIKE ? AND avail > 0"
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books \
+         WHERE search_title LIKE ? AND avail > 0 \
+         GROUP BY search_title, author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0"
     };
@@ -466,7 +469,9 @@ pub async fn count_by_title_prefix(
 ) -> Result<i64, sqlx::Error> {
     let pattern = format!("{prefix}%");
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT search_title) FROM books WHERE search_title LIKE ? AND avail > 0"
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books \
+         WHERE search_title LIKE ? AND avail > 0 \
+         GROUP BY search_title, author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0"
     };
@@ -485,9 +490,10 @@ pub async fn count_by_author(
     hide_doubles: bool,
 ) -> Result<i64, sqlx::Error> {
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT b.search_title) FROM books b \
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books b \
          JOIN book_authors ba ON ba.book_id = b.id \
-         WHERE ba.author_id = ? AND b.avail > 0"
+         WHERE ba.author_id = ? AND b.avail > 0 \
+         GROUP BY b.search_title, b.author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books b \
          JOIN book_authors ba ON ba.book_id = b.id \
@@ -508,9 +514,10 @@ pub async fn count_by_genre(
     hide_doubles: bool,
 ) -> Result<i64, sqlx::Error> {
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT b.search_title) FROM books b \
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books b \
          JOIN book_genres bg ON bg.book_id = b.id \
-         WHERE bg.genre_id = ? AND b.avail > 0"
+         WHERE bg.genre_id = ? AND b.avail > 0 \
+         GROUP BY b.search_title, b.author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books b \
          JOIN book_genres bg ON bg.book_id = b.id \
@@ -531,9 +538,10 @@ pub async fn count_by_series(
     hide_doubles: bool,
 ) -> Result<i64, sqlx::Error> {
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT b.search_title) FROM books b \
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books b \
          JOIN book_series bs ON bs.book_id = b.id \
-         WHERE bs.series_id = ? AND b.avail > 0"
+         WHERE bs.series_id = ? AND b.avail > 0 \
+         GROUP BY b.search_title, b.author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books b \
          JOIN book_series bs ON bs.book_id = b.id \
@@ -554,7 +562,9 @@ pub async fn count_by_catalog(
     hide_doubles: bool,
 ) -> Result<i64, sqlx::Error> {
     let sql = if hide_doubles {
-        "SELECT COUNT(DISTINCT search_title) FROM books WHERE catalog_id = ? AND avail > 0"
+        "SELECT COUNT(*) FROM (SELECT 1 FROM books \
+         WHERE catalog_id = ? AND avail > 0 \
+         GROUP BY search_title, author_key) AS t"
     } else {
         "SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0"
     };
@@ -566,13 +576,16 @@ pub async fn count_by_catalog(
     Ok(row.0)
 }
 
-/// Count how many available books share the same search_title as the given book.
+/// Count how many available books share the same search_title and author_key as the given book.
 pub async fn count_doubles(pool: &DbPool, book_id: i64) -> Result<i64, sqlx::Error> {
     let sql = pool.sql(
         "SELECT COUNT(*) FROM books \
-         WHERE search_title = (SELECT search_title FROM books WHERE id = ?) AND avail > 0",
+         WHERE search_title = (SELECT search_title FROM books WHERE id = ?) \
+         AND author_key = (SELECT author_key FROM books WHERE id = ?) \
+         AND avail > 0",
     );
     let row: (i64,) = sqlx::query_as(&sql)
+        .bind(book_id)
         .bind(book_id)
         .fetch_one(pool.inner())
         .await?;
@@ -623,6 +636,165 @@ pub async fn update_title(
         .bind(book_id)
         .execute(pool.inner())
         .await?;
+    Ok(())
+}
+
+// ── Duplicate detection queries ──────────────────────────────────────
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DuplicateGroup {
+    pub search_title: String,
+    pub author_key: String,
+    pub cnt: i64,
+}
+
+/// Get groups of books that share the same search_title and author_key.
+/// Returns groups ordered by count descending, then by search_title.
+pub async fn get_duplicate_groups(
+    pool: &DbPool,
+    limit: i32,
+    offset: i32,
+) -> Result<Vec<DuplicateGroup>, sqlx::Error> {
+    let sql = pool.sql(
+        "SELECT search_title, author_key, COUNT(*) as cnt \
+         FROM books WHERE avail > 0 \
+         GROUP BY search_title, author_key \
+         HAVING COUNT(*) > 1 \
+         ORDER BY cnt DESC, search_title \
+         LIMIT ? OFFSET ?",
+    );
+    sqlx::query_as::<_, DuplicateGroup>(&sql)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool.inner())
+        .await
+}
+
+/// Count the number of duplicate groups (groups with more than one book
+/// sharing the same search_title and author_key).
+pub async fn count_duplicate_groups(pool: &DbPool) -> Result<i64, sqlx::Error> {
+    let sql = pool.sql(
+        "SELECT COUNT(*) FROM (\
+         SELECT 1 FROM books WHERE avail > 0 \
+         GROUP BY search_title, author_key \
+         HAVING COUNT(*) > 1\
+         ) AS t",
+    );
+    let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    Ok(row.0)
+}
+
+/// Get all available books in a duplicate group identified by search_title and author_key.
+pub async fn get_books_in_group(
+    pool: &DbPool,
+    search_title: &str,
+    author_key: &str,
+) -> Result<Vec<Book>, sqlx::Error> {
+    let sql = pool.sql(
+        "SELECT * FROM books \
+         WHERE search_title = ? AND author_key = ? AND avail > 0 \
+         ORDER BY id",
+    );
+    sqlx::query_as::<_, Book>(&sql)
+        .bind(search_title)
+        .bind(author_key)
+        .fetch_all(pool.inner())
+        .await
+}
+
+/// Recompute and store `author_key` for a book.
+///
+/// The key is the sorted, comma-separated list of author IDs linked to the
+/// book (e.g. `"3,17,42"`).  It is used together with `search_title` to
+/// detect duplicate editions.
+pub async fn update_author_key(pool: &DbPool, book_id: i64) -> Result<(), sqlx::Error> {
+    let authors = crate::db::queries::authors::get_for_book(pool, book_id).await?;
+    let mut ids: Vec<i64> = authors.iter().map(|a| a.id).collect();
+    ids.sort_unstable();
+    let key: String = ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = pool.sql("UPDATE books SET author_key = ? WHERE id = ?");
+    sqlx::query(&sql)
+        .bind(&key)
+        .bind(book_id)
+        .execute(pool.inner())
+        .await?;
+    Ok(())
+}
+
+/// Atomically replace all authors for a book and recompute `author_key`.
+///
+/// Runs `set_book_authors` + `update_author_key` in a single transaction so
+/// that a failure in either step rolls back both, avoiding inconsistent state.
+pub async fn set_book_authors_and_update_key(
+    pool: &DbPool,
+    book_id: i64,
+    author_ids: &[i64],
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.inner().begin().await?;
+
+    // ── set_book_authors logic ──────────────────────────────────────
+    let sql = pool.sql("SELECT author_id FROM book_authors WHERE book_id = ?");
+    let old_ids: Vec<(i64,)> = sqlx::query_as(&sql)
+        .bind(book_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+    let sql = pool.sql("DELETE FROM book_authors WHERE book_id = ?");
+    sqlx::query(&sql).bind(book_id).execute(&mut *tx).await?;
+
+    let link_sql = match pool.backend() {
+        DbBackend::Mysql => "INSERT IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)",
+        _ => {
+            "INSERT INTO book_authors (book_id, author_id) VALUES (?, ?) \
+             ON CONFLICT (book_id, author_id) DO NOTHING"
+        }
+    };
+    let link_sql = pool.sql(link_sql);
+    for &author_id in author_ids {
+        sqlx::query(&link_sql)
+            .bind(book_id)
+            .bind(author_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // ── update_author_key logic ─────────────────────────────────────
+    let author_sql = pool.sql(
+        "SELECT a.id FROM authors a \
+         JOIN book_authors ba ON ba.author_id = a.id \
+         WHERE ba.book_id = ? ORDER BY a.id",
+    );
+    let rows: Vec<(i64,)> = sqlx::query_as(&author_sql)
+        .bind(book_id)
+        .fetch_all(&mut *tx)
+        .await?;
+    let key: String = rows
+        .iter()
+        .map(|(id,)| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let update_sql = pool.sql("UPDATE books SET author_key = ? WHERE id = ?");
+    sqlx::query(&update_sql)
+        .bind(&key)
+        .bind(book_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    // ── orphan cleanup (outside transaction — non-critical) ─────────
+    for (old_id,) in old_ids {
+        if !author_ids.contains(&old_id) {
+            if let Err(e) = crate::db::queries::authors::delete_if_orphaned(pool, old_id).await {
+                tracing::warn!(author_id = old_id, error = %e, "orphan author cleanup failed");
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1371,5 +1543,337 @@ mod tests {
 
         assert_eq!(count_recent_added(&pool, false).await.unwrap(), 4);
         assert_eq!(count_recent_added(&pool, true).await.unwrap(), 3);
+    }
+
+    // ── author_key & duplicate detection tests ──────────────────────────
+
+    async fn link_author(pool: &DbPool, book_id: i64, author_id: i64) {
+        let sql = pool.sql("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?)");
+        sqlx::query(&sql)
+            .bind(book_id)
+            .bind(author_id)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_author_key_format() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let book = insert_test_book(&pool, cat, "KeyTest", 2).await;
+        let a1 = insert_test_author(&pool, "Zoe").await;
+        let a2 = insert_test_author(&pool, "Alice").await;
+
+        link_author(&pool, book, a1).await;
+        link_author(&pool, book, a2).await;
+
+        update_author_key(&pool, book).await.unwrap();
+        let row = get_by_id(&pool, book).await.unwrap().unwrap();
+
+        // IDs must be sorted numerically and comma-separated
+        let mut expected_ids = vec![a1, a2];
+        expected_ids.sort_unstable();
+        let expected = expected_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(row.author_key, expected);
+    }
+
+    #[tokio::test]
+    async fn test_update_author_key_no_authors() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let book = insert_test_book(&pool, cat, "NoAuth", 2).await;
+
+        update_author_key(&pool, book).await.unwrap();
+        let row = get_by_id(&pool, book).await.unwrap().unwrap();
+        assert_eq!(row.author_key, "");
+    }
+
+    #[tokio::test]
+    async fn test_hide_doubles_considers_author_key() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let author_a = insert_test_author(&pool, "Author A").await;
+        let author_b = insert_test_author(&pool, "Author B").await;
+
+        // Two books with the same search_title but different authors
+        let b1 = insert_test_book_custom(
+            &pool,
+            cat,
+            "dup-a.fb2",
+            "/test/dup",
+            "Same Title",
+            "SAME TITLE",
+            CatType::Normal,
+        )
+        .await;
+        let b2 = insert_test_book_custom(
+            &pool,
+            cat,
+            "dup-b.fb2",
+            "/test/dup",
+            "Same Title",
+            "SAME TITLE",
+            CatType::Normal,
+        )
+        .await;
+
+        link_author(&pool, b1, author_a).await;
+        link_author(&pool, b2, author_b).await;
+        update_author_key(&pool, b1).await.unwrap();
+        update_author_key(&pool, b2).await.unwrap();
+
+        // Without hide_doubles: both visible
+        let all = get_by_catalog(&pool, cat, 100, 0, false).await.unwrap();
+        assert_eq!(all.len(), 2);
+
+        // With hide_doubles: still both visible (different author_key)
+        let deduped = get_by_catalog(&pool, cat, 100, 0, true).await.unwrap();
+        assert_eq!(deduped.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_hide_doubles_same_author_deduplicates() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let author = insert_test_author(&pool, "Shared Author").await;
+
+        // Two books with the same search_title AND same author
+        let b1 = insert_test_book_custom(
+            &pool,
+            cat,
+            "dup-1.fb2",
+            "/test/dup",
+            "Dup Title",
+            "DUP TITLE",
+            CatType::Normal,
+        )
+        .await;
+        let b2 = insert_test_book_custom(
+            &pool,
+            cat,
+            "dup-2.fb2",
+            "/test/dup",
+            "Dup Title 2",
+            "DUP TITLE",
+            CatType::Normal,
+        )
+        .await;
+
+        link_author(&pool, b1, author).await;
+        link_author(&pool, b2, author).await;
+        update_author_key(&pool, b1).await.unwrap();
+        update_author_key(&pool, b2).await.unwrap();
+
+        // Without hide_doubles: both visible
+        let all = get_by_catalog(&pool, cat, 100, 0, false).await.unwrap();
+        assert_eq!(all.len(), 2);
+
+        // With hide_doubles: deduplicated to one (same search_title + author_key)
+        let deduped = get_by_catalog(&pool, cat, 100, 0, true).await.unwrap();
+        assert_eq!(deduped.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_count_doubles_considers_author_key() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let author_a = insert_test_author(&pool, "Writer A").await;
+        let author_b = insert_test_author(&pool, "Writer B").await;
+
+        // b1 and b2: same title, same author → duplicates
+        let b1 = insert_test_book_custom(
+            &pool,
+            cat,
+            "d1.fb2",
+            "/test/cnt",
+            "Title",
+            "TITLE",
+            CatType::Normal,
+        )
+        .await;
+        let b2 = insert_test_book_custom(
+            &pool,
+            cat,
+            "d2.fb2",
+            "/test/cnt",
+            "Title2",
+            "TITLE",
+            CatType::Normal,
+        )
+        .await;
+        // b3: same title, different author → NOT a duplicate of b1/b2
+        let b3 = insert_test_book_custom(
+            &pool,
+            cat,
+            "d3.fb2",
+            "/test/cnt",
+            "Title3",
+            "TITLE",
+            CatType::Normal,
+        )
+        .await;
+
+        for b in [b1, b2] {
+            link_author(&pool, b, author_a).await;
+        }
+        link_author(&pool, b3, author_b).await;
+
+        for b in [b1, b2, b3] {
+            update_author_key(&pool, b).await.unwrap();
+        }
+
+        // b1 should see 2 doubles (b1 and b2 share title+author)
+        assert_eq!(count_doubles(&pool, b1).await.unwrap(), 2);
+        // b3 should see only 1 (itself — different author)
+        assert_eq!(count_doubles(&pool, b3).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_duplicate_groups_detection() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let author = insert_test_author(&pool, "Group Author").await;
+
+        // Group 1: 3 books, same title + author
+        for i in 0..3 {
+            let b = insert_test_book_custom(
+                &pool,
+                cat,
+                &format!("grp1-{i}.fb2"),
+                "/test/grp",
+                &format!("Group One v{i}"),
+                "GROUP ONE",
+                CatType::Normal,
+            )
+            .await;
+            link_author(&pool, b, author).await;
+            update_author_key(&pool, b).await.unwrap();
+        }
+
+        // Group 2: 2 books, same title + author
+        for i in 0..2 {
+            let b = insert_test_book_custom(
+                &pool,
+                cat,
+                &format!("grp2-{i}.fb2"),
+                "/test/grp",
+                &format!("Group Two v{i}"),
+                "GROUP TWO",
+                CatType::Normal,
+            )
+            .await;
+            link_author(&pool, b, author).await;
+            update_author_key(&pool, b).await.unwrap();
+        }
+
+        // Singleton (not a duplicate group)
+        let solo = insert_test_book_custom(
+            &pool,
+            cat,
+            "solo.fb2",
+            "/test/grp",
+            "Solo",
+            "SOLO",
+            CatType::Normal,
+        )
+        .await;
+        link_author(&pool, solo, author).await;
+        update_author_key(&pool, solo).await.unwrap();
+
+        let count = count_duplicate_groups(&pool).await.unwrap();
+        assert_eq!(count, 2);
+
+        let groups = get_duplicate_groups(&pool, 100, 0).await.unwrap();
+        assert_eq!(groups.len(), 2);
+        // Ordered by count DESC
+        assert_eq!(groups[0].cnt, 3);
+        assert_eq!(groups[0].search_title, "GROUP ONE");
+        assert_eq!(groups[1].cnt, 2);
+        assert_eq!(groups[1].search_title, "GROUP TWO");
+
+        // get_books_in_group returns the individual books
+        let books_in_g1 = get_books_in_group(&pool, &groups[0].search_title, &groups[0].author_key)
+            .await
+            .unwrap();
+        assert_eq!(books_in_g1.len(), 3);
+
+        let books_in_g2 = get_books_in_group(&pool, &groups[1].search_title, &groups[1].author_key)
+            .await
+            .unwrap();
+        assert_eq!(books_in_g2.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_hide_doubles_count_queries_with_author_key() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let author_a = insert_test_author(&pool, "Count Author A").await;
+        let author_b = insert_test_author(&pool, "Count Author B").await;
+        let genre = insert_test_genre(&pool, "count_test_genre").await;
+        let series = insert_test_series(&pool, "Count Saga").await;
+
+        // Two books: same search_title, different authors
+        let b1 = insert_test_book_custom(
+            &pool,
+            cat,
+            "cnt-1.fb2",
+            "/test/count",
+            "Count Title",
+            "COUNT TITLE",
+            CatType::Normal,
+        )
+        .await;
+        let b2 = insert_test_book_custom(
+            &pool,
+            cat,
+            "cnt-2.fb2",
+            "/test/count",
+            "Count Title 2",
+            "COUNT TITLE",
+            CatType::Normal,
+        )
+        .await;
+
+        link_author(&pool, b1, author_a).await;
+        link_author(&pool, b2, author_b).await;
+        update_author_key(&pool, b1).await.unwrap();
+        update_author_key(&pool, b2).await.unwrap();
+
+        // Link both to genre and series
+        for b in [b1, b2] {
+            let sql = pool.sql("INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?)");
+            sqlx::query(&sql)
+                .bind(b)
+                .bind(genre)
+                .execute(pool.inner())
+                .await
+                .unwrap();
+
+            let sql =
+                pool.sql("INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)");
+            sqlx::query(&sql)
+                .bind(b)
+                .bind(series)
+                .bind(1)
+                .execute(pool.inner())
+                .await
+                .unwrap();
+        }
+
+        // Different author_key → hide_doubles should keep both
+        assert_eq!(count_by_catalog(&pool, cat, true).await.unwrap(), 2);
+        assert_eq!(
+            count_by_title_search(&pool, "COUNT", true).await.unwrap(),
+            2
+        );
+        assert_eq!(count_by_title_prefix(&pool, "CO", true).await.unwrap(), 2);
+        assert_eq!(count_by_genre(&pool, genre, true).await.unwrap(), 2);
+        assert_eq!(count_by_series(&pool, series, true).await.unwrap(), 2);
+        assert_eq!(count_recent_added(&pool, true).await.unwrap(), 2);
     }
 }

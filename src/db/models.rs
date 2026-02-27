@@ -29,6 +29,7 @@ pub struct Book {
     pub cat_type: i32,
     pub cover: i32,
     pub cover_type: String,
+    pub author_key: String,
     pub reg_date: String,
 }
 

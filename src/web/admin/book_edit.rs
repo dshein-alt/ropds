@@ -138,7 +138,12 @@ pub async fn update_book_authors(
         }
     }
 
-    match crate::db::queries::authors::set_book_authors(&state.db, payload.book_id, &all_ids).await
+    match crate::db::queries::books::set_book_authors_and_update_key(
+        &state.db,
+        payload.book_id,
+        &all_ids,
+    )
+    .await
     {
         Ok(()) => {
             let updated = crate::db::queries::authors::get_for_book(&state.db, payload.book_id)

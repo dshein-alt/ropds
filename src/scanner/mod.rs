@@ -1185,6 +1185,7 @@ async fn ctx_insert_book_with_meta(
             authors::link_book(&ctx.pool, book_id, author_id).await?;
         }
     }
+    books::update_author_key(&ctx.pool, book_id).await?;
 
     // Link genres
     for genre_code in &meta.genres {
@@ -1286,6 +1287,7 @@ pub async fn insert_book_with_meta(
             authors::link_book(pool, book_id, author_id).await?;
         }
     }
+    books::update_author_key(pool, book_id).await?;
 
     // Link genres
     for genre_code in &meta.genres {
