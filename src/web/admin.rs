@@ -11,11 +11,13 @@ use crate::web::auth::verify_session;
 use crate::web::context::{build_context, validate_csrf};
 
 mod book_edit;
+mod duplicates;
 mod genres;
 mod scan;
 mod user_pages;
 
 pub use book_edit::*;
+pub use duplicates::*;
 pub use genres::*;
 pub use scan::*;
 pub use user_pages::*;

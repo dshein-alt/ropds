@@ -216,6 +216,10 @@ genre_delete_section = "Удалить раздел"
 genre_delete_genre = "Удалить жанр"
 genre_delete_translation = "Удалить перевод"
 genre_duplicate_code = "Запись с таким кодом уже существует."
+duplicates = "Дубликаты книг"
+duplicates_desc = "Группы книг с одинаковым названием и авторами."
+duplicate_groups = "групп дубликатов"
+no_duplicates = "Дубликаты не найдены."
 
 [profile]
 title = "Профиль"

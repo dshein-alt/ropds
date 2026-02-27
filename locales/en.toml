@@ -216,6 +216,10 @@ genre_delete_section = "Delete section"
 genre_delete_genre = "Delete genre"
 genre_delete_translation = "Delete translation"
 genre_duplicate_code = "A record with this code already exists."
+duplicates = "Duplicate Books"
+duplicates_desc = "Groups of books with identical title and authors."
+duplicate_groups = "duplicate groups"
+no_duplicates = "No duplicate groups found."
 
 [profile]
 title = "Profile"

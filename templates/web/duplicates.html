@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t.admin.duplicates }} — {{ app_title }}{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">
+  <i class="bi bi-copy me-2"></i>{{ t.admin.duplicates }}
+  <small class="text-body-secondary">— {{ total_groups }} {{ t.admin.duplicate_groups }}</small>
+</h2>
+<p class="text-body-secondary">{{ t.admin.duplicates_desc }}</p>
+
+<nav class="mb-3">
+  <a href="/web/admin" class="text-decoration-none">
+    <i class="bi bi-arrow-left me-1"></i>{{ t.admin.title }}
+  </a>
+</nav>
+
+{% if groups | length == 0 %}
+  <div class="alert alert-info">
+    <i class="bi bi-check-circle me-1"></i>{{ t.admin.no_duplicates }}
+  </div>
+{% else %}
+  {% for group in groups %}
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div>
+        <strong>{{ group.search_title }}</strong>
+        {% if group.authors %}
+        <span class="text-body-secondary ms-2">
+          <i class="bi bi-person me-1"></i>{{ group.authors }}
+        </span>
+        {% endif %}
+      </div>
+      <span class="badge text-bg-warning">{{ group.cnt }} {{ t.footer.books }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>{{ t.upload.book_title }}</th>
+              <th>{{ t.upload.book_format }}</th>
+              <th>{{ t.book.size }}</th>
+              <th>{{ t.book.lang }}</th>
+              <th>{{ t.book.file }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for book in group.books %}
+            <tr>
+              <td><a href="/web/search/books?type=i&q={{ book.id }}">#{{ book.id }}</a></td>
+              <td>{{ book.title }}</td>
+              <td><span class="badge text-bg-secondary">{{ book.format }}</span></td>
+              <td>{{ book.size | filesizeformat }}</td>
+              <td>{{ book.lang }}</td>
+              <td class="text-break"><small class="text-body-secondary">{{ book.path }}/{{ book.filename }}</small></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{% if pagination.total_pages > 1 %}
+{% include "web/_pagination.html" %}
+{% endif %}
+{% endblock %}

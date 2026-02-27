@@ -41,6 +41,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/genre/delete", post(admin::delete_genre))
         .route("/section", post(admin::create_section))
         .route("/section/delete", post(admin::delete_section))
+        .route("/duplicates", get(admin::duplicates_page))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,

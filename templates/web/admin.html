@@ -5,6 +5,13 @@
 {% block content %}
 <h2 class="mb-4"><i class="bi bi-gear me-2"></i>{{ t.admin.title }}</h2>
 
+{# ── Admin Tools ──────────────────────────────────── #}
+<div class="mb-4">
+  <a href="/web/admin/duplicates" class="btn btn-outline-primary">
+    <i class="bi bi-copy me-1"></i>{{ t.admin.duplicates }}
+  </a>
+</div>
+
 {# ── Flash Messages ─────────────────────────────── #}
 <div id="flash-msg" class="alert alert-dismissible fade show d-none" role="alert">
   <span id="flash-text"></span>
