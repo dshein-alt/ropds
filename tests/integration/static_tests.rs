@@ -1,5 +1,6 @@
 use http_body_util::BodyExt;
 use ropds::db;
+use tower::ServiceExt;
 
 use super::*;
 
@@ -53,4 +54,31 @@ async fn blocks_static_path_traversal() {
 
     let response = get(app, "/static/../Cargo.toml").await;
     assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn serves_compressed_static_javascript_when_requested() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    let request = axum::http::Request::builder()
+        .uri("/static/js/ropds.js")
+        .header("accept-encoding", "gzip")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("gzip")
+    );
 }

@@ -14,6 +14,7 @@ use axum::Router;
 use axum::extract::State;
 use axum::response::Json;
 use axum::routing::get;
+use tower_http::compression::CompressionLayer;
 
 use crate::state::AppState;
 
@@ -42,5 +43,5 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/web", web::router(state.clone()))
         .route("/static/{*path}", get(assets::static_asset));
 
-    router.with_state(state)
+    router.layer(CompressionLayer::new()).with_state(state)
 }

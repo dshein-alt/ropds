@@ -22,6 +22,11 @@ const STATIC_CACHE_CONTROL: &str = "public, max-age=3600";
 static EMBEDDED_ASSETS: Dir<'_> = include_dir!("$OUT_DIR/embedded_assets");
 
 #[cfg(not(debug_assertions))]
+mod embedded_static_metadata {
+    include!(concat!(env!("OUT_DIR"), "/embedded_static_metadata.rs"));
+}
+
+#[cfg(not(debug_assertions))]
 static EMBEDDED_STATIC_FILES: LazyLock<HashMap<String, EmbeddedStaticFile>> = LazyLock::new(|| {
     let mut files = HashMap::new();
     if let Some(static_dir) = EMBEDDED_ASSETS.get_dir("static") {
@@ -204,7 +209,15 @@ fn collect_embedded_static_files(
             .first_or_octet_stream()
             .essence_str()
             .to_string();
-        let etag = build_etag(&bytes);
+        let etag = embedded_static_metadata::etag_for_path(&relative)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "Missing generated ETag metadata for embedded static asset {}",
+                    relative
+                );
+                build_etag(&bytes)
+            });
 
         out.insert(
             relative,
