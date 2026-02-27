@@ -1,16 +1,28 @@
 // Theme toggle (persists in localStorage)
 (function () {
   const THEME_KEY = "ropds-theme";
+  const mediaQuery = window.matchMedia
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : null;
+
+  function getSavedTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+    return null;
+  }
 
   function getPreferred() {
-    const saved = localStorage.getItem(THEME_KEY);
+    const saved = getSavedTheme();
     if (saved) return saved;
+    if (mediaQuery) return mediaQuery.matches ? "dark" : "light";
     return document.documentElement.getAttribute("data-bs-theme") || "light";
   }
 
-  function apply(theme) {
+  function apply(theme, persist) {
     document.documentElement.setAttribute("data-bs-theme", theme);
-    localStorage.setItem(THEME_KEY, theme);
+    if (persist) {
+      localStorage.setItem(THEME_KEY, theme);
+    }
     // Update toggle button icon
     const icon = document.getElementById("theme-icon");
     if (icon) {
@@ -18,13 +30,27 @@
     }
   }
 
-  // Apply saved theme immediately
-  apply(getPreferred());
+  // Apply theme immediately. Persist only when set explicitly by user.
+  apply(getPreferred(), false);
+
+  // Follow OS preference changes unless user has manually selected a theme.
+  if (mediaQuery) {
+    const onSystemThemeChange = function (event) {
+      if (getSavedTheme()) return;
+      apply(event.matches ? "dark" : "light", false);
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", onSystemThemeChange);
+    } else if (typeof mediaQuery.addListener === "function") {
+      mediaQuery.addListener(onSystemThemeChange);
+    }
+  }
 
   // Expose toggle function
   window.toggleTheme = function () {
     const current = document.documentElement.getAttribute("data-bs-theme");
-    apply(current === "dark" ? "light" : "dark");
+    apply(current === "dark" ? "light" : "dark", true);
   };
 })();
 
