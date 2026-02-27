@@ -338,3 +338,176 @@ async fn pg_author_link_and_orphan_cleanup() {
     );
     assert!(authors::find_by_name(&pool, "Bob").await.unwrap().is_some());
 }
+
+// ---------------------------------------------------------------------------
+// Duplicate detection & author_key
+// ---------------------------------------------------------------------------
+
+/// `update_author_key`, `count_doubles`, and `get_duplicate_groups` work on PG.
+/// This covers the `||` concatenation and `STRING_AGG` backfill used on PG.
+#[tokio::test]
+async fn pg_author_key_and_duplicate_detection() {
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/dup", "dup", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let alice = authors::insert(&pool, "Alice", "ALICE", 2).await.unwrap();
+    let bob = authors::insert(&pool, "Bob", "BOB", 2).await.unwrap();
+
+    // Book 1 + 2: same title, same author (Alice) → duplicates
+    let b1 = books::insert(
+        &pool,
+        cat_id,
+        "dup1.fb2",
+        "/dup",
+        "fb2",
+        "Same Book",
+        "SAME BOOK",
+        "",
+        "",
+        "en",
+        2,
+        100,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+    let b2 = books::insert(
+        &pool,
+        cat_id,
+        "dup2.fb2",
+        "/dup",
+        "fb2",
+        "Same Book v2",
+        "SAME BOOK",
+        "",
+        "",
+        "en",
+        2,
+        200,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+
+    // Book 3: same title, different author (Bob) → NOT a duplicate of b1/b2
+    let b3 = books::insert(
+        &pool,
+        cat_id,
+        "dup3.fb2",
+        "/dup",
+        "fb2",
+        "Same Book v3",
+        "SAME BOOK",
+        "",
+        "",
+        "en",
+        2,
+        300,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+
+    authors::link_book(&pool, b1, alice).await.unwrap();
+    authors::link_book(&pool, b2, alice).await.unwrap();
+    authors::link_book(&pool, b3, bob).await.unwrap();
+
+    for &id in &[b1, b2, b3] {
+        books::update_author_key(&pool, id).await.unwrap();
+    }
+
+    // Verify author_key format
+    let book1 = books::get_by_id(&pool, b1).await.unwrap().unwrap();
+    assert_eq!(book1.author_key, alice.to_string());
+    let book3 = books::get_by_id(&pool, b3).await.unwrap().unwrap();
+    assert_eq!(book3.author_key, bob.to_string());
+
+    // count_doubles: b1 sees 2 (b1+b2), b3 sees 1 (only itself)
+    assert_eq!(books::count_doubles(&pool, b1).await.unwrap(), 2);
+    assert_eq!(books::count_doubles(&pool, b3).await.unwrap(), 1);
+
+    // Duplicate groups: only 1 group (b1+b2)
+    let count = books::count_duplicate_groups(&pool).await.unwrap();
+    assert_eq!(count, 1);
+
+    let groups = books::get_duplicate_groups(&pool, 100, 0).await.unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].search_title, "SAME BOOK");
+    assert_eq!(groups[0].cnt, 2);
+
+    // Books in group
+    let in_group = books::get_books_in_group(&pool, &groups[0].search_title, &groups[0].author_key)
+        .await
+        .unwrap();
+    assert_eq!(in_group.len(), 2);
+
+    // hide_doubles with COUNT(DISTINCT ...) using || on PG
+    assert_eq!(
+        books::count_by_catalog(&pool, cat_id, true).await.unwrap(),
+        2, // b1+b2 dedup to 1, plus b3 = 2
+    );
+    assert_eq!(
+        books::count_by_catalog(&pool, cat_id, false).await.unwrap(),
+        3,
+    );
+}
+
+/// Transactional `set_book_authors_and_update_key` works on PG.
+#[tokio::test]
+async fn pg_set_book_authors_and_update_key() {
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/txn", "txn", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let alice = authors::insert(&pool, "Alice T", "ALICE T", 2)
+        .await
+        .unwrap();
+    let bob = authors::insert(&pool, "Bob T", "BOB T", 2).await.unwrap();
+
+    let book = books::insert(
+        &pool,
+        cat_id,
+        "txn.fb2",
+        "/txn",
+        "fb2",
+        "Txn Book",
+        "TXN BOOK",
+        "",
+        "",
+        "en",
+        2,
+        100,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+
+    // Initial: set authors to [alice]
+    books::set_book_authors_and_update_key(&pool, book, &[alice])
+        .await
+        .unwrap();
+    let b = books::get_by_id(&pool, book).await.unwrap().unwrap();
+    assert_eq!(b.author_key, alice.to_string());
+
+    // Update: set authors to [bob]
+    books::set_book_authors_and_update_key(&pool, book, &[bob])
+        .await
+        .unwrap();
+    let b = books::get_by_id(&pool, book).await.unwrap().unwrap();
+    assert_eq!(b.author_key, bob.to_string());
+
+    let linked = authors::get_for_book(&pool, book).await.unwrap();
+    assert_eq!(linked.len(), 1);
+    assert_eq!(linked[0].id, bob);
+}
