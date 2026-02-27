@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026.02.27
+
+### Added
+- Added Progressive Web App (PWA) support for the web interface, including installable behavior and service-worker-backed assets.
+- Added OPDS "Recently Added" navigation and feed support.
+- Added a web "Recent" page and continue-reading blocks on the home page.
+- Added reader table of contents sidebar with localized labels.
+- Added reading progress indicators on book lists and bookshelf cards.
+- Added an admin duplicates page with localized labels.
+
+### Changed
+- Improved static content delivery with response compression and stronger cache handling.
+- Updated theme behavior to follow system preference until the user selects an override.
+- Expanded integration and docker test coverage for recent flows, PWA behavior, and duplicate detection.
+- Reworked internal web module organization and shared context caching for cleaner maintenance.
+- Updated documentation for reverse proxy setup, PWA usage, and duplicate management.
+
+### Fixed
+- Improved duplicate grouping consistency for books with multi-author metadata.
+- Improved reliability of duplicate update operations across supported databases.
+
 ## [0.8.0] - 2026.02.27
 
 ### Added
