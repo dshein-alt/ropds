@@ -75,6 +75,7 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 
 **Web Interface**
 - Responsive Bootstrap 5 UI with light/dark theme
+- Installable PWA mode for mobile/desktop browsers (manifest + service worker)
 - Browse by catalogs, authors, series, or genres with breadcrumb navigation
 - Inline book metadata editing for admins (title, authors, genres)
 - Cover preview with full-size overlay on click
@@ -166,6 +167,13 @@ For containerized deployment, use the ready-to-run bundle in [`docker/`](docker/
 
 - English guide: [`docker/README.md`](docker/README.md)
 - Russian guide: [`docker/README_RU.md`](docker/README_RU.md)
+
+## Reverse Proxy
+
+Ready-to-use reverse proxy snippets:
+
+- English: [`service/proxy/README.md`](service/proxy/README.md) (Nginx + Traefik)
+- Russian: [`service/proxy/README_RU.md`](service/proxy/README_RU.md) (Nginx + Traefik)
 
 ## Configuration
 

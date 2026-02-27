@@ -10,6 +10,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 - Added self-contained web delivery by embedding UI assets and localization files into the release binary.
 - Added release-profile static route checks in CI to validate production asset behavior.
+- Added PWA manifest and service worker support for installable mobile web UI.
+- Added reverse proxy documentation snippets for Nginx and Traefik.
 
 ### Changed
 - Improved static content caching behavior to reduce stale client assets after upgrades.

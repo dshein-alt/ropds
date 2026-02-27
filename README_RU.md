@@ -75,6 +75,7 @@
 
 **Веб-интерфейс**
 - Адаптивный интерфейс на Bootstrap 5 со светлой и тёмной темой
+- Устанавливаемый PWA-режим для мобильных и десктопных браузеров (manifest + service worker)
 - Навигация по каталогам, авторам, сериям и жанрам с хлебными крошками
 - Редактирование метаданных книг прямо на странице для администраторов (название, авторы, жанры)
 - Предпросмотр обложек с полноразмерным показом по клику
@@ -166,6 +167,13 @@ sudo journalctl -u ropds.service -f
 
 - Английская инструкция: [`docker/README.md`](docker/README.md)
 - Русская инструкция: [`docker/README_RU.md`](docker/README_RU.md)
+
+## Reverse Proxy
+
+Готовые примеры конфигурации reverse proxy:
+
+- Английская версия: [`service/proxy/README.md`](service/proxy/README.md) (Nginx + Traefik)
+- Русская версия: [`service/proxy/README_RU.md`](service/proxy/README_RU.md) (Nginx + Traefik)
 
 ## Настройка
 
