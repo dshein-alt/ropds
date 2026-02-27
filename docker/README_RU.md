@@ -63,18 +63,9 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 
 Docker-образ полностью автономен и уже содержит:
 
-- `/app/templates`
 - `/app/locales`
-- `/app/static`
 
-При необходимости можно смонтировать собственные статические файлы с хоста (в режиме только чтение):
-
-```bash
-docker compose \
-  -f docker/docker-compose.sqlite.yml \
-  -f docker/docker-compose.static.mount.yml \
-  up -d --build
-```
+Веб-шаблоны и статические файлы встраиваются в release-бинарник на этапе сборки.
 
 Во время работы создаются и используются:
 

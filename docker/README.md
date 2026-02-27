@@ -63,18 +63,9 @@ Each compose file mounts:
 
 The image is self-contained and already includes:
 
-- `/app/templates`
 - `/app/locales`
-- `/app/static`
 
-Optional host static override (read-only):
-
-```bash
-docker compose \
-  -f docker/docker-compose.sqlite.yml \
-  -f docker/docker-compose.static.mount.yml \
-  up -d --build
-```
+Web templates and static assets are embedded into the release binary at build time.
 
 Runtime creates/uses:
 

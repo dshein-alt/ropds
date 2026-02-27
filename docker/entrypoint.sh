@@ -58,11 +58,6 @@ ensure_rw_dir() {
 require_readable_file "$ROPDS_BIN"
 require_readable_file "$ROPDS_CONFIG"
 
-if [ ! -d /app/static ]; then
-    log "ERROR: expected static directory at /app/static"
-    exit 1
-fi
-
 db_url="$(toml_value database url || true)"
 if [ -z "$db_url" ]; then
     log "ERROR: could not read [database].url from $ROPDS_CONFIG"
