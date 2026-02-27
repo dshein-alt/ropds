@@ -5,6 +5,7 @@ mod book_search_tests;
 mod bookshelf_tests;
 mod catalog_tests;
 mod duplicates_tests;
+mod opds2_tests;
 mod opds_core_tests;
 mod opds_language_facets_tests;
 mod opds_recent_tests;
