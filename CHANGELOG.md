@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026.02.27
+
+### Added
+- Added self-contained web delivery by embedding UI assets and localization files into the release binary.
+- Added release-profile static route checks in CI to validate production asset behavior.
+
+### Changed
+- Improved static content caching behavior to reduce stale client assets after upgrades.
+- Simplified container packaging and runtime assumptions for web resources.
+
+### Fixed
+- Reduced startup overhead and improved response metadata handling for static content delivery.
+
 ## [0.7.5] - 2026.02.25
 
 ### Added
