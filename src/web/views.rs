@@ -67,6 +67,15 @@ pub struct Breadcrumb {
     pub cat_id: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ContinueReadingItem {
+    pub book_id: i64,
+    pub title: String,
+    pub format: String,
+    pub progress_pct: i32,
+    pub updated_at: String,
+}
+
 // ── Query parameter structs ─────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -117,8 +126,20 @@ pub struct SetLanguageParams {
     pub redirect: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct RecentBooksParams {
+    #[serde(default)]
+    pub page: i32,
+}
+
 fn default_m() -> String {
     "m".to_string()
+}
+
+fn session_user_id(state: &AppState, jar: &CookieJar) -> Option<i64> {
+    let secret = state.config.server.session_secret.as_bytes();
+    jar.get("session")
+        .and_then(|cookie| crate::web::auth::verify_session(cookie.value(), secret))
 }
 
 // ── Helper: enrich a Book into a BookView ───────────────────────────
@@ -225,8 +246,98 @@ pub async fn home(
     State(state): State<AppState>,
     jar: CookieJar,
 ) -> Result<Html<String>, StatusCode> {
-    let ctx = build_context(&state, &jar, "home").await;
+    let mut ctx = build_context(&state, &jar, "home").await;
+
+    if state.config.reader.enable {
+        if let Some(user_id) = session_user_id(&state, &jar) {
+            let recent = reading_positions::get_recent(&state.db, user_id, 8)
+                .await
+                .unwrap_or_default();
+            let continue_reading: Vec<ContinueReadingItem> = recent
+                .into_iter()
+                .map(|item| ContinueReadingItem {
+                    book_id: item.book_id,
+                    title: item.title,
+                    format: item.format,
+                    progress_pct: (item.progress.clamp(0.0, 1.0) * 100.0).round() as i32,
+                    updated_at: item.updated_at,
+                })
+                .collect();
+
+            ctx.insert("continue_reading", &continue_reading);
+        }
+    }
+
     render(&state.tera, "web/home.html", &ctx)
+}
+
+pub async fn recent_books(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(params): Query<RecentBooksParams>,
+) -> Result<Html<String>, StatusCode> {
+    let mut ctx = build_context(&state, &jar, "recent").await;
+    let page = params.page.max(0);
+    let max_items = state.config.opds.max_items as i32;
+    let offset = page * max_items;
+    let hide_doubles = state.config.opds.hide_doubles;
+    let locale = jar
+        .get("lang")
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| state.config.web.language.clone());
+
+    let raw_books = books::get_recent_added(&state.db, max_items, offset, hide_doubles)
+        .await
+        .unwrap_or_default();
+    let total = books::count_recent_added(&state.db, hide_doubles)
+        .await
+        .unwrap_or(0);
+
+    let user_id = session_user_id(&state, &jar);
+    let shelf_ids = if let Some(uid) = user_id {
+        bookshelf::get_book_ids_for_user(&state.db, uid).await.ok()
+    } else {
+        None
+    };
+    let raw_book_ids: Vec<i64> = raw_books.iter().map(|book| book.id).collect();
+    let read_progress = if let Some(uid) = user_id {
+        reading_positions::get_progress_map(&state.db, uid, &raw_book_ids)
+            .await
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let mut book_views = Vec::with_capacity(raw_books.len());
+    for book in raw_books {
+        let book_id = book.id;
+        book_views.push(
+            enrich_book(
+                &state,
+                book,
+                hide_doubles,
+                shelf_ids.as_ref(),
+                read_progress.get(&book_id).copied(),
+                &locale,
+            )
+            .await,
+        );
+    }
+
+    let t = i18n::get_locale(&state.translations, &locale);
+    let recent_label = t
+        .get("nav")
+        .and_then(|nav| nav.get("recent"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("Recently added");
+
+    ctx.insert("books", &book_views);
+    ctx.insert("search_label", recent_label);
+    ctx.insert("pagination", &Pagination::new(page, max_items, total));
+    ctx.insert("pagination_qs", "");
+    ctx.insert("current_path", &format!("/web/recent?page={page}"));
+
+    render(&state.tera, "web/books.html", &ctx)
 }
 
 pub async fn catalogs(
@@ -458,10 +569,7 @@ pub async fn search_books(
         }
     };
 
-    let secret = state.config.server.session_secret.as_bytes();
-    let user_id = jar
-        .get("session")
-        .and_then(|c| crate::web::auth::verify_session(c.value(), secret));
+    let user_id = session_user_id(&state, &jar);
     let shelf_ids = if let Some(user_id) = user_id {
         crate::db::queries::bookshelf::get_book_ids_for_user(&state.db, user_id)
             .await
@@ -1287,11 +1395,7 @@ pub async fn bookshelf_page(
         .map(|c| c.value().to_string())
         .unwrap_or_else(|| state.config.web.language.clone());
 
-    let secret = state.config.server.session_secret.as_bytes();
-    let user_id = match jar
-        .get("session")
-        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
-    {
+    let user_id = match session_user_id(&state, &jar) {
         Some(uid) => uid,
         None => return Err(StatusCode::UNAUTHORIZED),
     };
@@ -1356,11 +1460,7 @@ pub async fn bookshelf_cards(
         .get("lang")
         .map(|c| c.value().to_string())
         .unwrap_or_else(|| state.config.web.language.clone());
-    let secret = state.config.server.session_secret.as_bytes();
-    let user_id = match jar
-        .get("session")
-        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
-    {
+    let user_id = match session_user_id(&state, &jar) {
         Some(uid) => uid,
         None => return Err(StatusCode::UNAUTHORIZED),
     };
@@ -1430,10 +1530,7 @@ pub async fn bookshelf_clear(
         return (StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
     }
 
-    let user_id = match jar
-        .get("session")
-        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
-    {
+    let user_id = match session_user_id(&state, &jar) {
         Some(uid) => uid,
         None => return Redirect::to("/web/login").into_response(),
     };

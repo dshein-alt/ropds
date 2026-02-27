@@ -50,6 +50,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/", get(views::home))
         .route("/catalogs", get(views::catalogs))
         .route("/books", get(views::books_browse))
+        .route("/recent", get(views::recent_books))
         .route("/authors", get(views::authors_browse))
         .route("/series", get(views::series_browse))
         .route("/genres", get(views::genres))

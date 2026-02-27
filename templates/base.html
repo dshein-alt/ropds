@@ -105,6 +105,12 @@
           {% endif %}
 
           <li class="nav-item">
+            <a class="nav-link{% if active_page == 'recent' %} active{% endif %}" href="/web/recent">
+              <i class="bi bi-clock-history me-1"></i>{{ t.nav.recent }}
+            </a>
+          </li>
+
+          <li class="nav-item">
             <a class="nav-link{% if active_page == 'genres' %} active{% endif %}" href="/web/genres">
               <i class="bi bi-tags me-1"></i>{{ t.nav.genres }}
             </a>
