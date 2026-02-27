@@ -84,14 +84,17 @@ pub async fn get_user_id_from_headers(
         .decode(encoded)
         .ok()?;
     let credentials = String::from_utf8(decoded).ok()?;
-    let (username, _password) = credentials.split_once(':')?;
+    let (username, password) = credentials.split_once(':')?;
 
-    let result: Result<Option<(i64,)>, _> =
-        sqlx::query_as(&pool.sql("SELECT id FROM users WHERE username = ?"))
+    let result: Result<Option<(i64, String)>, _> =
+        sqlx::query_as(&pool.sql("SELECT id, password_hash FROM users WHERE username = ?"))
             .bind(username)
             .fetch_optional(pool.inner())
             .await;
-    result.ok().flatten().map(|(id,)| id)
+    match result.ok().flatten() {
+        Some((id, hash)) if crate::password::verify(password, &hash) => Some(id),
+        _ => None,
+    }
 }
 
 fn unauthorized_response() -> Response {
