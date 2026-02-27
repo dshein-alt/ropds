@@ -173,6 +173,7 @@ async fn build_root_feed(
     let by_genres = tr(state, &lang, "opds", "root_by_genres", "By Genres");
     let by_series = tr(state, &lang, "opds", "root_by_series", "By Series");
     let by_title = tr(state, &lang, "opds", "root_by_title", "By Title");
+    let by_recent = tr(state, &lang, "opds", "root_by_recent", "Recently Added");
     let language_facets = tr(
         state,
         &lang,
@@ -214,6 +215,13 @@ async fn build_root_feed(
         "opds",
         "root_content_title",
         "Browse by book title",
+    );
+    let by_recent_content = tr(
+        state,
+        &lang,
+        "opds",
+        "root_content_recent",
+        "Browse newly scanned books",
     );
     let language_facets_content = tr(
         state,
@@ -272,6 +280,12 @@ async fn build_root_feed(
             by_title,
             add_lang_query("/opds/books/", &lang),
             by_title_content,
+        ),
+        (
+            "m:8",
+            by_recent,
+            add_lang_query("/opds/recent/", &lang),
+            by_recent_content,
         ),
         (
             "m:7",
@@ -967,6 +981,86 @@ pub async fn books_feed(
                 DEFAULT_UPDATED,
             );
         }
+    }
+
+    match fb.finish() {
+        Ok(body) => atom_response(body),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "XML error"),
+    }
+}
+
+/// GET /opds/recent/
+pub async fn recent_root(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    build_recent_feed(&state, &headers, q.lang.as_deref(), 1).await
+}
+
+/// GET /opds/recent/:page/
+pub async fn recent_feed(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((page,)): Path<(i32,)>,
+    Query(q): Query<LangQuery>,
+) -> Response {
+    build_recent_feed(&state, &headers, q.lang.as_deref(), page.max(1)).await
+}
+
+async fn build_recent_feed(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    query_lang: Option<&str>,
+    page: i32,
+) -> Response {
+    let lang = detect_opds_lang(headers, &state.config, query_lang);
+    let max_items = state.config.opds.max_items as i32;
+    let offset = (page - 1) * max_items;
+    let hide_doubles = state.config.opds.hide_doubles;
+
+    let mut fb = FeedBuilder::new();
+    let self_href = add_lang_query(&format!("/opds/recent/{page}/"), &lang);
+    let _ = fb.begin_feed(
+        &format!("tag:recent:{page}"),
+        &tr(state, &lang, "opds", "root_by_recent", "Recently Added"),
+        "",
+        DEFAULT_UPDATED,
+        &self_href,
+        &add_lang_query("/opds/", &lang),
+    );
+    let _ = fb.write_search_links(
+        &add_lang_query("/opds/search/", &lang),
+        &add_lang_query("/opds/search/{searchTerms}/", &lang),
+    );
+    write_language_facets_for_href(&mut fb, state, &lang, "/opds/recent/");
+
+    let book_list = books::get_recent_added(&state.db, max_items, offset, hide_doubles)
+        .await
+        .unwrap_or_default();
+
+    let has_next = book_list.len() as i32 >= max_items;
+    let has_prev = page > 1;
+    let prev_href = if has_prev {
+        Some(add_lang_query(
+            &format!("/opds/recent/{}/", page - 1),
+            &lang,
+        ))
+    } else {
+        None
+    };
+    let next_href = if has_next {
+        Some(add_lang_query(
+            &format!("/opds/recent/{}/", page + 1),
+            &lang,
+        ))
+    } else {
+        None
+    };
+    let _ = fb.write_pagination(prev_href.as_deref(), next_href.as_deref());
+
+    for book in &book_list {
+        write_book_entry(&mut fb, state, book, &lang).await;
     }
 
     match fb.finish() {
@@ -1701,5 +1795,43 @@ language = "{default_lang}"
             add_lang_query("/opds/genres/?page=1", "en"),
             "/opds/genres/?page=1&lang=en"
         );
+    }
+
+    #[tokio::test]
+    async fn test_root_feed_contains_recent_nav_entry() {
+        let cfg = test_config("en");
+        let db = create_test_pool().await;
+        let tera = tera::Tera::default();
+        let mut translations = Translations::new();
+        translations.insert(
+            "en".to_string(),
+            serde_json::json!({
+                "opds": {
+                    "root_by_catalogs": "By Catalogs",
+                    "root_by_authors": "By Authors",
+                    "root_by_genres": "By Genres",
+                    "root_by_series": "By Series",
+                    "root_by_title": "By Title",
+                    "root_by_recent": "Recently Added",
+                    "root_language_facets": "Language",
+                    "root_content_catalogs": "Browse by directory tree",
+                    "root_content_authors": "Browse by author",
+                    "root_content_genres": "Browse by genre",
+                    "root_content_series": "Browse by series",
+                    "root_content_title": "Browse by book title",
+                    "root_content_recent": "Browse newly scanned books",
+                    "root_content_language_facets": "Switch OPDS language facet"
+                },
+                "lang": { "en": "English", "ru": "Русский" }
+            }),
+        );
+        let state = AppState::new(cfg, db, tera, translations, false, false);
+        let headers = HeaderMap::new();
+
+        let response = build_root_feed(&state, &headers, Some("en")).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let xml = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(xml.contains("/opds/recent/"));
     }
 }
