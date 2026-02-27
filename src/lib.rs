@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod config;
 pub mod db;
 pub mod djvu;
@@ -13,7 +14,6 @@ use axum::Router;
 use axum::extract::State;
 use axum::response::Json;
 use axum::routing::get;
-use tower_http::services::ServeDir;
 
 use crate::state::AppState;
 
@@ -31,7 +31,7 @@ async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> 
 }
 
 pub fn build_router(state: AppState) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/", get(|| async { axum::response::Redirect::to("/web") }))
         .route(
             "/web/",
@@ -40,6 +40,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(health_check))
         .nest("/opds", opds::router(state.clone()))
         .nest("/web", web::router(state.clone()))
-        .nest_service("/static", ServeDir::new("static"))
-        .with_state(state)
+        .route("/static/{*path}", get(assets::static_asset));
+
+    router.with_state(state)
 }

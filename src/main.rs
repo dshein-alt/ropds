@@ -214,7 +214,7 @@ async fn main() {
     }
 
     // Initialize Tera templates
-    let mut tera = tera::Tera::new("templates/**/*.html").unwrap_or_else(|e| {
+    let mut tera = ropds::assets::load_templates().unwrap_or_else(|e| {
         tracing::error!("Failed to load templates: {e}");
         std::process::exit(1);
     });
