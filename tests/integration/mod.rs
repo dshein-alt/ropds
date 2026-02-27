@@ -7,6 +7,7 @@ mod opds_language_facets_tests;
 mod reader_tests;
 mod scanner_tests;
 mod series_search_tests;
+mod static_tests;
 mod upload_tests;
 
 use std::path::{Path, PathBuf};

@@ -15,6 +15,8 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      ROPDS_STRICT_JS_MINIFY: "1"
 
     steps:
       - name: Checkout
@@ -38,8 +40,15 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets
 
+      - name: Run release static-path tests
+        run: |
+          cargo test --release --lib assets::tests::
+          cargo test --release --test integration_tests static_tests::
+
   db-integration-tests:
     runs-on: ubuntu-latest
+    env:
+      ROPDS_STRICT_JS_MINIFY: "1"
     strategy:
       fail-fast: false
       matrix:
