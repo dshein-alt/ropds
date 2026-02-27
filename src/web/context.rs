@@ -1,7 +1,8 @@
 use axum_extra::extract::cookie::CookieJar;
 use hmac::{Hmac, Mac};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::time::Duration;
 use tera::Context;
 
 use crate::db::models::Author;
@@ -10,6 +11,8 @@ use crate::state::AppState;
 use crate::web::i18n;
 
 type HmacSha256 = Hmac<Sha256>;
+const CONTEXT_STATS_CACHE_KEY: &str = "web:context:stats";
+const CONTEXT_STATS_TTL: Duration = Duration::from_secs(30);
 
 /// Generate a CSRF token tied to the session value.
 pub fn generate_csrf_token(session_value: &str, secret: &[u8]) -> String {
@@ -26,7 +29,7 @@ pub fn validate_csrf(jar: &CookieJar, secret: &[u8], submitted: &str) -> bool {
         .unwrap_or(false)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Stats {
     pub allbooks: i64,
     pub allauthors: i64,
@@ -117,28 +120,34 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("last_read_book_id", &last_read_book_id);
 
     // Stats from counters table
-    let counters_list = counters::get_all(&state.db).await.unwrap_or_default();
-    let stats = Stats {
-        allbooks: counters_list
-            .iter()
-            .find(|c| c.name == "allbooks")
-            .map(|c| c.value)
-            .unwrap_or(0),
-        allauthors: counters_list
-            .iter()
-            .find(|c| c.name == "allauthors")
-            .map(|c| c.value)
-            .unwrap_or(0),
-        allgenres: counters_list
-            .iter()
-            .find(|c| c.name == "allgenres")
-            .map(|c| c.value)
-            .unwrap_or(0),
-        allseries: counters_list
-            .iter()
-            .find(|c| c.name == "allseries")
-            .map(|c| c.value)
-            .unwrap_or(0),
+    let stats = if let Some(cached) = state.get_cached::<Stats>(CONTEXT_STATS_CACHE_KEY) {
+        cached
+    } else {
+        let counters_list = counters::get_all(&state.db).await.unwrap_or_default();
+        let computed = Stats {
+            allbooks: counters_list
+                .iter()
+                .find(|c| c.name == "allbooks")
+                .map(|c| c.value)
+                .unwrap_or(0),
+            allauthors: counters_list
+                .iter()
+                .find(|c| c.name == "allauthors")
+                .map(|c| c.value)
+                .unwrap_or(0),
+            allgenres: counters_list
+                .iter()
+                .find(|c| c.name == "allgenres")
+                .map(|c| c.value)
+                .unwrap_or(0),
+            allseries: counters_list
+                .iter()
+                .find(|c| c.name == "allseries")
+                .map(|c| c.value)
+                .unwrap_or(0),
+        };
+        state.set_cached(CONTEXT_STATS_CACHE_KEY, CONTEXT_STATS_TTL, &computed);
+        computed
     };
     ctx.insert("stats", &stats);
 
