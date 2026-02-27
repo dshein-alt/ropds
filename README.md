@@ -70,7 +70,7 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 - Read EPUB, FB2, MOBI, DjVu, and PDF directly in the browser — no downloads needed
 - Automatic reading position save/restore per user per book
 - Reading history sidebar with quick access to recently read books
-- Reader opens in a new tab with an immersive full-page layout
+- Reader opens in a new tab in browsers and in the same PWA window when installed
 - Powered by [foliate-js](https://github.com/johnfactotum/foliate-js) and [djvu.js](https://github.com/RussCoder/djvujs)
 
 **Web Interface**
@@ -78,6 +78,7 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 - Installable PWA mode for mobile/desktop browsers (manifest + service worker)
 - Browse by catalogs, authors, series, or genres with breadcrumb navigation
 - Inline book metadata editing for admins (title, authors, genres)
+- Admin duplicates page: grouped duplicate editions by title + authors with pagination
 - Cover preview with full-size overlay on click
 
 **Internationalization**
