@@ -53,6 +53,36 @@ async fn reader_page_for_supported_format() {
     );
 }
 
+#[tokio::test]
+async fn reader_page_uses_return_query_for_back_button() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let (pool, config, _user_id, session, _lib, _cov) = setup_with_user().await;
+
+    let book = ropds::db::queries::books::find_by_path_and_filename(&pool, "", "test_book.fb2")
+        .await
+        .unwrap()
+        .unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+    let resp = get_with_session(
+        app,
+        &format!(
+            "/web/reader/{}?return={}",
+            book.id,
+            urlencoding::encode("/web/recent?page=2")
+        ),
+        &session,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+    assert!(
+        html.contains("recent?page=2"),
+        "reader back button should point to return path"
+    );
+}
+
 /// Reader page returns 404 for nonexistent book.
 #[tokio::test]
 async fn reader_page_not_found() {

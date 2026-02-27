@@ -82,3 +82,57 @@ async fn serves_compressed_static_javascript_when_requested() {
         Some("gzip")
     );
 }
+
+#[tokio::test]
+async fn serves_pwa_manifest() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    let response = get(app, "/static/manifest.webmanifest").await;
+    assert_eq!(response.status(), 200);
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_type.contains("application/manifest+json"),
+        "unexpected content-type: {content_type}"
+    );
+}
+
+#[tokio::test]
+async fn serves_service_worker_with_scope_header() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+
+    let response = get(app, "/static/sw.js").await;
+    assert_eq!(response.status(), 200);
+
+    let service_worker_allowed = response
+        .headers()
+        .get("service-worker-allowed")
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(service_worker_allowed, Some("/"));
+
+    let cache_control = response
+        .headers()
+        .get("cache-control")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        cache_control.contains("no-cache"),
+        "unexpected cache-control: {cache_control}"
+    );
+}
