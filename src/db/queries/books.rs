@@ -396,6 +396,48 @@ pub async fn get_random(pool: &DbPool) -> Result<Option<Book>, sqlx::Error> {
         .await
 }
 
+/// Recently added books, newest first.
+pub async fn get_recent_added(
+    pool: &DbPool,
+    limit: i32,
+    offset: i32,
+    hide_doubles: bool,
+) -> Result<Vec<Book>, sqlx::Error> {
+    if hide_doubles {
+        let sql = pool.sql(
+            "SELECT * FROM books WHERE avail > 0 \
+             AND id IN (SELECT MAX(id) FROM books WHERE avail > 0 GROUP BY search_title) \
+             ORDER BY reg_date DESC, id DESC LIMIT ? OFFSET ?",
+        );
+        sqlx::query_as::<_, Book>(&sql)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool.inner())
+            .await
+    } else {
+        let sql = pool.sql(
+            "SELECT * FROM books WHERE avail > 0 ORDER BY reg_date DESC, id DESC LIMIT ? OFFSET ?",
+        );
+        sqlx::query_as::<_, Book>(&sql)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool.inner())
+            .await
+    }
+}
+
+/// Count available books in the recently added view.
+pub async fn count_recent_added(pool: &DbPool, hide_doubles: bool) -> Result<i64, sqlx::Error> {
+    let sql = if hide_doubles {
+        "SELECT COUNT(DISTINCT search_title) FROM books WHERE avail > 0"
+    } else {
+        "SELECT COUNT(*) FROM books WHERE avail > 0"
+    };
+    let sql = pool.sql(sql);
+    let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    Ok(row.0)
+}
+
 /// Count books matching a title search (contains).
 pub async fn count_by_title_search(
     pool: &DbPool,
@@ -1244,5 +1286,90 @@ mod tests {
         let updated = set_avail_all(&pool, AvailStatus::Deleted).await.unwrap();
         assert_eq!(updated, 2);
         assert!(get_random(&pool).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_recent_added_queries_order_and_count() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let old_id = insert_test_book_custom(
+            &pool,
+            cat,
+            "old.fb2",
+            "/test/recent",
+            "Old Title",
+            "OLD TITLE",
+            CatType::Normal,
+        )
+        .await;
+        let new_id = insert_test_book_custom(
+            &pool,
+            cat,
+            "new.fb2",
+            "/test/recent",
+            "New Title",
+            "NEW TITLE",
+            CatType::Normal,
+        )
+        .await;
+        let dup_old = insert_test_book_custom(
+            &pool,
+            cat,
+            "dup-old.fb2",
+            "/test/recent",
+            "Dup Old",
+            "DUPLICATE",
+            CatType::Normal,
+        )
+        .await;
+        let dup_new = insert_test_book_custom(
+            &pool,
+            cat,
+            "dup-new.fb2",
+            "/test/recent",
+            "Dup New",
+            "DUPLICATE",
+            CatType::Normal,
+        )
+        .await;
+
+        // Make ordering deterministic for assertions.
+        let sql = pool.sql("UPDATE books SET reg_date = ? WHERE id = ?");
+        sqlx::query(&sql)
+            .bind("2024-01-01 10:00:00")
+            .bind(old_id)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+        sqlx::query(&sql)
+            .bind("2024-02-01 10:00:00")
+            .bind(new_id)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+        sqlx::query(&sql)
+            .bind("2024-01-15 10:00:00")
+            .bind(dup_old)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+        sqlx::query(&sql)
+            .bind("2024-03-01 10:00:00")
+            .bind(dup_new)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+
+        let all_recent = get_recent_added(&pool, 10, 0, false).await.unwrap();
+        assert_eq!(all_recent.len(), 4);
+        assert_eq!(all_recent[0].id, dup_new);
+        assert_eq!(all_recent[1].id, new_id);
+
+        let deduped_recent = get_recent_added(&pool, 10, 0, true).await.unwrap();
+        assert_eq!(deduped_recent.len(), 3);
+        assert_eq!(deduped_recent[0].id, dup_new);
+
+        assert_eq!(count_recent_added(&pool, false).await.unwrap(), 4);
+        assert_eq!(count_recent_added(&pool, true).await.unwrap(), 3);
     }
 }

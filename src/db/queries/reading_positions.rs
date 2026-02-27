@@ -90,7 +90,7 @@ pub async fn get_recent(
         "SELECT rp.book_id, b.title, b.format, rp.progress, rp.updated_at \
          FROM reading_positions rp \
          JOIN books b ON b.id = rp.book_id \
-         WHERE rp.user_id = ? \
+         WHERE rp.user_id = ? AND b.avail > 0 \
          ORDER BY rp.updated_at DESC \
          LIMIT ?",
     );
