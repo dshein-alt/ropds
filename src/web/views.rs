@@ -31,6 +31,8 @@ pub struct BookView {
     pub genres: Vec<Genre>,
     pub series_list: Vec<SeriesEntry>,
     pub on_bookshelf: bool,
+    pub has_read_progress: bool,
+    pub read_progress_pct: i32,
     pub read_time: String,
 }
 
@@ -126,6 +128,7 @@ async fn enrich_book(
     book: crate::db::models::Book,
     hide_doubles: bool,
     shelf_ids: Option<&std::collections::HashSet<i64>>,
+    read_progress: Option<f64>,
     lang: &str,
 ) -> BookView {
     let book_authors = authors::get_for_book(&state.db, book.id)
@@ -145,6 +148,10 @@ async fn enrich_book(
     };
 
     let is_nozip = book.format == "epub" || book.format == "mobi";
+
+    let read_progress_pct = read_progress
+        .map(|value| (value * 100.0).round() as i32)
+        .unwrap_or(0);
 
     BookView {
         id: book.id,
@@ -170,6 +177,8 @@ async fn enrich_book(
             })
             .collect(),
         on_bookshelf: shelf_ids.is_some_and(|s| s.contains(&book.id)),
+        has_read_progress: read_progress.is_some(),
+        read_progress_pct,
         read_time: String::new(),
     }
 }
@@ -450,20 +459,39 @@ pub async fn search_books(
     };
 
     let secret = state.config.server.session_secret.as_bytes();
-    let shelf_ids = if let Some(user_id) = jar
+    let user_id = jar
         .get("session")
-        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
-    {
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret));
+    let shelf_ids = if let Some(user_id) = user_id {
         crate::db::queries::bookshelf::get_book_ids_for_user(&state.db, user_id)
             .await
             .ok()
     } else {
         None
     };
+    let raw_book_ids: Vec<i64> = raw_books.iter().map(|book| book.id).collect();
+    let read_progress = if let Some(user_id) = user_id {
+        reading_positions::get_progress_map(&state.db, user_id, &raw_book_ids)
+            .await
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
 
     let mut book_views = Vec::with_capacity(raw_books.len());
     for book in raw_books {
-        book_views.push(enrich_book(&state, book, hide_doubles, shelf_ids.as_ref(), &locale).await);
+        let progress = read_progress.get(&book.id).copied();
+        book_views.push(
+            enrich_book(
+                &state,
+                book,
+                hide_doubles,
+                shelf_ids.as_ref(),
+                progress,
+                &locale,
+            )
+            .await,
+        );
     }
 
     let pagination = Pagination::new(params.page, max_items, total);
@@ -1211,13 +1239,25 @@ async fn fetch_bookshelf_views(
     let read_times = bookshelf::get_read_times(&state.db, user_id)
         .await
         .unwrap_or_default();
+    let raw_book_ids: Vec<i64> = raw_books.iter().map(|book| book.id).collect();
+    let read_progress = reading_positions::get_progress_map(&state.db, user_id, &raw_book_ids)
+        .await
+        .unwrap_or_default();
 
     let shelf_ids: std::collections::HashSet<i64> = raw_books.iter().map(|b| b.id).collect();
     let hide_doubles = state.config.opds.hide_doubles;
     let mut views = Vec::with_capacity(raw_books.len());
     for book in raw_books {
         let bid = book.id;
-        let mut v = enrich_book(state, book, hide_doubles, Some(&shelf_ids), lang).await;
+        let mut v = enrich_book(
+            state,
+            book,
+            hide_doubles,
+            Some(&shelf_ids),
+            read_progress.get(&bid).copied(),
+            lang,
+        )
+        .await;
         if let Some(rt) = read_times.get(&bid) {
             v.read_time = rt.clone();
         }

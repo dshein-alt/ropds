@@ -89,6 +89,27 @@ main {
   border-radius: 0.375rem;
 }
 
+/* Reading progress chip + bar on cards */
+.read-progress {
+  max-width: 170px;
+}
+
+.read-progress--compact {
+  max-width: 130px;
+}
+
+.book-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.book-actions .bookshelf-action-form {
+  display: inline-flex;
+  margin: 0;
+}
+
 /* Alphabet browse grid */
 .prefix-grid {
   display: grid;

@@ -93,34 +93,46 @@
                   {% if item.docdate and item.docdate != "" %}· {{ item.docdate }}{% endif %}
                 </div>
 
-                {# Download buttons #}
-                <div class="btn-group btn-group-sm">
-                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary">
+                {% if item.has_read_progress %}
+                {% set read_pct = item.read_progress_pct %}
+                <div class="read-progress mb-2">
+                  <span class="badge text-bg-success">{{ read_pct }}% {{ reader_read_badge }}</span>
+                  <div class="progress mt-1" role="progressbar"
+                       aria-label="{{ reader_read_badge }}"
+                       aria-valuenow="{{ read_pct }}" aria-valuemin="0" aria-valuemax="100"
+                       style="height: 4px;">
+                    <div class="progress-bar bg-success" style="width: {{ read_pct }}%;"></div>
+                  </div>
+                </div>
+                {% endif %}
+
+                <div class="book-actions mt-1">
+                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm">
                     <i class="bi bi-download me-1"></i>{{ item.format }}
                   </a>
                   {% if item.show_zip %}
-                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary">{{ item.format }}+zip</a>
+                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm">zip</a>
+                  {% endif %}
+
+                  {# Read button (for supported formats) #}
+                  {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
+                  <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-outline-success" title="{{ t.book.read }}">
+                    <i class="bi bi-book-half"></i>
+                  </a>
+                  {% endif %}
+
+                  {# Star/bookshelf toggle #}
+                  {% if is_authenticated %}
+                  <form method="post" action="/web/bookshelf/toggle" class="bookshelf-action-form">
+                    <input type="hidden" name="book_id" value="{{ item.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="redirect" value="{{ current_path | default(value='/web') }}">
+                    <button type="submit" class="btn btn-sm bookshelf-toggle-btn {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}">
+                      <i class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                    </button>
+                  </form>
                   {% endif %}
                 </div>
-
-                {# Read button (for supported formats) #}
-                {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
-                <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="{{ t.book.read }}">
-                  <i class="bi bi-book-half"></i>
-                </a>
-                {% endif %}
-
-                {# Star/bookshelf toggle #}
-                {% if is_authenticated %}
-                <form method="post" action="/web/bookshelf/toggle" class="d-inline ms-2">
-                  <input type="hidden" name="book_id" value="{{ item.id }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <input type="hidden" name="redirect" value="{{ current_path | default(value='/web') }}">
-                  <button type="submit" class="btn btn-sm bookshelf-toggle-btn {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}">
-                    <i class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
-                  </button>
-                </form>
-                {% endif %}
 
                 {# Annotation #}
                 {% if item.annotation and item.annotation != "" %}

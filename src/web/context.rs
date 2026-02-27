@@ -56,9 +56,15 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
         .map(|c| c.value().to_string())
         .unwrap_or_else(|| state.config.web.language.clone());
     let t = i18n::get_locale(&state.translations, &locale);
+    let reader_read_badge = t
+        .get("reader")
+        .and_then(|v| v.get("read_badge"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("read");
     ctx.insert("t", t);
     ctx.insert("locale", &locale);
     ctx.insert("available_locales", &["en", "ru"]);
+    ctx.insert("reader_read_badge", reader_read_badge);
 
     // Theme (server only knows the default; JS handles runtime switching)
     let theme = &state.config.web.theme;

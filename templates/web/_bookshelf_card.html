@@ -32,7 +32,20 @@
             {% endif %}
           </div>
 
-          <div class="mt-1">
+          {% if item.has_read_progress %}
+          {% set read_pct = item.read_progress_pct %}
+          <div class="read-progress read-progress--compact mt-1">
+            <span class="badge text-bg-success">{{ read_pct }}% {{ reader_read_badge }}</span>
+            <div class="progress mt-1" role="progressbar"
+                 aria-label="{{ reader_read_badge }}"
+                 aria-valuenow="{{ read_pct }}" aria-valuemin="0" aria-valuemax="100"
+                 style="height: 4px;">
+              <div class="progress-bar bg-success" style="width: {{ read_pct }}%;"></div>
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="book-actions mt-1">
             <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm py-0 px-1">
               <i class="bi bi-download"></i> {{ item.format }}
             </a>
@@ -44,7 +57,7 @@
               <i class="bi bi-book-half"></i>
             </a>
             {% endif %}
-            <form method="post" action="/web/bookshelf/toggle" class="d-inline">
+            <form method="post" action="/web/bookshelf/toggle" class="bookshelf-action-form">
               <input type="hidden" name="book_id" value="{{ item.id }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="redirect" value="/web/bookshelf">
