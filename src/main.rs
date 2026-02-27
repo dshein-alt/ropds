@@ -222,11 +222,10 @@ async fn main() {
     tracing::info!("Templates loaded");
 
     // Load translations
-    let translations = ropds::web::i18n::load_translations(std::path::Path::new("locales"))
-        .unwrap_or_else(|e| {
-            tracing::error!("Failed to load translations: {e}");
-            std::process::exit(1);
-        });
+    let translations = ropds::web::i18n::load_runtime_translations().unwrap_or_else(|e| {
+        tracing::error!("Failed to load translations: {e}");
+        std::process::exit(1);
+    });
     tracing::info!(
         "Translations loaded: {:?}",
         translations.keys().collect::<Vec<_>>()

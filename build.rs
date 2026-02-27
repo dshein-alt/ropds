@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=static");
     println!("cargo:rerun-if-changed=templates");
+    println!("cargo:rerun-if-changed=locales");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR")?;
     let out_dir = env::var("OUT_DIR")?;
@@ -29,6 +30,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _ = copy_tree(
         &Path::new(&manifest_dir).join("templates"),
         &output_root.join("templates"),
+        false,
+        false,
+    )?;
+    let _ = copy_tree(
+        &Path::new(&manifest_dir).join("locales"),
+        &output_root.join("locales"),
         false,
         false,
     )?;

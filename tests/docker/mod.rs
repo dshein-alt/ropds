@@ -124,8 +124,7 @@ pub fn test_app_state(pool: DbPool, config: Config) -> AppState {
     let mut tera = tera::Tera::new(templates_dir.to_str().unwrap()).expect("templates should load");
     register_filters(&mut tera);
 
-    let locales_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
-    let translations = i18n::load_translations(&locales_dir).expect("translations should load");
+    let translations = i18n::load_runtime_translations().expect("translations should load");
 
     AppState::new(config, pool, tera, translations, false, false)
 }

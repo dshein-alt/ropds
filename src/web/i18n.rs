@@ -1,12 +1,32 @@
 use std::collections::HashMap;
+#[cfg(any(test, debug_assertions))]
 use std::path::Path;
+
+use include_dir::{Dir, include_dir};
 
 /// Translations loaded from TOML locale files.
 /// Key: locale code ("en", "ru"), Value: parsed TOML as JSON value.
 pub type Translations = HashMap<String, serde_json::Value>;
 
+static EMBEDDED_LOCALES: Dir<'_> = include_dir!("$OUT_DIR/embedded_assets/locales");
+
+/// Load translations according to runtime mode.
+/// Debug: from filesystem (`./locales`), Release: embedded.
+pub fn load_runtime_translations() -> Result<Translations, TranslationError> {
+    #[cfg(debug_assertions)]
+    {
+        return load_translations(Path::new("locales"));
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        load_embedded_translations()
+    }
+}
+
 /// Load all `.toml` files from the given directory.
 /// Each file stem becomes the locale key (e.g., `en.toml` → "en").
+#[cfg(any(test, debug_assertions))]
 pub fn load_translations(dir: &Path) -> Result<Translations, TranslationError> {
     let mut map = Translations::new();
 
@@ -34,15 +54,7 @@ pub fn load_translations(dir: &Path) -> Result<Translations, TranslationError> {
             path: path.clone(),
             source: e,
         })?;
-        let toml_value: toml::Value =
-            toml::from_str(&content).map_err(|e| TranslationError::Parse {
-                path: path.clone(),
-                source: e,
-            })?;
-        let json_value = serde_json::to_value(&toml_value)
-            .map_err(|e| TranslationError::Convert { source: e })?;
-
-        map.insert(locale, json_value);
+        insert_locale_from_content(&mut map, locale, path, &content)?;
     }
 
     if map.is_empty() {
@@ -52,6 +64,68 @@ pub fn load_translations(dir: &Path) -> Result<Translations, TranslationError> {
     }
 
     Ok(map)
+}
+
+/// Load translations from locale files embedded into the binary.
+pub fn load_embedded_translations() -> Result<Translations, TranslationError> {
+    let mut map = Translations::new();
+
+    collect_embedded_translations(&EMBEDDED_LOCALES, &mut map)?;
+
+    if map.is_empty() {
+        return Err(TranslationError::Empty {
+            path: std::path::PathBuf::from("embedded:locales"),
+        });
+    }
+
+    Ok(map)
+}
+
+fn collect_embedded_translations(
+    dir: &'static Dir<'static>,
+    out: &mut Translations,
+) -> Result<(), TranslationError> {
+    for file in dir.files() {
+        let path = file.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+
+        let locale = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let path_buf = path.to_path_buf();
+        let content = file.contents_utf8().ok_or_else(|| TranslationError::Utf8 {
+            path: path_buf.clone(),
+        })?;
+
+        insert_locale_from_content(out, locale, path_buf, content)?;
+    }
+
+    for child in dir.dirs() {
+        collect_embedded_translations(child, out)?;
+    }
+
+    Ok(())
+}
+
+fn insert_locale_from_content(
+    out: &mut Translations,
+    locale: String,
+    path: std::path::PathBuf,
+    content: &str,
+) -> Result<(), TranslationError> {
+    let toml_value: toml::Value = toml::from_str(content).map_err(|e| TranslationError::Parse {
+        path: path.clone(),
+        source: e,
+    })?;
+    let json_value =
+        serde_json::to_value(&toml_value).map_err(|e| TranslationError::Convert { source: e })?;
+
+    out.insert(locale, json_value);
+    Ok(())
 }
 
 /// Get the translation object for a locale, falling back to "en".
@@ -74,6 +148,8 @@ pub enum TranslationError {
         path: std::path::PathBuf,
         source: toml::de::Error,
     },
+    #[error("locale file is not valid UTF-8: {path}")]
+    Utf8 { path: std::path::PathBuf },
     #[error("failed to convert TOML to JSON: {source}")]
     Convert { source: serde_json::Error },
     #[error("no locale files found in {path}")]
@@ -143,5 +219,12 @@ mod tests {
             TranslationError::Io { path, .. } => assert_eq!(path, missing),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_load_embedded_translations() {
+        let translations = load_embedded_translations().unwrap();
+        assert!(translations.contains_key("en"));
+        assert!(translations.contains_key("ru"));
     }
 }
