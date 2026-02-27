@@ -8,7 +8,7 @@ use crate::db::models;
 use crate::db::queries::{books, bookshelf};
 use crate::state::AppState;
 
-use super::xml;
+use super::v1::xml;
 
 /// GET /opds/download/:book_id/:zip_flag/
 ///

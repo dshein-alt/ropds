@@ -41,13 +41,13 @@ pub async fn web_download(
 
     let download_name =
         crate::opds::download::title_to_filename(&book.title, &book.format, &book.filename);
-    let mime = crate::opds::xml::mime_for_format(&book.format);
+    let mime = crate::opds::v1::xml::mime_for_format(&book.format);
 
-    if zip_flag == 1 && !crate::opds::xml::is_nozip_format(&book.format) {
+    if zip_flag == 1 && !crate::opds::v1::xml::is_nozip_format(&book.format) {
         match crate::opds::download::wrap_in_zip(&book.filename, &data) {
             Ok(zipped) => {
                 let zip_name = format!("{download_name}.zip");
-                let zip_mime = crate::opds::xml::mime_for_zip(&book.format);
+                let zip_mime = crate::opds::v1::xml::mime_for_zip(&book.format);
                 crate::opds::download::file_response(&zipped, &zip_name, &zip_mime)
             }
             Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ZIP error").into_response(),
@@ -199,7 +199,7 @@ pub async fn web_read_inline(
         let _ = bookshelf::upsert(&state.db, user_id, book_id).await;
     }
 
-    let mime = crate::opds::xml::mime_for_format(&book.format);
+    let mime = crate::opds::v1::xml::mime_for_format(&book.format);
     let filename =
         crate::opds::download::title_to_filename(&book.title, &book.format, &book.filename);
     let content_disposition = format!("inline; filename=\"{filename}\"");
