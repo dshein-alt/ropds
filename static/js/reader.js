@@ -271,6 +271,85 @@ async function initFoliateReader() {
     });
     await view.open(file);
 
+    // ── Table of contents sidebar ──────────────────────────────
+    const tocList = document.getElementById('reader-toc-list');
+    const tocEmpty = document.getElementById('reader-toc-empty');
+    const tocPanel = document.getElementById('reader-toc');
+    const tocLinksById = new Map();
+    let activeTocLink = null;
+
+    const asPlainText = (value) => {
+        if (!value) return '';
+        if (typeof value === 'string') {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = value;
+            return (tmp.textContent || '').trim();
+        }
+        return String(value);
+    };
+
+    const setActiveTocItem = (tocItem) => {
+        if (activeTocLink) activeTocLink.classList.remove('active');
+        activeTocLink = null;
+
+        const tocId = tocItem?.id;
+        if (typeof tocId !== 'number') return;
+        const next = tocLinksById.get(tocId);
+        if (!next) return;
+        next.classList.add('active');
+        next.scrollIntoView({ block: 'nearest' });
+        activeTocLink = next;
+    };
+
+    const renderTocItems = (items, parent) => {
+        for (const item of items || []) {
+            const href = typeof item?.href === 'string' ? item.href : null;
+            const label = asPlainText(item?.label || href || 'Untitled');
+
+            if (href) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.className = 'reader-toc-item';
+                link.textContent = label;
+                if (typeof item.id === 'number') {
+                    tocLinksById.set(item.id, link);
+                }
+                link.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    await view.goTo(href);
+                    if (tocPanel) {
+                        bootstrap.Offcanvas.getOrCreateInstance(tocPanel).hide();
+                    }
+                });
+                parent.appendChild(link);
+            } else {
+                const heading = document.createElement('div');
+                heading.className = 'reader-toc-item text-body-secondary';
+                heading.textContent = label;
+                parent.appendChild(heading);
+            }
+
+            if (Array.isArray(item?.subitems) && item.subitems.length > 0) {
+                const nested = document.createElement('div');
+                nested.className = 'reader-toc-nested d-flex flex-column gap-1';
+                parent.appendChild(nested);
+                renderTocItems(item.subitems, nested);
+            }
+        }
+    };
+
+    const tocTree = Array.isArray(view.book?.toc) ? view.book.toc : [];
+    if (tocList && tocEmpty) {
+        tocList.innerHTML = '';
+        tocLinksById.clear();
+        if (tocTree.length > 0) {
+            renderTocItems(tocTree, tocList);
+            tocEmpty.classList.add('d-none');
+        } else {
+            tocEmpty.classList.remove('d-none');
+        }
+    }
+
     // ── Footer toolbar elements ────────────────────────────────
     const locSpan   = document.getElementById('reader-loc');
     const slider    = document.getElementById('reader-slider');
@@ -413,6 +492,7 @@ async function initFoliateReader() {
     // ── Position changes (page stats + progress) ───────────────
     view.addEventListener('relocate', ({ detail }) => {
         if (detail.cfi) currentPosition = detail.cfi;
+        setActiveTocItem(detail.tocItem);
         if (typeof detail.fraction === 'number') {
             updateProgress(detail.fraction);
             if (!sliderDragging) slider.value = Math.round(detail.fraction * 1000);

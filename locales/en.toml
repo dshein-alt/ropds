@@ -274,3 +274,7 @@ genres_selected = "genres selected"
 
 [reader]
 history_title = "Last books"
+read_badge = "read"
+toc_button = "Contents"
+toc_title = "Table of contents"
+toc_empty = "No table of contents"

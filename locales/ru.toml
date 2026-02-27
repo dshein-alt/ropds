@@ -274,3 +274,7 @@ genres_selected = "жанров выбрано"
 
 [reader]
 history_title = "Последние книги"
+read_badge = "прочитано"
+toc_button = "Оглавление"
+toc_title = "Оглавление"
+toc_empty = "Оглавление недоступно"
