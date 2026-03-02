@@ -47,6 +47,12 @@ title_placeholder = "Название книги"
 error_title_empty = "Название не может быть пустым."
 error_title_too_long = "Название не должно превышать 256 символов."
 error_title_invalid = "Название содержит недопустимые символы."
+versions = "версий"
+versions_one = "версия"
+versions_few = "версии"
+versions_many = "версий"
+see_all_versions = "Показать все варианты книги"
+book_versions = "Варианты книги"
 
 [footer]
 statistics = "Статистика"
@@ -220,6 +226,10 @@ duplicates = "Дубликаты книг"
 duplicates_desc = "Группы книг с одинаковым названием и авторами."
 duplicate_groups = "групп дубликатов"
 no_duplicates = "Дубликаты не найдены."
+delete_book = "Удалить книгу"
+confirm_delete_book = "Вы уверены, что хотите удалить книгу"
+success_book_deleted = "Книга успешно удалена."
+error_book_not_found = "Книга не найдена."
 
 [profile]
 title = "Профиль"

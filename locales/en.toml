@@ -47,6 +47,9 @@ title_placeholder = "Book title"
 error_title_empty = "Title cannot be empty."
 error_title_too_long = "Title must be 256 characters or less."
 error_title_invalid = "Title contains invalid characters."
+versions = "versions"
+see_all_versions = "See all book versions"
+book_versions = "Book Versions"
 
 [footer]
 statistics = "Statistics"
@@ -220,6 +223,10 @@ duplicates = "Duplicate Books"
 duplicates_desc = "Groups of books with identical title and authors."
 duplicate_groups = "duplicate groups"
 no_duplicates = "No duplicate groups found."
+delete_book = "Delete Book"
+confirm_delete_book = "Are you sure you want to delete book"
+success_book_deleted = "Book deleted successfully."
+error_book_not_found = "Book not found."
 
 [profile]
 title = "Profile"
