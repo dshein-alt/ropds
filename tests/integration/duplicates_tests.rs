@@ -246,3 +246,127 @@ async fn set_book_authors_and_update_key_is_atomic() {
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0].id, author_b);
 }
+
+#[tokio::test]
+async fn admin_delete_book_requires_superuser() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let user_id = create_test_user(&pool, "del-normal", "password123", false).await;
+    let session = session_cookie_value(user_id);
+    let csrf = csrf_for_session(&session);
+
+    let book = insert_dup_book(&pool, "To Delete", "TO DELETE", "del-auth.fb2").await;
+
+    let state = test_app_state(pool.clone(), config);
+    let app = test_router(state);
+
+    let resp = post_form(
+        app,
+        &format!("/web/admin/books/{book}/delete"),
+        &format!("csrf_token={csrf}"),
+        &session,
+    )
+    .await;
+    assert_eq!(resp.status(), 403);
+}
+
+#[tokio::test]
+async fn admin_delete_book_removes_from_db() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let super_id = create_test_user(&pool, "del-admin", "password123", true).await;
+    let session = session_cookie_value(super_id);
+    let csrf = csrf_for_session(&session);
+
+    let author = insert_author(&pool, "Del Author").await;
+    let book = insert_dup_book(&pool, "Delete Me", "DELETE ME", "del-me.fb2").await;
+    link_author(&pool, book, author).await;
+    db::queries::books::update_author_key(&pool, book)
+        .await
+        .unwrap();
+
+    let state = test_app_state(pool.clone(), config);
+    let app = test_router(state);
+
+    let resp = post_form(
+        app,
+        &format!("/web/admin/books/{book}/delete"),
+        &format!("csrf_token={csrf}"),
+        &session,
+    )
+    .await;
+
+    // Should redirect back to duplicates page
+    assert_eq!(resp.status(), 303);
+
+    // Book should be gone from DB
+    let gone = db::queries::books::get_by_id(&pool, book).await.unwrap();
+    assert!(gone.is_none(), "book should be deleted from DB");
+}
+
+#[tokio::test]
+async fn admin_delete_zip_book_adds_suppression() {
+    use ropds::db::queries::suppressed;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let super_id = create_test_user(&pool, "del-zip-admin", "password123", true).await;
+    let session = session_cookie_value(super_id);
+    let csrf = csrf_for_session(&session);
+
+    // Insert a ZIP-type book (cat_type = 1)
+    let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/zip-cat', 'zip-it')");
+    sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+    let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/zip-cat'");
+    let (catalog_id,): (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+    let sql = pool.sql(
+        "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
+         lang, lang_code, size, avail, cat_type, cover, cover_type) \
+         VALUES (?, 'book.fb2', '/archive.zip', 'fb2', 'Zip Book', 'ZIP BOOK', 'en', 2, 100, 2, 1, 0, '')",
+    );
+    sqlx::query(&sql)
+        .bind(catalog_id)
+        .execute(pool.inner())
+        .await
+        .unwrap();
+    let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND filename = 'book.fb2'");
+    let (book_id,): (i64,) = sqlx::query_as(&sql)
+        .bind(catalog_id)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap();
+
+    let state = test_app_state(pool.clone(), config);
+    let app = test_router(state);
+
+    let resp = post_form(
+        app,
+        &format!("/web/admin/books/{book_id}/delete"),
+        &format!("csrf_token={csrf}"),
+        &session,
+    )
+    .await;
+    assert_eq!(resp.status(), 303);
+
+    // Book gone from DB
+    let gone = db::queries::books::get_by_id(&pool, book_id).await.unwrap();
+    assert!(gone.is_none());
+
+    // Suppression record exists
+    let is_suppressed = suppressed::is_suppressed(&pool, "/archive.zip", "book.fb2")
+        .await
+        .unwrap();
+    assert!(
+        is_suppressed,
+        "deleted ZIP book should be in suppressed_books table"
+    );
+}
