@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026.03.02
+
+### Changed
+- Improved INPX library import consistency so archive processing order is stable between scan runs.
+
+### Fixed
+- Fixed INPX imports to correctly retain book annotations and cover images from indexed archives.
+- Improved INPX import resilience when referenced archives are missing.
+
 ## [0.8.2] - 2026.02.27
 
 ### Added
