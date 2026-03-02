@@ -209,6 +209,8 @@ Books inside **ZIP archives** are scanned transparently. **INPX** index files ar
 
 SQLite is the default and recommended choice — no setup needed. PostgreSQL and MySQL are also supported via the `[database].url` setting.
 
+For SQLite, recommended scanner parallelism is `workers_num = 2..4`. Higher values can increase write-lock contention during large rescans.
+
 Migrations run automatically on startup. Backend-specific migration sets are embedded at build time and selected by database backend (`sqlite://`, `postgres://`, `mysql://`).
 
 ## Tech Stack

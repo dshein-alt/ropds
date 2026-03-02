@@ -38,7 +38,7 @@ delete_logical = false
 skip_unchanged = true       # Compare mtime+size to skip unchanged archives
 test_zip = false            # Validate ZIP CRC integrity before processing
 test_files = false          # Verify each file extracts cleanly from archives
-workers_num = 1             # Parallel scan threads (1 = sequential)
+workers_num = 1             # Parallel scan threads (1 = sequential, for SQLite recommended range is 2..4)
 
 [web]
 language = "en"
