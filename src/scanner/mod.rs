@@ -459,6 +459,12 @@ async fn process_file(
         return Ok(());
     }
 
+    // Skip books suppressed by admin
+    if crate::db::queries::suppressed::is_suppressed(&ctx.pool, rel_path, filename).await? {
+        ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
+        return Ok(());
+    }
+
     // Parse metadata
     let meta = {
         let _permit = acquire_scan_permit(ctx).await?;
@@ -555,6 +561,12 @@ async fn process_zip(
             books::find_by_path_and_filename(&ctx.pool, &rel_zip, &ze.filename).await?
         {
             books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
+            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+
+        // Skip books suppressed by admin
+        if crate::db::queries::suppressed::is_suppressed(&ctx.pool, &rel_zip, &ze.filename).await? {
             ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
             continue;
         }
@@ -725,6 +737,15 @@ async fn process_inpx_zip_group(
             ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
             continue;
         }
+
+        // Skip books suppressed by admin
+        if crate::db::queries::suppressed::is_suppressed(&ctx.pool, book_path, &record.filename)
+            .await?
+        {
+            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+
         pending.push(record);
     }
 
