@@ -172,6 +172,85 @@ async fn scan_inpx_missing_referenced_zip_keeps_inpx_metadata_only() {
     );
 }
 
+/// INPX enrichment should process multiple referenced ZIP archives correctly
+/// when scanner workers run in parallel mode.
+#[tokio::test]
+async fn scan_inpx_enriches_multiple_archives_with_parallel_workers() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let mut config = test_config(lib_dir.path(), covers_dir.path());
+    config.library.inpx_enable = true;
+    config.scanner.workers_num = 4;
+
+    let fb2_bytes = std::fs::read(test_data_dir().join("test_book.fb2")).unwrap();
+
+    for (zip_name, book_name) in [
+        ("pack-0001.zip", "test_book.fb2"),
+        ("pack-0002.zip", "second_book.fb2"),
+    ] {
+        let zip_path = lib_dir.path().join(zip_name);
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(book_name, opts).unwrap();
+        zip.write_all(&fb2_bytes).unwrap();
+        zip.finish().unwrap();
+    }
+
+    let sep = '\u{0004}';
+    let inpx_line_1 = format!(
+        "Doe,John{sep}sf_fantasy{sep}INPX Title A{sep}INPX Series{sep}1{sep}test_book{sep}{}{sep}lib{sep}0{sep}fb2{sep}2025-01-01{sep}en",
+        fb2_bytes.len()
+    );
+    let inpx_line_2 = format!(
+        "Doe,John{sep}sf_fantasy{sep}INPX Title B{sep}INPX Series{sep}1{sep}second_book{sep}{}{sep}lib{sep}0{sep}fb2{sep}2025-01-01{sep}en",
+        fb2_bytes.len()
+    );
+    let inpx_path = lib_dir.path().join("library.inpx");
+    {
+        let file = std::fs::File::create(&inpx_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("pack-0001.inp", opts).unwrap();
+        zip.write_all(inpx_line_1.as_bytes()).unwrap();
+        zip.write_all(b"\n").unwrap();
+        zip.start_file("pack-0002.inp", opts).unwrap();
+        zip.write_all(inpx_line_2.as_bytes()).unwrap();
+        zip.write_all(b"\n").unwrap();
+        zip.finish().unwrap();
+    }
+
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    assert_eq!(stats.books_added, 2);
+    assert_eq!(stats.archives_scanned, 1);
+
+    for (book_path, filename) in [
+        ("pack-0001.zip", "test_book.fb2"),
+        ("pack-0002.zip", "second_book.fb2"),
+    ] {
+        let book = books::find_by_path_and_filename(&pool, book_path, filename)
+            .await
+            .unwrap()
+            .expect("book referenced by INPX should be inserted");
+        assert_eq!(book.cover, 1, "cover should be extracted from FB2 in ZIP");
+        assert_eq!(
+            book.annotation, "This is a test annotation for the book.",
+            "annotation should be extracted from FB2 in ZIP"
+        );
+
+        let cover_path = scanner::cover_storage_path(covers_dir.path(), book.id, "jpg");
+        assert!(
+            cover_path.exists(),
+            "cover file should be saved to covers dir"
+        );
+    }
+}
+
 /// Second scan of an unchanged library should skip all books.
 #[tokio::test]
 async fn scan_skips_existing_books() {
