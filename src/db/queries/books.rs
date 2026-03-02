@@ -798,6 +798,29 @@ pub async fn set_book_authors_and_update_key(
     Ok(())
 }
 
+/// Delete a book and all its related records (authors, genres, series links, bookshelf).
+pub async fn delete_book_and_relations(pool: &DbPool, book_id: i64) -> Result<(), sqlx::Error> {
+    let mut tx = pool.inner().begin().await?;
+
+    for table in &[
+        "book_authors",
+        "book_genres",
+        "book_series",
+        "bookshelf",
+        "reading_positions",
+    ] {
+        let raw = format!("DELETE FROM {table} WHERE book_id = ?");
+        let sql = pool.sql(&raw);
+        sqlx::query(&sql).bind(book_id).execute(&mut *tx).await?;
+    }
+
+    let sql = pool.sql("DELETE FROM books WHERE id = ?");
+    sqlx::query(&sql).bind(book_id).execute(&mut *tx).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

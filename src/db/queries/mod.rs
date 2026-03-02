@@ -6,4 +6,5 @@ pub mod counters;
 pub mod genres;
 pub mod reading_positions;
 pub mod series;
+pub mod suppressed;
 pub mod users;
