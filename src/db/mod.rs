@@ -120,9 +120,13 @@ pub async fn create_pool(config: &DatabaseConfig) -> Result<DbPool, sqlx::Error>
     Ok(DbPool::new(pool, backend))
 }
 
-/// Set SQLite pragmas for WAL journal mode and foreign key enforcement.
+/// Set SQLite pragmas for WAL journal mode, lock wait timeout, and foreign key enforcement.
 async fn configure_sqlite(pool: &sqlx::AnyPool) -> Result<(), sqlx::Error> {
     sqlx::query("PRAGMA journal_mode=WAL").execute(pool).await?;
+    // Wait up to 30s on SQLite file locks before failing writes during heavy scans.
+    sqlx::query("PRAGMA busy_timeout=30000")
+        .execute(pool)
+        .await?;
     sqlx::query("PRAGMA foreign_keys=ON").execute(pool).await?;
     Ok(())
 }

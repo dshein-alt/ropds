@@ -663,7 +663,10 @@ async fn process_inpx(
 
     if ctx.workers_num <= 1 || groups.len() == 1 {
         for (book_path, zip_records) in groups {
-            process_inpx_zip_group(&ctx, &book_path, zip_records).await?;
+            if let Err(e) = process_inpx_zip_group(&ctx, &book_path, zip_records).await {
+                warn!("INPX group processing failed for '{}': {}", book_path, e);
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            }
         }
     } else {
         let limit = ctx.workers_num.min(groups.len()).max(1);
@@ -680,8 +683,17 @@ async fn process_inpx(
         }
 
         while let Some(join_result) = tasks.join_next().await {
-            let task_result = join_result.map_err(|e| ScanError::Internal(e.to_string()))?;
-            task_result?;
+            match join_result {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    warn!("INPX worker task failed: {e}");
+                    ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(e) => {
+                    warn!("INPX worker join failure: {e}");
+                    ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+                }
+            }
             if let Some((book_path, zip_records)) = iter.next() {
                 let ctx = Arc::clone(&ctx);
                 tasks.spawn(
@@ -773,7 +785,7 @@ async fn process_inpx_zip_group(
             }
         }
 
-        ctx_insert_book_with_meta(
+        match ctx_insert_book_with_meta(
             ctx,
             catalog_id,
             &record.filename,
@@ -783,9 +795,19 @@ async fn process_inpx_zip_group(
             CatType::Inpx,
             &meta,
         )
-        .await?;
-
-        ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
+        .await
+        {
+            Ok(_) => {
+                ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to insert INPX book '{}::{}': {}",
+                    book_path, record.filename, e
+                );
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     Ok(())
