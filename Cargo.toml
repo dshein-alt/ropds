@@ -1,6 +1,6 @@
 [package]
 name = "ropds"
-version = "0.8.6"
+version = "0.8.7"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -75,10 +75,10 @@ http-body-util = "0.1"
 
 [build-dependencies]
 walkdir = "2"
-oxc_allocator = "0.115.0"
-oxc_codegen = "0.115.0"
-oxc_minifier = "0.115.0"
-oxc_parser = "0.115.0"
-oxc_span = "0.115.0"
+oxc_allocator = "0.116.0"
+oxc_codegen = "0.116.0"
+oxc_minifier = "0.116.0"
+oxc_parser = "0.116.0"
+oxc_span = "0.116.0"
 sha2 = "0.10"
 hex = "0.4"

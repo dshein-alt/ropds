@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] - 2026.03.02
+
+### Added
+- Added duplicate-version management in the web admin, including direct navigation to all versions and per-book delete actions.
+- Added suppression for deleted archive-indexed books so they are not re-imported on future scans.
+- Added per-user upload placement so newly published uploads are stored in user-specific directories.
+
+### Changed
+- Updated cover storage lookup to support current and previous directory layouts with automatic fallback behavior.
+- Improved scanner resilience so parallel worker failures do not stop the whole scan.
+- Expanded automated test coverage for duplicate management, suppression behavior, and upload destination rules.
+
+### Fixed
+- Fixed footer random-book rendering so missing covers show the `no cover` placeholder.
+- Fixed MySQL suppression compatibility for long library paths.
+- Fixed duplicate-versions search pagination so page limits and offsets apply consistently.
+
 ## [0.8.6] - 2026.03.02
 
 ### Changed
