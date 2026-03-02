@@ -9,10 +9,9 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use dashmap::DashMap;
+use image::DynamicImage;
 use image::GenericImageView;
 use image::codecs::jpeg::JpegEncoder;
-use image::codecs::png::{CompressionType, FilterType as PngFilterType, PngEncoder};
-use image::{DynamicImage, ExtendedColorType, ImageEncoder};
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
@@ -1507,22 +1506,26 @@ pub(crate) fn normalize_cover_for_storage_with_options(
     };
 
     let (w, h) = img.dimensions();
-    if w.max(h) <= max_dimension_px {
+    let is_jpeg = matches!(mime, "image/jpeg" | "image/jpg" | "image/pjpeg");
+    let needs_resize = w.max(h) > max_dimension_px;
+    let needs_format_conversion = !is_jpeg;
+
+    if !needs_resize && !needs_format_conversion {
         return (data.to_vec(), normalize_mime(mime).to_string());
     }
 
-    let resized = img.resize(
-        max_dimension_px,
-        max_dimension_px,
-        image::imageops::FilterType::Lanczos3,
-    );
+    let processed = if needs_resize {
+        img.resize(
+            max_dimension_px,
+            max_dimension_px,
+            image::imageops::FilterType::Lanczos3,
+        )
+    } else {
+        img
+    };
 
-    // PNG sources stay PNG; others become JPEG with quality tuning.
-    if mime == "image/png" {
-        if let Some(bytes) = encode_png(&resized) {
-            return (bytes, "image/png".to_string());
-        }
-    } else if let Some(bytes) = encode_jpeg(&resized, jpeg_quality) {
+    // Store decodable covers as JPEG to ensure uniform quality/size handling.
+    if let Some(bytes) = encode_jpeg(&processed, jpeg_quality) {
         return (bytes, "image/jpeg".to_string());
     }
 
@@ -1547,8 +1550,8 @@ pub fn save_cover(
 
 fn mime_to_ext(mime: &str) -> &str {
     match mime {
-        "image/png" => "png",
-        "image/gif" => "gif",
+        "image/png" => "png", // legacy/decode-fallback covers
+        "image/gif" => "gif", // legacy/decode-fallback covers
         _ => "jpg",
     }
 }
@@ -1565,18 +1568,6 @@ fn encode_jpeg(img: &DynamicImage, quality: u8) -> Option<Vec<u8>> {
     let mut out = Cursor::new(Vec::new());
     let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
     encoder.encode_image(img).ok()?;
-    Some(out.into_inner())
-}
-
-fn encode_png(img: &DynamicImage) -> Option<Vec<u8>> {
-    let rgba = img.to_rgba8();
-    let (w, h) = rgba.dimensions();
-    let mut out = Cursor::new(Vec::new());
-    let encoder =
-        PngEncoder::new_with_quality(&mut out, CompressionType::Default, PngFilterType::Adaptive);
-    encoder
-        .write_image(rgba.as_raw(), w, h, ExtendedColorType::Rgba8)
-        .ok()?;
     Some(out.into_inner())
 }
 
@@ -1777,7 +1768,7 @@ root_path = "/tmp"
     }
 
     #[test]
-    fn test_normalize_cover_for_storage_resizes_only_when_needed() {
+    fn test_normalize_cover_for_storage_converts_non_jpeg_and_resizes_when_needed() {
         let small = DynamicImage::new_rgb8(320, 480);
         let mut small_png = Cursor::new(Vec::new());
         small
@@ -1785,10 +1776,14 @@ root_path = "/tmp"
             .unwrap();
         let small_bytes = small_png.into_inner();
         let cfg = test_cover_cfg();
-        let (same_data, same_mime) =
+        let (converted_data, converted_mime) =
             normalize_cover_for_storage_with_options(&small_bytes, "image/png", cfg);
-        assert_eq!(same_mime, "image/png");
-        assert_eq!(same_data, small_bytes);
+        assert_eq!(converted_mime, "image/jpeg");
+        assert_ne!(converted_data, small_bytes);
+        assert!(matches!(
+            image::guess_format(&converted_data),
+            Ok(image::ImageFormat::Jpeg)
+        ));
 
         let large = DynamicImage::new_rgb8(1800, 1200);
         let mut large_png = Cursor::new(Vec::new());
@@ -1797,10 +1792,25 @@ root_path = "/tmp"
             .unwrap();
         let (resized_data, resized_mime) =
             normalize_cover_for_storage_with_options(&large_png.into_inner(), "image/png", cfg);
-        assert_eq!(resized_mime, "image/png");
+        assert_eq!(resized_mime, "image/jpeg");
         let resized = image::load_from_memory(&resized_data).unwrap();
         let (w, h) = resized.dimensions();
         assert_eq!(w.max(h), cfg.scale_to());
+    }
+
+    #[test]
+    fn test_normalize_cover_for_storage_converts_gif_to_jpeg() {
+        let gif_1x1 = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\
+\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\
+\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;";
+        let cfg = test_cover_cfg();
+        let (converted_data, converted_mime) =
+            normalize_cover_for_storage_with_options(gif_1x1, "image/gif", cfg);
+        assert_eq!(converted_mime, "image/jpeg");
+        assert!(matches!(
+            image::guess_format(&converted_data),
+            Ok(image::ImageFormat::Jpeg)
+        ));
     }
 
     #[test]
