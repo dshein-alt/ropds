@@ -1343,7 +1343,6 @@ pub async fn opensearch(_state: State<AppState>) -> Response {
         .into_response()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

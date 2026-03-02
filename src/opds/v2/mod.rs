@@ -17,7 +17,10 @@ pub fn router() -> Router<AppState> {
         .route("/v2/catalogs/{cat_id}/{page}/", get(feeds::catalogs_feed))
         .route("/v2/authors/", get(feeds::authors_root))
         .route("/v2/authors/{lang_code}/", get(feeds::authors_feed))
-        .route("/v2/authors/{lang_code}/{prefix}/", get(feeds::authors_feed))
+        .route(
+            "/v2/authors/{lang_code}/{prefix}/",
+            get(feeds::authors_feed),
+        )
         .route(
             "/v2/authors/{lang_code}/{prefix}/list/",
             get(feeds::authors_list),

@@ -7,9 +7,7 @@ use crate::db::queries::{authors, books, bookshelf, catalogs, genres, series};
 use crate::state::AppState;
 
 use super::helpers::*;
-use super::{
-    AuthorsListParams, AuthorsParams, CatalogsParams, LangQuery, SearchBooksParams,
-};
+use super::{AuthorsListParams, AuthorsParams, CatalogsParams, LangQuery, SearchBooksParams};
 
 pub async fn root_feed(
     State(state): State<AppState>,
