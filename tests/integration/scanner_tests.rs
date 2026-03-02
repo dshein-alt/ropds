@@ -2,6 +2,7 @@ use ropds::db;
 use ropds::db::models::AvailStatus;
 use ropds::db::queries::{authors, books, counters, genres, series};
 use ropds::scanner;
+use std::io::Write;
 
 use super::*;
 
@@ -61,6 +62,113 @@ async fn scan_adds_books_from_zip() {
     assert!(
         all_books.iter().all(|(ct,)| *ct == 1),
         "all should be cat_type=Zip"
+    );
+}
+
+/// INPX processing enriches records from referenced ZIP entries (annotation + cover).
+#[tokio::test]
+async fn scan_inpx_enriches_annotation_and_cover_from_zip() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let mut config = test_config(lib_dir.path(), covers_dir.path());
+    config.library.inpx_enable = true;
+
+    let fb2_bytes = std::fs::read(test_data_dir().join("test_book.fb2")).unwrap();
+
+    // Referenced ZIP archive containing the FB2 file.
+    let zip_path = lib_dir.path().join("pack-0001.zip");
+    {
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("test_book.fb2", opts).unwrap();
+        zip.write_all(&fb2_bytes).unwrap();
+        zip.finish().unwrap();
+    }
+
+    // INPX index with one record pointing to pack-0001.zip/test_book.fb2.
+    let sep = '\u{0004}';
+    let inpx_line = format!(
+        "Doe,John{sep}sf_fantasy{sep}INPX Title{sep}INPX Series{sep}1{sep}test_book{sep}{}{sep}lib{sep}0{sep}fb2{sep}2025-01-01{sep}en",
+        fb2_bytes.len()
+    );
+    let inpx_path = lib_dir.path().join("library.inpx");
+    {
+        let file = std::fs::File::create(&inpx_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("pack-0001.inp", opts).unwrap();
+        zip.write_all(inpx_line.as_bytes()).unwrap();
+        zip.write_all(b"\n").unwrap();
+        zip.finish().unwrap();
+    }
+
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    assert_eq!(stats.books_added, 1);
+    assert_eq!(stats.archives_scanned, 1);
+
+    let book = books::find_by_path_and_filename(&pool, "pack-0001.zip", "test_book.fb2")
+        .await
+        .unwrap()
+        .expect("book referenced by INPX should be inserted");
+    assert_eq!(book.cover, 1, "cover should be extracted from FB2 in ZIP");
+    assert_eq!(
+        book.annotation, "This is a test annotation for the book.",
+        "annotation should be extracted from FB2 in ZIP"
+    );
+
+    let cover_path = covers_dir.path().join(format!("{}.jpg", book.id));
+    assert!(
+        cover_path.exists(),
+        "cover file should be saved to covers dir"
+    );
+}
+
+/// Missing referenced ZIP during INPX scan should not fail the book insert.
+#[tokio::test]
+async fn scan_inpx_missing_referenced_zip_keeps_inpx_metadata_only() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let mut config = test_config(lib_dir.path(), covers_dir.path());
+    config.library.inpx_enable = true;
+
+    let sep = '\u{0004}';
+    let inpx_line = format!(
+        "Doe,John{sep}sf_fantasy{sep}INPX Missing ZIP{sep}INPX Series{sep}1{sep}test_book{sep}123{sep}lib{sep}0{sep}fb2{sep}2025-01-01{sep}en"
+    );
+    let inpx_path = lib_dir.path().join("library.inpx");
+    {
+        let file = std::fs::File::create(&inpx_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("missing-pack.inp", opts).unwrap();
+        zip.write_all(inpx_line.as_bytes()).unwrap();
+        zip.write_all(b"\n").unwrap();
+        zip.finish().unwrap();
+    }
+
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    assert_eq!(stats.books_added, 1);
+    assert_eq!(stats.archives_scanned, 1);
+
+    let book = books::find_by_path_and_filename(&pool, "missing-pack.zip", "test_book.fb2")
+        .await
+        .unwrap()
+        .expect("book should still be inserted from INPX even if ZIP is missing");
+    assert_eq!(book.title, "INPX Missing ZIP");
+    assert_eq!(book.cover, 0, "missing ZIP means no extracted cover");
+    assert_eq!(
+        book.annotation, "",
+        "missing ZIP means no extracted annotation"
     );
 }
 

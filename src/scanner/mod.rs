@@ -1,6 +1,6 @@
 pub mod parsers;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
@@ -641,37 +641,105 @@ async fn process_inpx(
 
     info!("INPX: parsed {} records from {}", records.len(), rel_path);
 
+    // Group records by referenced ZIP archive to avoid reopening the same ZIP
+    // for each book entry.
+    let mut by_zip_path: BTreeMap<String, Vec<parsers::inpx::InpxRecord>> = BTreeMap::new();
     for record in records {
         let book_path = if inpx_dir.is_empty() {
             record.folder.clone()
         } else {
             format!("{inpx_dir}/{}", record.folder)
         };
+        by_zip_path.entry(book_path).or_default().push(record);
+    }
 
-        // Check if already in DB
-        if let Some(existing) =
-            books::find_by_path_and_filename(&ctx.pool, &book_path, &record.filename).await?
-        {
-            books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
-            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
+    for (book_path, zip_records) in by_zip_path {
+        let mut pending = Vec::new();
+        for record in zip_records {
+            // Check if already in DB
+            if let Some(existing) =
+                books::find_by_path_and_filename(&ctx.pool, &book_path, &record.filename).await?
+            {
+                books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
+                ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            pending.push(record);
+        }
+
+        if pending.is_empty() {
             continue;
         }
 
+        // Best-effort metadata enrichment from the actual book files referenced
+        // by INPX records (cover + annotation, etc.).
+        let needed_filenames: HashSet<String> =
+            pending.iter().map(|r| r.filename.clone()).collect();
+        let zip_abs_path = ctx.root.join(&book_path);
+        let mut parsed_meta = if !zip_abs_path.exists() {
+            warn!(
+                "INPX referenced ZIP archive is missing: {}",
+                zip_abs_path.display()
+            );
+            HashMap::new()
+        } else {
+            let zip_abs_path_for_parse = zip_abs_path.clone();
+            let exts = ctx.extensions.clone();
+            let test_files = ctx.test_files;
+            let cover_cfg = ctx.cover_image_cfg;
+
+            let parsed_meta = tokio::task::spawn_blocking(move || {
+                read_selected_zip_entries_meta(
+                    &zip_abs_path_for_parse,
+                    &exts,
+                    &needed_filenames,
+                    test_files,
+                    cover_cfg,
+                )
+            })
+            .await
+            .map_err(|e| ScanError::Internal(e.to_string()))?;
+
+            match parsed_meta {
+                Ok(meta) => meta,
+                Err(e) => {
+                    warn!(
+                        "INPX metadata enrichment failed for {}: {}",
+                        zip_abs_path.display(),
+                        e
+                    );
+                    HashMap::new()
+                }
+            }
+        };
+
         let catalog_id = cached_ensure_catalog(ctx, &book_path, CatType::Inpx).await?;
+        for record in pending {
+            let mut meta = record.meta;
+            if let Some(parsed) = parsed_meta.remove(&record.filename) {
+                if !parsed.annotation.trim().is_empty() {
+                    meta.annotation = parsed.annotation;
+                }
+                if let Some(cover_data) = parsed.cover_data {
+                    meta.cover_data = Some(cover_data);
+                    meta.cover_type = parsed.cover_type;
+                }
+            }
 
-        ctx_insert_book_with_meta(
-            ctx,
-            catalog_id,
-            &record.filename,
-            &book_path,
-            &record.format,
-            record.size,
-            CatType::Inpx,
-            &record.meta,
-        )
-        .await?;
+            ctx_insert_book_with_meta(
+                ctx,
+                catalog_id,
+                &record.filename,
+                &book_path,
+                &record.format,
+                record.size,
+                CatType::Inpx,
+                &meta,
+            )
+            .await?;
 
-        ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
+            ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
@@ -884,18 +952,22 @@ struct ZipBookEntry {
     data: Vec<u8>,
 }
 
-/// Read all matching book files from a ZIP archive.
-/// When `test_files` is enabled, entries whose extracted size does not match
-/// the declared size are skipped.
-fn read_zip_entries(
+/// Iterate ZIP entries, read matching files into memory, validate size if
+/// requested, and hand data to a callback.
+fn for_each_matching_zip_entry<S, H>(
     path: &Path,
     extensions: &HashSet<String>,
     test_files: bool,
-) -> Result<Vec<ZipBookEntry>, ScanError> {
+    mut select: S,
+    mut on_entry: H,
+) -> Result<(), ScanError>
+where
+    S: FnMut(&str, &str, &str) -> bool,
+    H: FnMut(String, String, u64, Vec<u8>),
+{
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
     let mut archive = zip::ZipArchive::new(reader)?;
-    let mut entries = Vec::new();
 
     for i in 0..archive.len() {
         let mut entry = match archive.by_index(i) {
@@ -905,24 +977,27 @@ fn read_zip_entries(
         if entry.is_dir() {
             continue;
         }
+
         let name = entry.name().to_string();
         let ext = Path::new(&name)
             .extension()
             .unwrap_or_default()
             .to_string_lossy()
             .to_lowercase();
-
         if !extensions.contains(&ext) {
             continue;
         }
 
-        let declared_size = entry.size();
         let filename = Path::new(&name)
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+        if !select(&name, &filename, &ext) {
+            continue;
+        }
 
+        let declared_size = entry.size();
         let mut data = Vec::new();
         if let Err(e) = std::io::Read::read_to_end(&mut entry, &mut data) {
             warn!("Failed to read {name} from ZIP: {e}");
@@ -940,15 +1015,73 @@ fn read_zip_entries(
             continue;
         }
 
-        entries.push(ZipBookEntry {
-            filename,
-            extension: ext,
-            size: declared_size as i64,
-            data,
-        });
+        on_entry(filename, ext, declared_size, data);
     }
 
+    Ok(())
+}
+
+/// Read all matching book files from a ZIP archive.
+/// When `test_files` is enabled, entries whose extracted size does not match
+/// the declared size are skipped.
+fn read_zip_entries(
+    path: &Path,
+    extensions: &HashSet<String>,
+    test_files: bool,
+) -> Result<Vec<ZipBookEntry>, ScanError> {
+    let mut entries = Vec::new();
+
+    for_each_matching_zip_entry(
+        path,
+        extensions,
+        test_files,
+        |_, _, _| true,
+        |filename, ext, declared_size, data| {
+            entries.push(ZipBookEntry {
+                filename,
+                extension: ext,
+                size: declared_size as i64,
+                data,
+            });
+        },
+    )?;
+
     Ok(entries)
+}
+
+/// Read selected book files from a ZIP archive and parse metadata for each
+/// matched entry, keyed by basename filename.
+fn read_selected_zip_entries_meta(
+    path: &Path,
+    extensions: &HashSet<String>,
+    needed_filenames: &HashSet<String>,
+    test_files: bool,
+    cover_cfg: CoverImageConfig,
+) -> Result<HashMap<String, BookMeta>, ScanError> {
+    let mut out = HashMap::new();
+
+    for_each_matching_zip_entry(
+        path,
+        extensions,
+        test_files,
+        |_, filename, _| needed_filenames.contains(filename),
+        |filename, ext, _, data| {
+            if out.contains_key(&filename) {
+                warn!(
+                    "Duplicate basename '{}' in ZIP {}; keeping first matched entry",
+                    filename,
+                    path.display()
+                );
+                return;
+            }
+
+            if let Ok(meta) = parse_book_bytes(&data, &ext, &filename, cover_cfg) {
+                out.insert(filename, meta);
+            }
+        },
+    )?;
+
+    Ok(out)
 }
 
 /// Validate ZIP archive integrity by reading every entry (triggers CRC check).
