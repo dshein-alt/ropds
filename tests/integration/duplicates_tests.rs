@@ -370,3 +370,47 @@ async fn admin_delete_zip_book_adds_suppression() {
         "deleted ZIP book should be in suppressed_books table"
     );
 }
+
+#[tokio::test]
+async fn search_type_d_shows_duplicate_versions() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    let user_id = create_test_user(&pool, "ver-user", "password123", false).await;
+    let session = session_cookie_value(user_id);
+
+    let author = insert_author(&pool, "Version Author").await;
+
+    // Insert 3 books with the same search_title and author
+    let mut book_ids = Vec::new();
+    for i in 0..3 {
+        let book = insert_dup_book(
+            &pool,
+            &format!("Version Title v{i}"),
+            "VERSION TITLE",
+            &format!("ver-{i}.fb2"),
+        )
+        .await;
+        link_author(&pool, book, author).await;
+        db::queries::books::update_author_key(&pool, book)
+            .await
+            .unwrap();
+        book_ids.push(book);
+    }
+
+    let state = test_app_state(pool.clone(), config);
+    let app = test_router(state);
+
+    // Search by type=d with any book in the group
+    let url = format!("/web/search/books?type=d&q={}", book_ids[0]);
+    let resp = get_with_session(app, &url, &session).await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+
+    // All 3 versions should appear
+    assert!(html.contains("Version Title v0"));
+    assert!(html.contains("Version Title v1"));
+    assert!(html.contains("Version Title v2"));
+}
