@@ -369,7 +369,7 @@ async fn scan_mobi_metadata() {
 
     let book_authors = authors::get_for_book(&pool, book.id).await.unwrap();
     assert_eq!(book_authors.len(), 1);
-    assert_eq!(book_authors[0].full_name, "Tolkien J. R. R.");
+    assert_eq!(book_authors[0].full_name, "J. R. R. Tolkien");
 
     // MOBI has no genres or series
     let book_genres = genres::get_for_book(&pool, book.id, "en").await.unwrap();

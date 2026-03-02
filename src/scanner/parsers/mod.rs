@@ -60,29 +60,35 @@ fn is_cyrillic(c: char) -> bool {
     matches!(c, '\u{0400}'..='\u{04FF}' | '\u{0500}'..='\u{052F}')
 }
 
-/// Reorder "First Last" → "Last First" (matching Python scanner behaviour).
-/// If the name already contains a comma, just replace commas with spaces.
+/// Reorder only two-part names: "First Last" → "Last First".
+/// Keep all other forms as-is (besides whitespace and outer punctuation cleanup).
+/// For comma-separated two-part names like "Asimov, Isaac", normalize to "Asimov Isaac".
 pub fn normalise_author_name(name: &str) -> String {
     let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
     let name = strip_meta(&name);
     if name.is_empty() {
         return String::new();
     }
+
     if name.contains(',') {
-        return name
+        let normalized = name
             .replace(',', " ")
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");
+        return if normalized.split_whitespace().count() == 2 {
+            normalized
+        } else {
+            name
+        };
     }
+
     let parts: Vec<&str> = name.split_whitespace().collect();
-    if parts.len() <= 1 {
+    if parts.len() != 2 {
         return name;
     }
-    // Move last word to front: "First Middle Last" → "Last First Middle"
-    let last = parts[parts.len() - 1];
-    let rest = &parts[..parts.len() - 1];
-    format!("{} {}", last, rest.join(" "))
+
+    format!("{} {}", parts[1], parts[0])
 }
 
 #[cfg(test)]
@@ -108,11 +114,16 @@ mod tests {
 
     #[test]
     fn test_normalise_author_name() {
+        assert_eq!(normalise_author_name("John Tolkien"), "Tolkien John");
         assert_eq!(
             normalise_author_name("John Ronald Tolkien"),
-            "Tolkien John Ronald"
+            "John Ronald Tolkien"
         );
         assert_eq!(normalise_author_name("Asimov, Isaac"), "Asimov Isaac");
+        assert_eq!(
+            normalise_author_name("Asimov, Isaac Jr."),
+            "Asimov, Isaac Jr"
+        );
         assert_eq!(normalise_author_name("  Single  "), "Single");
         assert_eq!(normalise_author_name(""), "");
     }
