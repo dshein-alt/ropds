@@ -1,0 +1,1 @@
+ALTER TABLE suppressed_books MODIFY COLUMN path VARCHAR(2048) NOT NULL;

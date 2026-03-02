@@ -300,7 +300,12 @@ pub async fn search_books(
                     .await
                     .unwrap_or_default();
                     let cnt = group.len() as i64;
-                    (group, cnt)
+                    let page = group
+                        .into_iter()
+                        .skip(offset as usize)
+                        .take(max_items as usize)
+                        .collect();
+                    (page, cnt)
                 }
                 _ => (vec![], 0),
             };
