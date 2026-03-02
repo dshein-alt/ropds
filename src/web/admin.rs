@@ -10,12 +10,14 @@ use crate::state::AppState;
 use crate::web::auth::verify_session;
 use crate::web::context::{build_context, validate_csrf};
 
+mod book_delete;
 mod book_edit;
 mod duplicates;
 mod genres;
 mod scan;
 mod user_pages;
 
+pub use book_delete::*;
 pub use book_edit::*;
 pub use duplicates::*;
 pub use genres::*;
