@@ -1533,7 +1533,7 @@ pub(crate) fn normalize_cover_for_storage_with_options(
     (data.to_vec(), normalize_mime(mime).to_string())
 }
 
-/// Save cover image bytes to disk as `{covers_dir}/{book_id}.{ext}`.
+/// Save cover image bytes to disk using hierarchical cover storage.
 pub fn save_cover(
     covers_path: &Path,
     book_id: i64,
@@ -1544,8 +1544,28 @@ pub fn save_cover(
     let (normalized_data, normalized_mime) =
         normalize_cover_for_storage_with_options(data, mime, cover_cfg);
     let ext = mime_to_ext(&normalized_mime);
-    let path = covers_path.join(format!("{book_id}.{ext}"));
+    let path = cover_storage_path(covers_path, book_id, ext);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     fs::write(&path, normalized_data)
+}
+
+/// Return hierarchical storage path for a cover file.
+/// Layout: `{covers_dir}/{bucket_millions}/{bucket_thousands}/{book_id}.{ext}`.
+pub fn cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
+    let id = book_id.unsigned_abs();
+    let bucket_millions = (id / 1_000_000) % 1_000;
+    let bucket_thousands = (id / 1_000) % 1_000;
+    covers_path
+        .join(format!("{bucket_millions:03}"))
+        .join(format!("{bucket_thousands:03}"))
+        .join(format!("{book_id}.{ext}"))
+}
+
+/// Return legacy flat storage path for a cover file.
+pub fn legacy_cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
+    covers_path.join(format!("{book_id}.{ext}"))
 }
 
 fn mime_to_ext(mime: &str) -> &str {
@@ -1574,12 +1594,32 @@ fn encode_jpeg(img: &DynamicImage, quality: u8) -> Option<Vec<u8>> {
 /// Remove cover file for a book (tries all known extensions).
 fn delete_cover(covers_path: &Path, book_id: i64) {
     for ext in &["jpg", "png", "gif"] {
-        let path = covers_path.join(format!("{book_id}.{ext}"));
-        if path.exists()
-            && let Err(e) = fs::remove_file(&path)
-        {
-            warn!("Failed to remove cover {}: {e}", path.display());
+        for path in [
+            cover_storage_path(covers_path, book_id, ext),
+            legacy_cover_storage_path(covers_path, book_id, ext),
+        ] {
+            if path.exists() {
+                match fs::remove_file(&path) {
+                    Ok(()) => remove_empty_cover_dirs(covers_path, &path),
+                    Err(e) => warn!("Failed to remove cover {}: {e}", path.display()),
+                }
+            }
         }
+    }
+}
+
+fn remove_empty_cover_dirs(covers_path: &Path, file_path: &Path) {
+    let Some(dir) = file_path.parent() else {
+        return;
+    };
+    if dir == covers_path {
+        return;
+    }
+    let _ = fs::remove_dir(dir);
+    if let Some(parent) = dir.parent()
+        && parent != covers_path
+    {
+        let _ = fs::remove_dir(parent);
     }
 }
 
@@ -1749,18 +1789,24 @@ root_path = "/tmp"
     fn test_cover_helpers_and_rel_path() {
         let dir = tempdir().unwrap();
         save_cover(dir.path(), 42, b"cover", "image/png", test_cover_cfg()).unwrap();
-        let png = dir.path().join("42.png");
+        let png = cover_storage_path(dir.path(), 42, "png");
         assert!(png.exists());
 
-        // Also create another extension to ensure cleanup scans all known files.
-        fs::write(dir.path().join("42.jpg"), b"x").unwrap();
+        // Also create a legacy flat file to ensure backward-compatible cleanup.
+        let legacy_jpg = legacy_cover_storage_path(dir.path(), 42, "jpg");
+        fs::write(&legacy_jpg, b"x").unwrap();
         delete_cover(dir.path(), 42);
         assert!(!png.exists());
-        assert!(!dir.path().join("42.jpg").exists());
+        assert!(!legacy_jpg.exists());
 
         assert_eq!(mime_to_ext("image/png"), "png");
         assert_eq!(mime_to_ext("image/gif"), "gif");
         assert_eq!(mime_to_ext("image/jpeg"), "jpg");
+
+        assert_eq!(
+            cover_storage_path(dir.path(), 1_500_123, "jpg"),
+            dir.path().join("001").join("500").join("1500123.jpg")
+        );
 
         let root = Path::new("/tmp/root");
         let file = Path::new("/tmp/root/sub/book.fb2");

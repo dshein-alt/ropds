@@ -60,7 +60,10 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
 
         // Save extracted cover to disk for next time
         let ext = mime_to_ext(&cover_mime);
-        let save_path = covers_dir.join(format!("{book_id}.{ext}"));
+        let save_path = crate::scanner::cover_storage_path(&covers_dir, book_id, ext);
+        if let Some(parent) = save_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let _ = std::fs::write(&save_path, &cover_data);
 
         Some((cover_data, cover_mime))
@@ -85,14 +88,38 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
 /// Try to find a cached cover file on disk for the given book id.
 fn find_cover_file(covers_dir: &std::path::Path, book_id: i64) -> Option<(Vec<u8>, String)> {
     for ext in ["jpg", "png", "gif"] {
-        let path = covers_dir.join(format!("{book_id}.{ext}"));
-        if path.exists() {
-            let data = std::fs::read(&path).ok()?;
-            let mime = ext_to_mime(ext);
-            return Some((data, mime));
+        let hierarchical = crate::scanner::cover_storage_path(covers_dir, book_id, ext);
+        if hierarchical.exists() {
+            let data = std::fs::read(&hierarchical).ok()?;
+            return Some((data, ext_to_mime(ext)));
+        }
+
+        let legacy = crate::scanner::legacy_cover_storage_path(covers_dir, book_id, ext);
+        if legacy.exists() {
+            let data = std::fs::read(&legacy).ok()?;
+            migrate_legacy_cover(&legacy, &hierarchical, &data);
+            return Some((data, ext_to_mime(ext)));
         }
     }
     None
+}
+
+fn migrate_legacy_cover(
+    legacy_path: &std::path::Path,
+    hierarchical_path: &std::path::Path,
+    data: &[u8],
+) {
+    if hierarchical_path.exists() {
+        return;
+    }
+    if let Some(parent) = hierarchical_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if std::fs::rename(legacy_path, hierarchical_path).is_err()
+        && std::fs::write(hierarchical_path, data).is_ok()
+    {
+        let _ = std::fs::remove_file(legacy_path);
+    }
 }
 
 fn ext_to_mime(ext: &str) -> String {
@@ -459,12 +486,39 @@ mod tests {
     #[test]
     fn test_find_cover_file_prefers_known_extensions() {
         let dir = tempdir().unwrap();
-        let jpg_path = dir.path().join("42.jpg");
+        let jpg_path = crate::scanner::cover_storage_path(dir.path(), 42, "jpg");
+        std::fs::create_dir_all(jpg_path.parent().unwrap()).unwrap();
         std::fs::write(&jpg_path, b"jpg-bytes").unwrap();
 
         let found = find_cover_file(dir.path(), 42).unwrap();
         assert_eq!(found.0, b"jpg-bytes");
         assert_eq!(found.1, "image/jpeg");
+    }
+
+    #[test]
+    fn test_find_cover_file_falls_back_to_legacy_flat_path() {
+        let dir = tempdir().unwrap();
+        let legacy_gif = crate::scanner::legacy_cover_storage_path(dir.path(), 43, "gif");
+        std::fs::write(&legacy_gif, b"gif-bytes").unwrap();
+
+        let found = find_cover_file(dir.path(), 43).unwrap();
+        assert_eq!(found.0, b"gif-bytes");
+        assert_eq!(found.1, "image/gif");
+    }
+
+    #[test]
+    fn test_find_cover_file_migrates_legacy_flat_path() {
+        let dir = tempdir().unwrap();
+        let legacy_jpg = crate::scanner::legacy_cover_storage_path(dir.path(), 44, "jpg");
+        std::fs::write(&legacy_jpg, b"jpg-bytes").unwrap();
+
+        let found = find_cover_file(dir.path(), 44).unwrap();
+        assert_eq!(found.0, b"jpg-bytes");
+        assert_eq!(found.1, "image/jpeg");
+
+        let hierarchical_jpg = crate::scanner::cover_storage_path(dir.path(), 44, "jpg");
+        assert!(hierarchical_jpg.exists());
+        assert!(!legacy_jpg.exists());
     }
 
     #[test]
