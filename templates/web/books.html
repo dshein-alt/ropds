@@ -87,7 +87,7 @@
                 {# Metadata line #}
                 <div class="small text-body-secondary mb-2">
                   <span class="badge text-bg-secondary">{{ item.format }}</span>
-                  {% if item.doubles > 1 %}<span class="badge text-bg-info">{{ item.doubles }} formats</span>{% endif %}
+                  {% if item.doubles > 1 %}<a href="/web/search/books?type=d&q={{ item.id }}" class="badge text-bg-info text-decoration-none" title="{{ t.book.see_all_versions }}">{{ item.doubles }} {% if locale == "ru" %}{% if item.doubles % 10 == 1 and item.doubles % 100 != 11 %}{{ t.book.versions_one }}{% elif item.doubles % 10 >= 2 and item.doubles % 10 <= 4 and (item.doubles % 100 < 12 or item.doubles % 100 > 14) %}{{ t.book.versions_few }}{% else %}{{ t.book.versions_many }}{% endif %}{% else %}{{ t.book.versions }}{% endif %}</a>{% endif %}
                   {{ item.size | filesizeformat }}
                   {% if item.lang and item.lang != "un" %}· {{ item.lang }}{% endif %}
                   {% if item.docdate and item.docdate != "" %}· {{ item.docdate }}{% endif %}
