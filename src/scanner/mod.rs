@@ -12,6 +12,7 @@ use dashmap::DashMap;
 use image::DynamicImage;
 use image::GenericImageView;
 use image::codecs::jpeg::JpegEncoder;
+use tokio::sync::Semaphore;
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
@@ -129,6 +130,7 @@ struct ScanContext {
     covers_path: PathBuf,
     cover_image_cfg: CoverImageConfig,
     workers_num: usize,
+    concurrency_semaphore: Arc<Semaphore>,
     extensions: HashSet<String>,
     stats: Arc<ScanStats>,
     // Config flags
@@ -184,6 +186,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         covers_path: covers_path.clone(),
         cover_image_cfg: CoverImageConfig::from(&config.covers),
         workers_num,
+        concurrency_semaphore: Arc::new(Semaphore::new(workers_num.max(1))),
         extensions,
         stats: Arc::clone(&stats),
         skip_unchanged: config.scanner.skip_unchanged,
@@ -427,6 +430,16 @@ async fn process_entry(ctx: Arc<ScanContext>, entry: ScanEntry) {
     }
 }
 
+async fn acquire_scan_permit(
+    ctx: &ScanContext,
+) -> Result<tokio::sync::OwnedSemaphorePermit, ScanError> {
+    ctx.concurrency_semaphore
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|e| ScanError::Internal(format!("scan semaphore closed: {e}")))
+}
+
 /// Process a single book file on disk.
 async fn process_file(
     ctx: &ScanContext,
@@ -444,14 +457,17 @@ async fn process_file(
     }
 
     // Parse metadata
-    let meta = tokio::task::spawn_blocking({
-        let path = path.to_path_buf();
-        let ext = extension.to_string();
-        let cover_cfg = ctx.cover_image_cfg;
-        move || parse_book_file(&path, &ext, cover_cfg)
-    })
-    .await
-    .map_err(|e| ScanError::Internal(e.to_string()))??;
+    let meta = {
+        let _permit = acquire_scan_permit(ctx).await?;
+        tokio::task::spawn_blocking({
+            let path = path.to_path_buf();
+            let ext = extension.to_string();
+            let cover_cfg = ctx.cover_image_cfg;
+            move || parse_book_file(&path, &ext, cover_cfg)
+        })
+        .await
+        .map_err(|e| ScanError::Internal(e.to_string()))??
+    };
 
     // Ensure catalog exists
     let catalog_id = cached_ensure_catalog(ctx, rel_path, CatType::Normal).await?;
@@ -500,9 +516,12 @@ async fn process_zip(
     // Validate ZIP integrity if enabled
     if ctx.test_zip {
         let zip_path_buf = zip_path.to_path_buf();
-        let valid = tokio::task::spawn_blocking(move || validate_zip_integrity(&zip_path_buf))
-            .await
-            .map_err(|e| ScanError::Internal(e.to_string()))??;
+        let valid = {
+            let _permit = acquire_scan_permit(ctx).await?;
+            tokio::task::spawn_blocking(move || validate_zip_integrity(&zip_path_buf))
+                .await
+                .map_err(|e| ScanError::Internal(e.to_string()))??
+        };
         if !valid {
             warn!("ZIP integrity check failed: {}", zip_path.display());
             ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
@@ -518,11 +537,14 @@ async fn process_zip(
     let extensions_clone = ctx.extensions.clone();
     let test_files = ctx.test_files;
 
-    let zip_entries = tokio::task::spawn_blocking(move || {
-        read_zip_entries(&zip_path_buf, &extensions_clone, test_files)
-    })
-    .await
-    .map_err(|e| ScanError::Internal(e.to_string()))??;
+    let zip_entries = {
+        let _permit = acquire_scan_permit(ctx).await?;
+        tokio::task::spawn_blocking(move || {
+            read_zip_entries(&zip_path_buf, &extensions_clone, test_files)
+        })
+        .await
+        .map_err(|e| ScanError::Internal(e.to_string()))??
+    };
 
     for ze in zip_entries {
         // Check if already in DB
@@ -540,6 +562,9 @@ async fn process_zip(
             let ext = ze.extension.clone();
             let filename = ze.filename.clone();
             let cover_cfg = ctx.cover_image_cfg;
+            // Keep per-entry parse under the shared budget so ZIP parsing and
+            // INPX enrichment parsing draw from the same global limit.
+            let _permit = acquire_scan_permit(ctx).await?;
             tokio::task::spawn_blocking(move || parse_book_bytes(&data, &ext, &filename, cover_cfg))
                 .await
                 .map_err(|e| ScanError::Internal(e.to_string()))?
@@ -604,14 +629,17 @@ async fn process_inpx(
     ensure_archive_catalog(&ctx.pool, rel_path, CatType::Inpx, inpx_size, mtime).await?;
 
     let inpx_path_buf = inpx_path.to_path_buf();
-    let records = tokio::task::spawn_blocking(move || {
-        let file = fs::File::open(&inpx_path_buf)?;
-        let reader = BufReader::new(file);
-        parsers::inpx::parse(reader)
-    })
-    .await
-    .map_err(|e| ScanError::Internal(e.to_string()))?
-    .map_err(|e| ScanError::Internal(e.to_string()))?;
+    let records = {
+        let _permit = acquire_scan_permit(&ctx).await?;
+        tokio::task::spawn_blocking(move || {
+            let file = fs::File::open(&inpx_path_buf)?;
+            let reader = BufReader::new(file);
+            parsers::inpx::parse(reader)
+        })
+        .await
+        .map_err(|e| ScanError::Internal(e.to_string()))?
+        .map_err(|e| ScanError::Internal(e.to_string()))?
+    };
 
     info!("INPX: parsed {} records from {}", records.len(), rel_path);
 
@@ -704,17 +732,20 @@ async fn process_inpx_zip_group(
         let test_files = ctx.test_files;
         let cover_cfg = ctx.cover_image_cfg;
 
-        let parsed_meta = tokio::task::spawn_blocking(move || {
-            read_selected_zip_entries_meta(
-                &zip_abs_path_for_parse,
-                &exts,
-                &needed_filenames,
-                test_files,
-                cover_cfg,
-            )
-        })
-        .await
-        .map_err(|e| ScanError::Internal(e.to_string()))?;
+        let parsed_meta = {
+            let _permit = acquire_scan_permit(ctx).await?;
+            tokio::task::spawn_blocking(move || {
+                read_selected_zip_entries_meta(
+                    &zip_abs_path_for_parse,
+                    &exts,
+                    &needed_filenames,
+                    test_files,
+                    cover_cfg,
+                )
+            })
+            .await
+            .map_err(|e| ScanError::Internal(e.to_string()))?
+        };
 
         match parsed_meta {
             Ok(meta) => meta,
