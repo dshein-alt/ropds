@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2026.03.02
+
+### Changed
+- Improved cover storage scalability for large libraries by introducing a hierarchical covers directory layout.
+- Added automatic transition behavior so existing covers in the previous flat layout continue to work.
+
+### Fixed
+- Improved cover processing consistency so non-JPEG cover images, including GIF, are converted using configured cover settings.
+
 ## [0.8.4] - 2026.03.02
 
 ### Changed
