@@ -122,7 +122,7 @@ async fn scan_inpx_enriches_annotation_and_cover_from_zip() {
         "annotation should be extracted from FB2 in ZIP"
     );
 
-    let cover_path = covers_dir.path().join(format!("{}.jpg", book.id));
+    let cover_path = scanner::cover_storage_path(covers_dir.path(), book.id, "jpg");
     assert!(
         cover_path.exists(),
         "cover file should be saved to covers dir"
