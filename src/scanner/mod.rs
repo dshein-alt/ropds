@@ -222,7 +222,10 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         }
 
         while let Some(join_result) = tasks.join_next().await {
-            join_result.map_err(|e| ScanError::Internal(e.to_string()))?;
+            if let Err(e) = join_result {
+                warn!("Top-level scan worker join failure: {e}");
+                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+            }
             if let Some(entry) = iter.next() {
                 let ctx = Arc::clone(&ctx);
                 tasks.spawn(async move {
@@ -1882,7 +1885,10 @@ root_path = "/tmp"
         assert!(!legacy_jpg.exists());
         assert!(!two_level_jpg.exists());
         // Bucket directories should be removed when empty.
-        assert!(!png.parent().unwrap().exists(), "1-level bucket dir should be removed");
+        assert!(
+            !png.parent().unwrap().exists(),
+            "1-level bucket dir should be removed"
+        );
         assert!(
             !two_level_jpg.parent().unwrap().exists(),
             "2-level inner bucket dir should be removed"
