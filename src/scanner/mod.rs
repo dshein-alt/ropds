@@ -128,6 +128,7 @@ struct ScanContext {
     root: PathBuf,
     covers_path: PathBuf,
     cover_image_cfg: CoverImageConfig,
+    workers_num: usize,
     extensions: HashSet<String>,
     stats: Arc<ScanStats>,
     // Config flags
@@ -182,6 +183,7 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         root: root.clone(),
         covers_path: covers_path.clone(),
         cover_image_cfg: CoverImageConfig::from(&config.covers),
+        workers_num,
         extensions,
         stats: Arc::clone(&stats),
         skip_unchanged: config.scanner.skip_unchanged,
@@ -192,40 +194,39 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         series_cache: DashMap::new(),
     };
 
+    let ctx = Arc::new(ctx);
+
     if workers_num <= 1 {
         // Sequential processing (default)
         for entry in entries {
-            process_entry(&ctx, entry).await;
+            process_entry(Arc::clone(&ctx), entry).await;
         }
     } else {
-        // Parallel processing with rayon
-        let groups = partition_by_toplevel(&ctx.root, entries);
-        info!(
-            "Parallel scan: {} groups across {} workers",
-            groups.len(),
-            workers_num
-        );
-        let handle = tokio::runtime::Handle::current();
-        let ctx = Arc::new(ctx);
-        tokio::task::spawn_blocking(move || {
-            let thread_pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(workers_num)
-                .build()
-                .expect("failed to build rayon thread pool");
-            thread_pool.install(|| {
-                use rayon::prelude::*;
-                groups.into_par_iter().for_each(|group| {
-                    let ctx = &ctx;
-                    handle.block_on(async {
-                        for entry in group {
-                            process_entry(ctx, entry).await;
-                        }
-                    });
+        // Dynamic parallel processing with bounded in-flight tasks.
+        let limit = workers_num;
+        let mut iter = entries.into_iter();
+        let mut tasks = tokio::task::JoinSet::new();
+
+        info!("Parallel scan: dynamic queue with {} workers", limit);
+
+        for _ in 0..limit {
+            if let Some(entry) = iter.next() {
+                let ctx = Arc::clone(&ctx);
+                tasks.spawn(async move {
+                    process_entry(ctx, entry).await;
                 });
-            });
-        })
-        .await
-        .map_err(|e| ScanError::Internal(e.to_string()))?;
+            }
+        }
+
+        while let Some(join_result) = tasks.join_next().await {
+            join_result.map_err(|e| ScanError::Internal(e.to_string()))?;
+            if let Some(entry) = iter.next() {
+                let ctx = Arc::clone(&ctx);
+                tasks.spawn(async move {
+                    process_entry(ctx, entry).await;
+                });
+            }
+        }
     }
 
     // Step 3: Handle books not found during scan (avail <= 1)
@@ -293,22 +294,6 @@ enum ScanEntry {
         rel_path: String,
         mtime: String,
     },
-}
-
-impl ScanEntry {
-    /// First path component relative to root (for parallel grouping).
-    fn toplevel_key(&self, root: &Path) -> String {
-        let p = match self {
-            ScanEntry::File { path, .. } => path.as_path(),
-            ScanEntry::Zip { path, .. } => path.as_path(),
-            ScanEntry::Inpx { path, .. } => path.as_path(),
-        };
-        let rel = p.strip_prefix(root).unwrap_or(p);
-        rel.components()
-            .next()
-            .map(|c| c.as_os_str().to_string_lossy().to_string())
-            .unwrap_or_default()
-    }
 }
 
 /// Get file modification time as RFC 3339 string.
@@ -399,23 +384,12 @@ fn collect_entries(
     Ok(entries)
 }
 
-/// Partition entries into groups by top-level directory for parallel processing.
-fn partition_by_toplevel(root: &Path, entries: Vec<ScanEntry>) -> Vec<Vec<ScanEntry>> {
-    let mut map: std::collections::HashMap<String, Vec<ScanEntry>> =
-        std::collections::HashMap::new();
-    for entry in entries {
-        let key = entry.toplevel_key(root);
-        map.entry(key).or_default().push(entry);
-    }
-    map.into_values().collect()
-}
-
 // ---------------------------------------------------------------------------
 // Entry processing
 // ---------------------------------------------------------------------------
 
 /// Dispatch a single scan entry to the appropriate handler.
-async fn process_entry(ctx: &ScanContext, entry: ScanEntry) {
+async fn process_entry(ctx: Arc<ScanContext>, entry: ScanEntry) {
     match entry {
         ScanEntry::File {
             path,
@@ -424,7 +398,8 @@ async fn process_entry(ctx: &ScanContext, entry: ScanEntry) {
             extension,
             size,
         } => {
-            if let Err(e) = process_file(ctx, &path, &rel_path, &filename, &extension, size).await {
+            if let Err(e) = process_file(&ctx, &path, &rel_path, &filename, &extension, size).await
+            {
                 debug!("Error processing {}: {e}", path.display());
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
             }
@@ -434,7 +409,7 @@ async fn process_entry(ctx: &ScanContext, entry: ScanEntry) {
             rel_path,
             mtime,
         } => {
-            if let Err(e) = process_zip(ctx, &path, &rel_path, &mtime).await {
+            if let Err(e) = process_zip(&ctx, &path, &rel_path, &mtime).await {
                 debug!("Error processing ZIP {}: {e}", path.display());
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
             }
@@ -444,7 +419,7 @@ async fn process_entry(ctx: &ScanContext, entry: ScanEntry) {
             rel_path,
             mtime,
         } => {
-            if let Err(e) = process_inpx(ctx, &path, &rel_path, &mtime).await {
+            if let Err(e) = process_inpx(Arc::clone(&ctx), &path, &rel_path, &mtime).await {
                 debug!("Error processing INPX {}: {e}", path.display());
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
             }
@@ -600,7 +575,7 @@ async fn process_zip(
 
 /// Process an INPX index file.
 async fn process_inpx(
-    ctx: &ScanContext,
+    ctx: Arc<ScanContext>,
     inpx_path: &Path,
     rel_path: &str,
     mtime: &str,
@@ -652,96 +627,136 @@ async fn process_inpx(
         by_zip_path.entry(book_path).or_default().push(record);
     }
 
-    for (book_path, zip_records) in by_zip_path {
-        let mut pending = Vec::new();
-        for record in zip_records {
-            // Check if already in DB
-            if let Some(existing) =
-                books::find_by_path_and_filename(&ctx.pool, &book_path, &record.filename).await?
-            {
-                books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
-                ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-                continue;
+    let groups: Vec<(String, Vec<parsers::inpx::InpxRecord>)> = by_zip_path.into_iter().collect();
+    if groups.is_empty() {
+        ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
+        return Ok(());
+    }
+
+    if ctx.workers_num <= 1 || groups.len() == 1 {
+        for (book_path, zip_records) in groups {
+            process_inpx_zip_group(&ctx, &book_path, zip_records).await?;
+        }
+    } else {
+        let limit = ctx.workers_num.min(groups.len()).max(1);
+        let mut iter = groups.into_iter();
+        let mut tasks = tokio::task::JoinSet::new();
+
+        for _ in 0..limit {
+            if let Some((book_path, zip_records)) = iter.next() {
+                let ctx = Arc::clone(&ctx);
+                tasks.spawn(
+                    async move { process_inpx_zip_group(&ctx, &book_path, zip_records).await },
+                );
             }
-            pending.push(record);
         }
 
-        if pending.is_empty() {
-            continue;
-        }
-
-        // Best-effort metadata enrichment from the actual book files referenced
-        // by INPX records (cover + annotation, etc.).
-        let needed_filenames: HashSet<String> =
-            pending.iter().map(|r| r.filename.clone()).collect();
-        let zip_abs_path = ctx.root.join(&book_path);
-        let mut parsed_meta = if !zip_abs_path.exists() {
-            warn!(
-                "INPX referenced ZIP archive is missing: {}",
-                zip_abs_path.display()
-            );
-            HashMap::new()
-        } else {
-            let zip_abs_path_for_parse = zip_abs_path.clone();
-            let exts = ctx.extensions.clone();
-            let test_files = ctx.test_files;
-            let cover_cfg = ctx.cover_image_cfg;
-
-            let parsed_meta = tokio::task::spawn_blocking(move || {
-                read_selected_zip_entries_meta(
-                    &zip_abs_path_for_parse,
-                    &exts,
-                    &needed_filenames,
-                    test_files,
-                    cover_cfg,
-                )
-            })
-            .await
-            .map_err(|e| ScanError::Internal(e.to_string()))?;
-
-            match parsed_meta {
-                Ok(meta) => meta,
-                Err(e) => {
-                    warn!(
-                        "INPX metadata enrichment failed for {}: {}",
-                        zip_abs_path.display(),
-                        e
-                    );
-                    HashMap::new()
-                }
+        while let Some(join_result) = tasks.join_next().await {
+            let task_result = join_result.map_err(|e| ScanError::Internal(e.to_string()))?;
+            task_result?;
+            if let Some((book_path, zip_records)) = iter.next() {
+                let ctx = Arc::clone(&ctx);
+                tasks.spawn(
+                    async move { process_inpx_zip_group(&ctx, &book_path, zip_records).await },
+                );
             }
-        };
-
-        let catalog_id = cached_ensure_catalog(ctx, &book_path, CatType::Inpx).await?;
-        for record in pending {
-            let mut meta = record.meta;
-            if let Some(parsed) = parsed_meta.remove(&record.filename) {
-                if !parsed.annotation.trim().is_empty() {
-                    meta.annotation = parsed.annotation;
-                }
-                if let Some(cover_data) = parsed.cover_data {
-                    meta.cover_data = Some(cover_data);
-                    meta.cover_type = parsed.cover_type;
-                }
-            }
-
-            ctx_insert_book_with_meta(
-                ctx,
-                catalog_id,
-                &record.filename,
-                &book_path,
-                &record.format,
-                record.size,
-                CatType::Inpx,
-                &meta,
-            )
-            .await?;
-
-            ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
         }
     }
 
     ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
+    Ok(())
+}
+
+async fn process_inpx_zip_group(
+    ctx: &ScanContext,
+    book_path: &str,
+    zip_records: Vec<parsers::inpx::InpxRecord>,
+) -> Result<(), ScanError> {
+    let mut pending = Vec::new();
+    for record in zip_records {
+        // Check if already in DB
+        if let Some(existing) =
+            books::find_by_path_and_filename(&ctx.pool, book_path, &record.filename).await?
+        {
+            books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
+            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+        pending.push(record);
+    }
+
+    if pending.is_empty() {
+        return Ok(());
+    }
+
+    // Best-effort metadata enrichment from referenced ZIP entries.
+    let needed_filenames: HashSet<String> = pending.iter().map(|r| r.filename.clone()).collect();
+    let zip_abs_path = ctx.root.join(book_path);
+    let mut parsed_meta = if !zip_abs_path.exists() {
+        warn!(
+            "INPX referenced ZIP archive is missing: {}",
+            zip_abs_path.display()
+        );
+        HashMap::new()
+    } else {
+        let zip_abs_path_for_parse = zip_abs_path.clone();
+        let exts = ctx.extensions.clone();
+        let test_files = ctx.test_files;
+        let cover_cfg = ctx.cover_image_cfg;
+
+        let parsed_meta = tokio::task::spawn_blocking(move || {
+            read_selected_zip_entries_meta(
+                &zip_abs_path_for_parse,
+                &exts,
+                &needed_filenames,
+                test_files,
+                cover_cfg,
+            )
+        })
+        .await
+        .map_err(|e| ScanError::Internal(e.to_string()))?;
+
+        match parsed_meta {
+            Ok(meta) => meta,
+            Err(e) => {
+                warn!(
+                    "INPX metadata enrichment failed for {}: {}",
+                    zip_abs_path.display(),
+                    e
+                );
+                HashMap::new()
+            }
+        }
+    };
+
+    let catalog_id = cached_ensure_catalog(ctx, book_path, CatType::Inpx).await?;
+    for record in pending {
+        let mut meta = record.meta;
+        if let Some(parsed) = parsed_meta.remove(&record.filename) {
+            if !parsed.annotation.trim().is_empty() {
+                meta.annotation = parsed.annotation;
+            }
+            if let Some(cover_data) = parsed.cover_data {
+                meta.cover_data = Some(cover_data);
+                meta.cover_type = parsed.cover_type;
+            }
+        }
+
+        ctx_insert_book_with_meta(
+            ctx,
+            catalog_id,
+            &record.filename,
+            book_path,
+            &record.format,
+            record.size,
+            CatType::Inpx,
+            &meta,
+        )
+        .await?;
+
+        ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
+    }
+
     Ok(())
 }
 
