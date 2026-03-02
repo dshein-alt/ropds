@@ -79,6 +79,10 @@ main {
 .book-cover-sm {
   width: 60px;
   min-width: 60px;
+  height: auto;
+  object-fit: cover;
+  align-self: flex-start;
+  display: block;
 }
 
 .book-cover-compact {
