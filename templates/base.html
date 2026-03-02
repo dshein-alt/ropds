@@ -235,6 +235,8 @@
           <div class="d-flex gap-2 align-items-start">
             {% if random_book.cover %}
             <img src="/opds/thumb/{{ random_book.id }}/" alt="" class="book-cover-sm rounded">
+            {% else %}
+            <img src="/static/images/nocover.svg" alt="" class="book-cover-sm rounded">
             {% endif %}
             <div class="small">
               <a href="/web/search/books?type=i&q={{ random_book.id }}" class="text-decoration-none fw-medium">
