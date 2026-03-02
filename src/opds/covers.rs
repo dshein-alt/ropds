@@ -86,18 +86,28 @@ async fn serve_cover(state: &AppState, book_id: i64, as_thumbnail: bool) -> Resp
 }
 
 /// Try to find a cached cover file on disk for the given book id.
+/// Checks current (1-level), old (2-level), and legacy (flat) layouts, migrating on access.
 fn find_cover_file(covers_dir: &std::path::Path, book_id: i64) -> Option<(Vec<u8>, String)> {
     for ext in ["jpg", "png", "gif"] {
-        let hierarchical = crate::scanner::cover_storage_path(covers_dir, book_id, ext);
-        if hierarchical.exists() {
-            let data = std::fs::read(&hierarchical).ok()?;
+        let current = crate::scanner::cover_storage_path(covers_dir, book_id, ext);
+        if current.exists() {
+            let data = std::fs::read(&current).ok()?;
             return Some((data, ext_to_mime(ext)));
         }
 
+        // Old two-level hierarchical layout
+        let two_level = crate::scanner::two_level_cover_storage_path(covers_dir, book_id, ext);
+        if two_level.exists() {
+            let data = std::fs::read(&two_level).ok()?;
+            migrate_legacy_cover(&two_level, &current, &data);
+            return Some((data, ext_to_mime(ext)));
+        }
+
+        // Legacy flat layout
         let legacy = crate::scanner::legacy_cover_storage_path(covers_dir, book_id, ext);
         if legacy.exists() {
             let data = std::fs::read(&legacy).ok()?;
-            migrate_legacy_cover(&legacy, &hierarchical, &data);
+            migrate_legacy_cover(&legacy, &current, &data);
             return Some((data, ext_to_mime(ext)));
         }
     }
@@ -519,6 +529,22 @@ mod tests {
         let hierarchical_jpg = crate::scanner::cover_storage_path(dir.path(), 44, "jpg");
         assert!(hierarchical_jpg.exists());
         assert!(!legacy_jpg.exists());
+    }
+
+    #[test]
+    fn test_find_cover_file_migrates_old_two_level_path() {
+        let dir = tempdir().unwrap();
+        let two_level = crate::scanner::two_level_cover_storage_path(dir.path(), 45, "jpg");
+        std::fs::create_dir_all(two_level.parent().unwrap()).unwrap();
+        std::fs::write(&two_level, b"jpg-bytes").unwrap();
+
+        let found = find_cover_file(dir.path(), 45).unwrap();
+        assert_eq!(found.0, b"jpg-bytes");
+        assert_eq!(found.1, "image/jpeg");
+
+        let current = crate::scanner::cover_storage_path(dir.path(), 45, "jpg");
+        assert!(current.exists());
+        assert!(!two_level.exists());
     }
 
     #[test]

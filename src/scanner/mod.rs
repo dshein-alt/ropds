@@ -1620,8 +1620,18 @@ pub fn save_cover(
 }
 
 /// Return hierarchical storage path for a cover file.
-/// Layout: `{covers_dir}/{bucket_millions}/{bucket_thousands}/{book_id}.{ext}`.
+/// Layout: `{covers_dir}/{bucket_thousands}/{book_id}.{ext}`.
 pub fn cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
+    let id = book_id.unsigned_abs();
+    let bucket_thousands = (id / 1_000) % 1_000;
+    covers_path
+        .join(format!("{bucket_thousands:03}"))
+        .join(format!("{book_id}.{ext}"))
+}
+
+/// Return old two-level hierarchical storage path for a cover file.
+/// Layout: `{covers_dir}/{bucket_millions}/{bucket_thousands}/{book_id}.{ext}`.
+pub fn two_level_cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
     let id = book_id.unsigned_abs();
     let bucket_millions = (id / 1_000_000) % 1_000;
     let bucket_thousands = (id / 1_000) % 1_000;
@@ -1659,11 +1669,12 @@ fn encode_jpeg(img: &DynamicImage, quality: u8) -> Option<Vec<u8>> {
     Some(out.into_inner())
 }
 
-/// Remove cover file for a book (tries all known extensions).
+/// Remove cover file for a book (tries all known extensions and layouts).
 fn delete_cover(covers_path: &Path, book_id: i64) {
     for ext in &["jpg", "png", "gif"] {
         for path in [
             cover_storage_path(covers_path, book_id, ext),
+            two_level_cover_storage_path(covers_path, book_id, ext),
             legacy_cover_storage_path(covers_path, book_id, ext),
         ] {
             if path.exists() {
@@ -1860,12 +1871,26 @@ root_path = "/tmp"
         let png = cover_storage_path(dir.path(), 42, "png");
         assert!(png.exists());
 
-        // Also create a legacy flat file to ensure backward-compatible cleanup.
+        // Also create legacy and old two-level files to ensure backward-compatible cleanup.
         let legacy_jpg = legacy_cover_storage_path(dir.path(), 42, "jpg");
         fs::write(&legacy_jpg, b"x").unwrap();
+        let two_level_jpg = two_level_cover_storage_path(dir.path(), 42, "jpg");
+        fs::create_dir_all(two_level_jpg.parent().unwrap()).unwrap();
+        fs::write(&two_level_jpg, b"x").unwrap();
         delete_cover(dir.path(), 42);
         assert!(!png.exists());
         assert!(!legacy_jpg.exists());
+        assert!(!two_level_jpg.exists());
+        // Bucket directories should be removed when empty.
+        assert!(!png.parent().unwrap().exists(), "1-level bucket dir should be removed");
+        assert!(
+            !two_level_jpg.parent().unwrap().exists(),
+            "2-level inner bucket dir should be removed"
+        );
+        assert!(
+            !two_level_jpg.parent().unwrap().parent().unwrap().exists(),
+            "2-level outer bucket dir should be removed"
+        );
 
         assert_eq!(mime_to_ext("image/png"), "png");
         assert_eq!(mime_to_ext("image/gif"), "gif");
@@ -1873,6 +1898,10 @@ root_path = "/tmp"
 
         assert_eq!(
             cover_storage_path(dir.path(), 1_500_123, "jpg"),
+            dir.path().join("500").join("1500123.jpg")
+        );
+        assert_eq!(
+            two_level_cover_storage_path(dir.path(), 1_500_123, "jpg"),
             dir.path().join("001").join("500").join("1500123.jpg")
         );
 
