@@ -37,10 +37,10 @@ pub async fn delete_book(
             .root_path
             .join(&book.path)
             .join(&book.filename);
-        if full_path.exists() {
-            if let Err(e) = std::fs::remove_file(&full_path) {
-                tracing::warn!("Failed to delete book file {full_path:?}: {e}");
-            }
+        if let Err(e) = std::fs::remove_file(&full_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("Failed to delete book file {full_path:?}: {e}");
         }
     } else {
         // For ZIP/INPX: add to suppression table
