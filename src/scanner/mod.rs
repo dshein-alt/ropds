@@ -1851,7 +1851,7 @@ mod tests {
         assert!(cat_id > 0);
 
         let parent: Option<(i64,)> =
-            sqlx::query_as(&*pool.sql("SELECT id FROM catalogs WHERE path = ?"))
+            sqlx::query_as(&pool.sql("SELECT id FROM catalogs WHERE path = ?"))
                 .bind("a")
                 .fetch_optional(pool.inner())
                 .await

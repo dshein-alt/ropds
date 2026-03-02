@@ -788,10 +788,10 @@ pub async fn set_book_authors_and_update_key(
 
     // ── orphan cleanup (outside transaction — non-critical) ─────────
     for (old_id,) in old_ids {
-        if !author_ids.contains(&old_id) {
-            if let Err(e) = crate::db::queries::authors::delete_if_orphaned(pool, old_id).await {
-                tracing::warn!(author_id = old_id, error = %e, "orphan author cleanup failed");
-            }
+        if !author_ids.contains(&old_id)
+            && let Err(e) = crate::db::queries::authors::delete_if_orphaned(pool, old_id).await
+        {
+            tracing::warn!(author_id = old_id, error = %e, "orphan author cleanup failed");
         }
     }
 
@@ -1595,7 +1595,7 @@ mod tests {
         let row = get_by_id(&pool, book).await.unwrap().unwrap();
 
         // IDs must be sorted numerically and comma-separated
-        let mut expected_ids = vec![a1, a2];
+        let mut expected_ids = [a1, a2];
         expected_ids.sort_unstable();
         let expected = expected_ids
             .iter()

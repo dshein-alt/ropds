@@ -15,7 +15,7 @@ static EMBEDDED_LOCALES: Dir<'_> = include_dir!("$OUT_DIR/embedded_assets/locale
 pub fn load_runtime_translations() -> Result<Translations, TranslationError> {
     #[cfg(debug_assertions)]
     {
-        return load_translations(Path::new("locales"));
+        load_translations(Path::new("locales"))
     }
 
     #[cfg(not(debug_assertions))]

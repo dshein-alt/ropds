@@ -125,8 +125,7 @@ mod tests {
         let pool = create_test_pool().await;
         let hash = crate::password::hash("secret123");
         sqlx::query(
-            &*pool
-                .sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)"),
+            &pool.sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)"),
         )
         .bind("alice")
         .bind(hash)

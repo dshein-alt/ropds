@@ -6,24 +6,24 @@ pub async fn home(
 ) -> Result<Html<String>, StatusCode> {
     let mut ctx = build_context(&state, &jar, "home").await;
 
-    if state.config.reader.enable {
-        if let Some(user_id) = session_user_id(&state, &jar) {
-            let recent = reading_positions::get_recent(&state.db, user_id, 8)
-                .await
-                .unwrap_or_default();
-            let continue_reading: Vec<ContinueReadingItem> = recent
-                .into_iter()
-                .map(|item| ContinueReadingItem {
-                    book_id: item.book_id,
-                    title: item.title,
-                    format: item.format,
-                    progress_pct: (item.progress.clamp(0.0, 1.0) * 100.0).round() as i32,
-                    updated_at: item.updated_at,
-                })
-                .collect();
+    if state.config.reader.enable
+        && let Some(user_id) = session_user_id(&state, &jar)
+    {
+        let recent = reading_positions::get_recent(&state.db, user_id, 8)
+            .await
+            .unwrap_or_default();
+        let continue_reading: Vec<ContinueReadingItem> = recent
+            .into_iter()
+            .map(|item| ContinueReadingItem {
+                book_id: item.book_id,
+                title: item.title,
+                format: item.format,
+                progress_pct: (item.progress.clamp(0.0, 1.0) * 100.0).round() as i32,
+                updated_at: item.updated_at,
+            })
+            .collect();
 
-            ctx.insert("continue_reading", &continue_reading);
-        }
+        ctx.insert("continue_reading", &continue_reading);
     }
 
     render(&state.tera, "web/home.html", &ctx)

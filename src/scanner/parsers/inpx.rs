@@ -270,19 +270,20 @@ mod tests {
         zip.finish().unwrap().into_inner()
     }
 
-    fn inpx_line(
-        author: &str,
-        genre: &str,
-        title: &str,
-        series: &str,
-        ser_no: &str,
-        file: &str,
-        size: &str,
-        del: &str,
-        ext: &str,
-        date: &str,
-        lang: &str,
-    ) -> String {
+    fn inpx_line(fields: [&str; 11]) -> String {
+        let [
+            author,
+            genre,
+            title,
+            series,
+            ser_no,
+            file,
+            size,
+            del,
+            ext,
+            date,
+            lang,
+        ] = fields;
         let sep = INPX_SEPARATOR as char;
         format!(
             "{author}{sep}{genre}{sep}{title}{sep}{series}{sep}{ser_no}{sep}{file}{sep}{size}{sep}lib{sep}{del}{sep}{ext}{sep}{date}{sep}{lang}"
@@ -291,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_parse_inpx_archive_records() {
-        let good = inpx_line(
+        let good = inpx_line([
             "Asimov,Isaac:Clarke,Arthur",
             "sf:space_opera",
             "Foundation",
@@ -303,10 +304,10 @@ mod tests {
             "fb2",
             "1951",
             "en",
-        );
-        let deleted = inpx_line(
+        ]);
+        let deleted = inpx_line([
             "Nobody", "sf", "Deleted", "", "0", "deleted", "1", "1", "fb2", "", "en",
-        );
+        ]);
         let zip_data = make_inpx_zip(&[(
             "pack-0001.inp",
             &format!(

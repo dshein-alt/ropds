@@ -127,8 +127,7 @@ pub async fn get_progress_map(
         return Ok(HashMap::new());
     }
 
-    let placeholders = std::iter::repeat("?")
-        .take(book_ids.len())
+    let placeholders = std::iter::repeat_n("?", book_ids.len())
         .collect::<Vec<_>>()
         .join(", ");
     let raw = format!(
