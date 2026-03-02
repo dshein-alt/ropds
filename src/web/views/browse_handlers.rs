@@ -287,6 +287,32 @@ pub async fn search_books(
             }
             (bks, cnt)
         }
+        "d" => {
+            // Duplicate versions: find all books in the same group as the given book ID
+            let id: i64 = params.q.parse().unwrap_or(0);
+            let (bks, cnt) = match books::get_by_id(&state.db, id).await {
+                Ok(Some(anchor)) => {
+                    let group = books::get_books_in_group(
+                        &state.db,
+                        &anchor.search_title,
+                        &anchor.author_key,
+                    )
+                    .await
+                    .unwrap_or_default();
+                    let cnt = group.len() as i64;
+                    (group, cnt)
+                }
+                _ => (vec![], 0),
+            };
+            let t = i18n::get_locale(&state.translations, &locale);
+            let label = t["book"]["book_versions"]
+                .as_str()
+                .unwrap_or("Book Versions");
+            ctx.insert("search_label", label);
+            ctx.insert("back_label", label);
+            ctx.insert("back_url", "/web/admin/duplicates");
+            (bks, cnt)
+        }
         "b" => {
             let term = params.q.to_uppercase();
             let bks =
@@ -371,7 +397,7 @@ pub async fn search_books(
             .unwrap_or(&params.q)
             .to_string(),
         // ID-based lookups (genre, direct book jump) should not prefill the search box.
-        "g" | "i" => String::new(),
+        "d" | "g" | "i" => String::new(),
         _ => params.q.clone(),
     };
 
