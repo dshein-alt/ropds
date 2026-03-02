@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026.03.02
+
+### Changed
+- Improved library scan parallelism with dynamic worker scheduling for more even processing of large collections.
+- Improved INPX processing performance by parallelizing referenced archive enrichment while keeping global worker limits.
+- Replaced legacy scanner parallelism dependency usage with the current task-based runtime approach.
+
+### Fixed
+- Improved scanner resource control so heavy scan and parsing work consistently respects shared concurrency limits.
+- Fixed scanner integration checks to match hierarchical cover storage paths.
+
 ## [0.8.5] - 2026.03.02
 
 ### Changed
