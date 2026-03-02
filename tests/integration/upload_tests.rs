@@ -3,7 +3,9 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 use ropds::db;
+use ropds::db::models::CatType;
 use ropds::db::queries::{authors, books, series};
+use ropds::scanner;
 
 use super::*;
 
@@ -106,10 +108,15 @@ async fn upload_file_and_publish() {
     assert_eq!(book_series[0].0.ser_name, "Test Series");
     assert_eq!(book_series[0].1, 1);
 
-    // Step 4: Verify file exists in library root
+    // Step 4: Verify file exists in per-user subdirectory
+    assert_eq!(book.path, "uploader");
     assert!(
-        lib_dir.path().join(&book.filename).exists(),
-        "published book file should exist in library root"
+        lib_dir
+            .path()
+            .join("uploader")
+            .join(&book.filename)
+            .exists(),
+        "published book file should exist in user upload subdirectory"
     );
 }
 
@@ -170,6 +177,156 @@ async fn upload_edit_metadata_on_publish() {
     assert_eq!(book_series.len(), 1, "should have 1 overridden series");
     assert_eq!(book_series[0].0.ser_name, "Overridden Saga");
     assert_eq!(book_series[0].1, 7);
+}
+
+/// Uploaded books are published under user-login-based subdirectory with escaping.
+#[tokio::test]
+async fn upload_publish_uses_sanitized_user_directory() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let upload_dir = tempfile::tempdir().unwrap();
+    let config = test_config_with_upload(lib_dir.path(), covers_dir.path(), upload_dir.path());
+
+    let username = "user.name+demo@host";
+    let expected_dir = "user.name_demo_host";
+    let user_id = create_test_user(&pool, username, "password123", true).await;
+    let session = session_cookie_value(user_id);
+    let csrf = csrf_for_session(&session);
+
+    let state = test_app_state(pool.clone(), config);
+
+    let file_data = std::fs::read(test_data_dir().join("test_book.fb2")).unwrap();
+    let (content_type, body) = build_multipart_body(&csrf, "test_book.fb2", &file_data);
+    let app = test_router(state.clone());
+    let req = axum::http::Request::builder()
+        .method("POST")
+        .uri("/web/upload/file")
+        .header("content-type", &content_type)
+        .header("cookie", format!("session={session}"))
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200, "upload should succeed");
+    let json: serde_json::Value =
+        serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let token = json["token"].as_str().unwrap().to_string();
+
+    let app2 = test_router(state);
+    let resp2 = post_json(
+        app2,
+        "/web/upload/publish",
+        serde_json::json!({"token": token, "csrf_token": csrf}),
+        &session,
+    )
+    .await;
+    assert_eq!(resp2.status(), 200, "publish should succeed");
+    let json2: serde_json::Value = serde_json::from_str(&body_string(resp2).await).unwrap();
+    let book_id = json2["book_id"].as_i64().unwrap();
+
+    let book = books::get_by_id(&pool, book_id).await.unwrap().unwrap();
+    assert_eq!(book.path, expected_dir);
+    assert!(
+        lib_dir
+            .path()
+            .join(expected_dir)
+            .join(&book.filename)
+            .exists(),
+        "published book file should exist in sanitized user subdirectory"
+    );
+}
+
+/// Existing users keep legacy root uploads untouched; new uploads go to user subdirectory.
+#[tokio::test]
+async fn upload_publish_keeps_legacy_root_books_as_is() {
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let upload_dir = tempfile::tempdir().unwrap();
+    let config = test_config_with_upload(lib_dir.path(), covers_dir.path(), upload_dir.path());
+
+    let username = "existing.user";
+    let user_id = create_test_user(&pool, username, "password123", true).await;
+    let session = session_cookie_value(user_id);
+    let csrf = csrf_for_session(&session);
+
+    // Seed a legacy upload in library root (path = "").
+    let legacy_name = "legacy_book.fb2";
+    let legacy_data = std::fs::read(test_data_dir().join("test_book.fb2")).unwrap();
+    let legacy_path = lib_dir.path().join(legacy_name);
+    std::fs::write(&legacy_path, &legacy_data).unwrap();
+    let legacy_catalog_id = scanner::ensure_catalog(&pool, "", CatType::Normal)
+        .await
+        .unwrap();
+    let legacy_meta = scanner::parsers::BookMeta {
+        title: "Legacy Root Book".to_string(),
+        ..Default::default()
+    };
+    let cover_cfg = ropds::config::CoverImageConfig::from(&config.covers);
+    let legacy_book_id = scanner::insert_book_with_meta(
+        &pool,
+        legacy_catalog_id,
+        legacy_name,
+        "",
+        "fb2",
+        legacy_data.len() as i64,
+        CatType::Normal,
+        &legacy_meta,
+        &config.covers.covers_path,
+        cover_cfg,
+    )
+    .await
+    .unwrap();
+
+    let state = test_app_state(pool.clone(), config);
+
+    // Upload + publish a new file for the same user.
+    let file_data = std::fs::read(test_data_dir().join("test_book.fb2")).unwrap();
+    let (content_type, body) = build_multipart_body(&csrf, "test_book.fb2", &file_data);
+    let app = test_router(state.clone());
+    let req = axum::http::Request::builder()
+        .method("POST")
+        .uri("/web/upload/file")
+        .header("content-type", &content_type)
+        .header("cookie", format!("session={session}"))
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let json: serde_json::Value =
+        serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let token = json["token"].as_str().unwrap().to_string();
+
+    let app2 = test_router(state);
+    let resp2 = post_json(
+        app2,
+        "/web/upload/publish",
+        serde_json::json!({"token": token, "csrf_token": csrf}),
+        &session,
+    )
+    .await;
+    assert_eq!(resp2.status(), 200);
+    let json2: serde_json::Value = serde_json::from_str(&body_string(resp2).await).unwrap();
+    let new_book_id = json2["book_id"].as_i64().unwrap();
+
+    // Legacy file and DB path remain unchanged.
+    let legacy_book = books::get_by_id(&pool, legacy_book_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(legacy_book.path, "");
+    assert!(lib_dir.path().join(&legacy_book.filename).exists());
+
+    // Newly published file goes to per-user directory.
+    let new_book = books::get_by_id(&pool, new_book_id).await.unwrap().unwrap();
+    assert_eq!(new_book.path, "existing.user");
+    assert!(
+        lib_dir
+            .path()
+            .join("existing.user")
+            .join(&new_book.filename)
+            .exists()
+    );
 }
 
 /// Upload page is forbidden without upload permission.

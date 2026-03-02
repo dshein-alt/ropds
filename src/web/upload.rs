@@ -135,6 +135,25 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+/// Sanitise per-user upload directory name from login:
+/// keep ASCII alphanumeric and `.`, replace all other chars with `_`.
+fn sanitize_upload_dir_name(login: &str) -> String {
+    let mut out: String = login
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() || out == "." || out == ".." {
+        out = "user".to_string();
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Upload state persisted as JSON on disk
 // ---------------------------------------------------------------------------
@@ -636,23 +655,45 @@ pub async fn publish(
         return json_error(StatusCode::FORBIDDEN, "forbidden");
     }
 
-    // 6. Build a safe destination filename
+    // 6. Build destination path under per-user upload directory
+    let username = match users::get_username(&state.db, user_id).await {
+        Ok(name) if !name.is_empty() => name,
+        Ok(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish"),
+        Err(e) => {
+            tracing::error!("Failed to load username for publish: {e}");
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+        }
+    };
+    let user_dir = sanitize_upload_dir_name(&username);
+
+    // 7. Build a safe destination filename
     let safe_filename = format!(
         "{}.{}",
         sanitize_filename(&upload_state.original_filename),
         upload_state.extension
     );
     let root_path = &state.config.library.root_path;
-    let dest_path = root_path.join(&safe_filename);
+    let dest_dir = root_path.join(&user_dir);
+    let dest_path = dest_dir.join(&safe_filename);
 
-    // 7. Check for DB duplicate
+    // 8. Check for DB duplicate in the same user directory
     if let Ok(Some(_)) =
-        crate::db::queries::books::find_by_path_and_filename(&state.db, "", &safe_filename).await
+        crate::db::queries::books::find_by_path_and_filename(&state.db, &user_dir, &safe_filename)
+            .await
     {
         return json_error(StatusCode::CONFLICT, "error_duplicate");
     }
 
-    // 8. Atomically create destination file (prevents TOCTOU race on disk)
+    // 9. Ensure destination directory exists (first upload for user).
+    if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+        tracing::error!(
+            "Failed to create destination upload directory '{}': {e}",
+            dest_dir.display()
+        );
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+    }
+
+    // 10. Atomically create destination file (prevents TOCTOU race on disk)
     let source_data = match std::fs::read(&upload_state.temp_path) {
         Ok(d) => d,
         Err(e) => {
@@ -683,7 +724,7 @@ pub async fn publish(
         }
     }
 
-    // 9. Build BookMeta and insert into DB
+    // 11. Build BookMeta and insert into DB
     let cover_data = upload_state
         .cover_path
         .as_ref()
@@ -720,22 +761,23 @@ pub async fn publish(
         cover_type: upload_state.cover_type.clone(),
     };
 
-    // Ensure root catalog exists (empty path = root)
-    let catalog_id = match crate::scanner::ensure_catalog(&state.db, "", CatType::Normal).await {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!("Failed to ensure catalog: {e}");
-            let _ = std::fs::remove_file(&dest_path);
-            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
-        }
-    };
+    // Ensure user upload catalog exists.
+    let catalog_id =
+        match crate::scanner::ensure_catalog(&state.db, &user_dir, CatType::Normal).await {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::error!("Failed to ensure catalog: {e}");
+                let _ = std::fs::remove_file(&dest_path);
+                return json_error(StatusCode::INTERNAL_SERVER_ERROR, "error_publish");
+            }
+        };
 
     let cover_cfg = crate::config::CoverImageConfig::from(&state.config.covers);
     let book_id = match crate::scanner::insert_book_with_meta(
         &state.db,
         catalog_id,
         &safe_filename,
-        "", // path relative to root
+        &user_dir, // path relative to root
         &upload_state.extension,
         upload_state.size,
         CatType::Normal,
@@ -754,19 +796,19 @@ pub async fn publish(
         }
     };
 
-    // 10. Update counters (non-critical, log on failure)
+    // 12. Update counters (non-critical, log on failure)
     if let Err(e) = crate::db::queries::counters::update_all(&state.db).await {
         tracing::warn!("Failed to update counters after publish: {e}");
     }
 
-    // 11. Clean up temp files
+    // 13. Clean up temp files
     let _ = std::fs::remove_file(&upload_state.temp_path);
     if let Some(ref cover) = upload_state.cover_path {
         let _ = std::fs::remove_file(cover);
     }
     let _ = std::fs::remove_file(&state_file);
 
-    // 12. Return success
+    // 14. Return success
     json_success(serde_json::json!({
         "success": true,
         "book_id": book_id,
@@ -845,6 +887,15 @@ mod tests {
     #[test]
     fn test_sanitize_filename_special_chars() {
         assert_eq!(sanitize_filename("<script>.fb2"), "_script_");
+    }
+
+    #[test]
+    fn test_sanitize_upload_dir_name() {
+        assert_eq!(sanitize_upload_dir_name("uploader"), "uploader");
+        assert_eq!(sanitize_upload_dir_name("user.name"), "user.name");
+        assert_eq!(sanitize_upload_dir_name("user+name@test"), "user_name_test");
+        assert_eq!(sanitize_upload_dir_name(".."), "user");
+        assert_eq!(sanitize_upload_dir_name(""), "user");
     }
 
     #[test]
