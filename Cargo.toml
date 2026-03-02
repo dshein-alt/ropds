@@ -41,7 +41,6 @@ time = "0.3"
 # Scanner: filesystem, archives, XML parsing, images, parallelism
 walkdir = "2"
 zip = "8.1"
-rayon = "1"
 dashmap = "6"
 quick-xml = "0.39"
 base64 = "0.22"

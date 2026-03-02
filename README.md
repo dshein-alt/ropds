@@ -26,7 +26,7 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 
 **Library Management**
 - Automatic background scanning with configurable schedule
-- Parallel scanning with Rayon thread pools
+- Parallel scanning with worker-limited dynamic task scheduling
 - Supports books inside ZIP archives and INPX index files
 - Metadata extraction for FB2, EPUB, and MOBI (title, authors, genres, series, covers, annotations)
 - Optional PDF/DjVu cover generation via external tools (`pdftoppm`, `ddjvu`)
@@ -223,7 +223,7 @@ Migrations run automatically on startup. Backend-specific migration sets are emb
 | UI framework | Bootstrap 5 + Bootstrap Icons |
 | Password hashing | Argon2 |
 | XML parsing | quick-xml |
-| Parallelism | Rayon + DashMap |
+| Parallelism | Tokio task queue + DashMap |
 
 ## Performance
 
