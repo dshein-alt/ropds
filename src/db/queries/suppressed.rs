@@ -1,14 +1,8 @@
 use crate::db::DbPool;
 
 /// Check if a (path, filename) pair is suppressed.
-pub async fn is_suppressed(
-    pool: &DbPool,
-    path: &str,
-    filename: &str,
-) -> Result<bool, sqlx::Error> {
-    let sql = pool.sql(
-        "SELECT COUNT(*) FROM suppressed_books WHERE path = ? AND filename = ?",
-    );
+pub async fn is_suppressed(pool: &DbPool, path: &str, filename: &str) -> Result<bool, sqlx::Error> {
+    let sql = pool.sql("SELECT COUNT(*) FROM suppressed_books WHERE path = ? AND filename = ?");
     let (count,): (i64,) = sqlx::query_as(&sql)
         .bind(path)
         .bind(filename)
@@ -18,11 +12,7 @@ pub async fn is_suppressed(
 }
 
 /// Insert a suppression record.
-pub async fn suppress(
-    pool: &DbPool,
-    path: &str,
-    filename: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn suppress(pool: &DbPool, path: &str, filename: &str) -> Result<(), sqlx::Error> {
     let sql = match pool.backend() {
         crate::db::DbBackend::Mysql => {
             "INSERT IGNORE INTO suppressed_books (path, filename) VALUES (?, ?)"
