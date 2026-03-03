@@ -1,18 +1,19 @@
+mod book;
+mod cover;
+mod db;
+mod inpx;
 pub mod parsers;
+mod zip;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
-use dashmap::DashMap;
-use image::DynamicImage;
-use image::GenericImageView;
-use image::codecs::jpeg::JpegEncoder;
-use tokio::sync::Semaphore;
+use dashmap::{DashMap, DashSet};
+use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
@@ -21,7 +22,21 @@ use crate::db::DbPool;
 use crate::db::models::{AvailStatus, CatType};
 use crate::db::queries::{authors, books, catalogs, counters, genres, series};
 
+use book::process_file;
+pub use book::{insert_book_with_meta, parse_book_bytes, parse_book_file};
+use cover::delete_cover;
+pub(crate) use cover::normalize_cover_for_storage_with_options;
+pub use cover::{
+    cover_storage_path, legacy_cover_storage_path, save_cover, two_level_cover_storage_path,
+};
+use db::{
+    build_pending_book_insert, enqueue_pending_book, ensure_archive_catalog,
+    run_pending_book_writer,
+};
+pub use db::{ensure_author, ensure_catalog, ensure_series};
+use inpx::process_inpx;
 use parsers::{BookMeta, detect_lang_code, normalise_author_name};
+use zip::process_zip;
 
 // ---------------------------------------------------------------------------
 // Global state
@@ -140,7 +155,62 @@ struct ScanContext {
     // Caches (reduces DB round-trips under parallelism)
     catalog_cache: DashMap<String, i64>,
     author_cache: DashMap<String, i64>,
+    genre_cache: DashMap<String, Option<i64>>,
     series_cache: DashMap<String, i64>,
+    existing_books_by_path: HashMap<String, HashMap<String, i64>>,
+    confirmed_existing_ids: DashSet<i64>,
+    pending_new_books: DashSet<String>,
+    pending_book_tx: mpsc::Sender<PendingBookMsg>,
+}
+
+impl ScanContext {
+    fn existing_book_id(&self, path: &str, filename: &str) -> Option<i64> {
+        self.existing_books_by_path
+            .get(path)
+            .and_then(|by_name| by_name.get(filename))
+            .copied()
+    }
+
+    fn mark_existing_book_confirmed(&self, book_id: i64) {
+        self.confirmed_existing_ids.insert(book_id);
+    }
+
+    fn pending_book_key(path: &str, filename: &str) -> String {
+        // NUL cannot appear in filesystem path components, so this separator
+        // avoids accidental key collisions across (path, filename) pairs.
+        format!("{path}\0{filename}")
+    }
+
+    fn try_mark_pending_new_book(&self, path: &str, filename: &str) -> bool {
+        self.pending_new_books
+            .insert(Self::pending_book_key(path, filename))
+    }
+}
+
+struct PendingBookInsert {
+    catalog_id: i64,
+    filename: String,
+    path: String,
+    format: String,
+    size: i64,
+    cat_type: CatType,
+    title: String,
+    search_title: String,
+    annotation: String,
+    docdate: String,
+    lang: String,
+    lang_code: i32,
+    cover_type: String,
+    cover_data: Option<Vec<u8>>,
+    author_ids: Vec<i64>,
+    genre_ids: Vec<i64>,
+    series_link: Option<(i64, i32)>,
+    author_key: String,
+}
+
+enum PendingBookMsg {
+    Insert(Box<PendingBookInsert>),
+    Finish,
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +233,14 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
     info!("Starting library scan: {}", root.display());
 
     let stats = Arc::new(ScanStats::default());
+    let existing_books = books::list_existing_for_scan(pool).await?;
+    let mut existing_books_by_path: HashMap<String, HashMap<String, i64>> = HashMap::new();
+    for row in existing_books {
+        existing_books_by_path
+            .entry(row.path)
+            .or_default()
+            .insert(row.filename, row.id);
+    }
 
     // Step 1: Mark all available books as unverified (avail=1)
     let marked = books::set_avail_all(pool, AvailStatus::Unverified).await?;
@@ -179,6 +257,8 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
 
     let entries = walk_result?;
     info!("Found {} entries to process", entries.len());
+    let (pending_book_tx, pending_book_rx) =
+        mpsc::channel::<PendingBookMsg>(workers_num.max(1) * 128);
 
     let ctx = ScanContext {
         pool: pool.clone(),
@@ -194,10 +274,18 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         test_files: config.scanner.test_files,
         catalog_cache: DashMap::new(),
         author_cache: DashMap::new(),
+        genre_cache: DashMap::new(),
         series_cache: DashMap::new(),
+        existing_books_by_path,
+        confirmed_existing_ids: DashSet::new(),
+        pending_new_books: DashSet::new(),
+        pending_book_tx,
     };
 
     let ctx = Arc::new(ctx);
+    let writer_ctx = Arc::clone(&ctx);
+    let writer_task =
+        tokio::spawn(async move { run_pending_book_writer(writer_ctx, pending_book_rx).await });
 
     if workers_num <= 1 {
         // Sequential processing (default)
@@ -235,8 +323,41 @@ async fn do_scan(pool: &DbPool, config: &Config) -> Result<ScanStatsSnapshot, Sc
         }
     }
 
+    if let Err(e) = ctx.pending_book_tx.send(PendingBookMsg::Finish).await {
+        warn!("Failed to finalize pending-book writer: {e}");
+        ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+    }
+    match writer_task.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            warn!("Pending-book writer failed: {e}");
+            ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(e) => {
+            warn!("Pending-book writer join failure: {e}");
+            ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let mut confirmed_existing_ids: Vec<i64> =
+        ctx.confirmed_existing_ids.iter().map(|id| *id).collect();
+    confirmed_existing_ids.sort_unstable();
+    let confirmed_updated =
+        books::set_avail_confirmed_for_ids(pool, &confirmed_existing_ids).await?;
+    debug!(
+        "Confirmed existing books by id: requested={}, updated={}",
+        confirmed_existing_ids.len(),
+        confirmed_updated
+    );
+
     // Step 3: Handle books not found during scan (avail <= 1)
-    if config.scanner.delete_logical {
+    let scan_errors = stats.errors.load(Ordering::Relaxed);
+    if scan_errors > 0 {
+        warn!(
+            "Skipping deletion step: {scan_errors} error(s) occurred during scan, \
+             some books may have been left unverified due to worker failures"
+        );
+    } else if config.scanner.delete_logical {
         let deleted = books::logical_delete_unavailable(pool).await?;
         stats.books_deleted.store(deleted, Ordering::Relaxed);
         info!("Logically deleted {deleted} unavailable books");
@@ -443,1288 +564,9 @@ async fn acquire_scan_permit(
         .map_err(|e| ScanError::Internal(format!("scan semaphore closed: {e}")))
 }
 
-/// Process a single book file on disk.
-async fn process_file(
-    ctx: &ScanContext,
-    path: &Path,
-    rel_path: &str,
-    filename: &str,
-    extension: &str,
-    size: i64,
-) -> Result<(), ScanError> {
-    // Check if already in DB
-    if let Some(existing) = books::find_by_path_and_filename(&ctx.pool, rel_path, filename).await? {
-        books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
-        ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-        return Ok(());
-    }
-
-    // Skip books suppressed by admin
-    if crate::db::queries::suppressed::is_suppressed(&ctx.pool, rel_path, filename).await? {
-        ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-        return Ok(());
-    }
-
-    // Parse metadata
-    let meta = {
-        let _permit = acquire_scan_permit(ctx).await?;
-        tokio::task::spawn_blocking({
-            let path = path.to_path_buf();
-            let ext = extension.to_string();
-            let cover_cfg = ctx.cover_image_cfg;
-            move || parse_book_file(&path, &ext, cover_cfg)
-        })
-        .await
-        .map_err(|e| ScanError::Internal(e.to_string()))??
-    };
-
-    // Ensure catalog exists
-    let catalog_id = cached_ensure_catalog(ctx, rel_path, CatType::Normal).await?;
-
-    // Insert book and link metadata
-    ctx_insert_book_with_meta(
-        ctx,
-        catalog_id,
-        filename,
-        rel_path,
-        extension,
-        size,
-        CatType::Normal,
-        &meta,
-    )
-    .await?;
-
-    ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
-    Ok(())
-}
-
-/// Process a ZIP archive containing book files.
-async fn process_zip(
-    ctx: &ScanContext,
-    zip_path: &Path,
-    rel_dir: &str,
-    mtime: &str,
-) -> Result<(), ScanError> {
-    let zip_filename = zip_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let rel_zip = if rel_dir.is_empty() {
-        zip_filename.clone()
-    } else {
-        format!("{rel_dir}/{zip_filename}")
-    };
-
-    let zip_size = fs::metadata(zip_path)?.len() as i64;
-    if try_skip_zip_archive(&ctx.pool, &rel_zip, zip_size, ctx.skip_unchanged, mtime).await? {
-        ctx.stats.archives_skipped.fetch_add(1, Ordering::Relaxed);
-        return Ok(());
-    }
-
-    // Validate ZIP integrity if enabled
-    if ctx.test_zip {
-        let zip_path_buf = zip_path.to_path_buf();
-        let valid = {
-            let _permit = acquire_scan_permit(ctx).await?;
-            tokio::task::spawn_blocking(move || validate_zip_integrity(&zip_path_buf))
-                .await
-                .map_err(|e| ScanError::Internal(e.to_string()))??
-        };
-        if !valid {
-            warn!("ZIP integrity check failed: {}", zip_path.display());
-            ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
-            return Ok(());
-        }
-    }
-
-    let catalog_id =
-        ensure_archive_catalog(&ctx.pool, &rel_zip, CatType::Zip, zip_size, mtime).await?;
-
-    // Read ZIP contents in a blocking task
-    let zip_path_buf = zip_path.to_path_buf();
-    let extensions_clone = ctx.extensions.clone();
-    let test_files = ctx.test_files;
-
-    let zip_entries = {
-        let _permit = acquire_scan_permit(ctx).await?;
-        tokio::task::spawn_blocking(move || {
-            read_zip_entries(&zip_path_buf, &extensions_clone, test_files)
-        })
-        .await
-        .map_err(|e| ScanError::Internal(e.to_string()))??
-    };
-
-    for ze in zip_entries {
-        // Check if already in DB
-        if let Some(existing) =
-            books::find_by_path_and_filename(&ctx.pool, &rel_zip, &ze.filename).await?
-        {
-            books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
-            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-            continue;
-        }
-
-        // Skip books suppressed by admin
-        if crate::db::queries::suppressed::is_suppressed(&ctx.pool, &rel_zip, &ze.filename).await? {
-            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-            continue;
-        }
-
-        // Parse metadata from in-memory data
-        let meta = {
-            let data = ze.data.clone();
-            let ext = ze.extension.clone();
-            let filename = ze.filename.clone();
-            let cover_cfg = ctx.cover_image_cfg;
-            // Keep per-entry parse under the shared budget so ZIP parsing and
-            // INPX enrichment parsing draw from the same global limit.
-            let _permit = acquire_scan_permit(ctx).await?;
-            tokio::task::spawn_blocking(move || parse_book_bytes(&data, &ext, &filename, cover_cfg))
-                .await
-                .map_err(|e| ScanError::Internal(e.to_string()))?
-        };
-
-        let meta = match meta {
-            Ok(m) => m,
-            Err(e) => {
-                debug!("Failed to parse {} in {}: {e}", ze.filename, zip_filename);
-                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
-        };
-
-        ctx_insert_book_with_meta(
-            ctx,
-            catalog_id,
-            &ze.filename,
-            &rel_zip,
-            &ze.extension,
-            ze.size,
-            CatType::Zip,
-            &meta,
-        )
-        .await?;
-
-        ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
-    }
-
-    ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
-    Ok(())
-}
-
-/// Process an INPX index file.
-async fn process_inpx(
-    ctx: Arc<ScanContext>,
-    inpx_path: &Path,
-    rel_path: &str,
-    mtime: &str,
-) -> Result<(), ScanError> {
-    let inpx_size = fs::metadata(inpx_path)?.len() as i64;
-    let inpx_dir = Path::new(rel_path)
-        .parent()
-        .unwrap_or(Path::new(""))
-        .to_string_lossy()
-        .to_string();
-
-    if try_skip_inpx_archive(
-        &ctx.pool,
-        rel_path,
-        &inpx_dir,
-        inpx_size,
-        ctx.skip_unchanged,
-        mtime,
-    )
-    .await?
-    {
-        ctx.stats.archives_skipped.fetch_add(1, Ordering::Relaxed);
-        return Ok(());
-    }
-
-    ensure_archive_catalog(&ctx.pool, rel_path, CatType::Inpx, inpx_size, mtime).await?;
-
-    let inpx_path_buf = inpx_path.to_path_buf();
-    let records = {
-        let _permit = acquire_scan_permit(&ctx).await?;
-        tokio::task::spawn_blocking(move || {
-            let file = fs::File::open(&inpx_path_buf)?;
-            let reader = BufReader::new(file);
-            parsers::inpx::parse(reader)
-        })
-        .await
-        .map_err(|e| ScanError::Internal(e.to_string()))?
-        .map_err(|e| ScanError::Internal(e.to_string()))?
-    };
-
-    info!("INPX: parsed {} records from {}", records.len(), rel_path);
-
-    // Group records by referenced ZIP archive to avoid reopening the same ZIP
-    // for each book entry.
-    let mut by_zip_path: BTreeMap<String, Vec<parsers::inpx::InpxRecord>> = BTreeMap::new();
-    for record in records {
-        let book_path = if inpx_dir.is_empty() {
-            record.folder.clone()
-        } else {
-            format!("{inpx_dir}/{}", record.folder)
-        };
-        by_zip_path.entry(book_path).or_default().push(record);
-    }
-
-    let groups: Vec<(String, Vec<parsers::inpx::InpxRecord>)> = by_zip_path.into_iter().collect();
-    if groups.is_empty() {
-        ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
-        return Ok(());
-    }
-
-    if ctx.workers_num <= 1 || groups.len() == 1 {
-        for (book_path, zip_records) in groups {
-            if let Err(e) = process_inpx_zip_group(&ctx, &book_path, zip_records).await {
-                warn!("INPX group processing failed for '{}': {}", book_path, e);
-                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-    } else {
-        let limit = ctx.workers_num.min(groups.len()).max(1);
-        let mut iter = groups.into_iter();
-        let mut tasks = tokio::task::JoinSet::new();
-
-        for _ in 0..limit {
-            if let Some((book_path, zip_records)) = iter.next() {
-                let ctx = Arc::clone(&ctx);
-                tasks.spawn(
-                    async move { process_inpx_zip_group(&ctx, &book_path, zip_records).await },
-                );
-            }
-        }
-
-        while let Some(join_result) = tasks.join_next().await {
-            match join_result {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    warn!("INPX worker task failed: {e}");
-                    ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
-                }
-                Err(e) => {
-                    warn!("INPX worker join failure: {e}");
-                    ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            if let Some((book_path, zip_records)) = iter.next() {
-                let ctx = Arc::clone(&ctx);
-                tasks.spawn(
-                    async move { process_inpx_zip_group(&ctx, &book_path, zip_records).await },
-                );
-            }
-        }
-    }
-
-    ctx.stats.archives_scanned.fetch_add(1, Ordering::Relaxed);
-    Ok(())
-}
-
-async fn process_inpx_zip_group(
-    ctx: &ScanContext,
-    book_path: &str,
-    zip_records: Vec<parsers::inpx::InpxRecord>,
-) -> Result<(), ScanError> {
-    let mut pending = Vec::new();
-    for record in zip_records {
-        // Check if already in DB
-        if let Some(existing) =
-            books::find_by_path_and_filename(&ctx.pool, book_path, &record.filename).await?
-        {
-            books::set_avail(&ctx.pool, existing.id, AvailStatus::Confirmed).await?;
-            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-            continue;
-        }
-
-        // Skip books suppressed by admin
-        if crate::db::queries::suppressed::is_suppressed(&ctx.pool, book_path, &record.filename)
-            .await?
-        {
-            ctx.stats.books_skipped.fetch_add(1, Ordering::Relaxed);
-            continue;
-        }
-
-        pending.push(record);
-    }
-
-    if pending.is_empty() {
-        return Ok(());
-    }
-
-    // Best-effort metadata enrichment from referenced ZIP entries.
-    let needed_filenames: HashSet<String> = pending.iter().map(|r| r.filename.clone()).collect();
-    let zip_abs_path = ctx.root.join(book_path);
-    let mut parsed_meta = if !zip_abs_path.exists() {
-        warn!(
-            "INPX referenced ZIP archive is missing: {}",
-            zip_abs_path.display()
-        );
-        HashMap::new()
-    } else {
-        let zip_abs_path_for_parse = zip_abs_path.clone();
-        let exts = ctx.extensions.clone();
-        let test_files = ctx.test_files;
-        let cover_cfg = ctx.cover_image_cfg;
-
-        let parsed_meta = {
-            let _permit = acquire_scan_permit(ctx).await?;
-            tokio::task::spawn_blocking(move || {
-                read_selected_zip_entries_meta(
-                    &zip_abs_path_for_parse,
-                    &exts,
-                    &needed_filenames,
-                    test_files,
-                    cover_cfg,
-                )
-            })
-            .await
-            .map_err(|e| ScanError::Internal(e.to_string()))?
-        };
-
-        match parsed_meta {
-            Ok(meta) => meta,
-            Err(e) => {
-                warn!(
-                    "INPX metadata enrichment failed for {}: {}",
-                    zip_abs_path.display(),
-                    e
-                );
-                HashMap::new()
-            }
-        }
-    };
-
-    let catalog_id = cached_ensure_catalog(ctx, book_path, CatType::Inpx).await?;
-    for record in pending {
-        let mut meta = record.meta;
-        if let Some(parsed) = parsed_meta.remove(&record.filename) {
-            if !parsed.annotation.trim().is_empty() {
-                meta.annotation = parsed.annotation;
-            }
-            if let Some(cover_data) = parsed.cover_data {
-                meta.cover_data = Some(cover_data);
-                meta.cover_type = parsed.cover_type;
-            }
-        }
-
-        match ctx_insert_book_with_meta(
-            ctx,
-            catalog_id,
-            &record.filename,
-            book_path,
-            &record.format,
-            record.size,
-            CatType::Inpx,
-            &meta,
-        )
-        .await
-        {
-            Ok(_) => {
-                ctx.stats.books_added.fetch_add(1, Ordering::Relaxed);
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to insert INPX book '{}::{}': {}",
-                    book_path, record.filename, e
-                );
-                ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Book parsing
-// ---------------------------------------------------------------------------
-
-/// Parse a book file from disk by extension.
-pub fn parse_book_file(
-    path: &Path,
-    ext: &str,
-    cover_cfg: CoverImageConfig,
-) -> Result<BookMeta, ScanError> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    match ext {
-        "fb2" => parsers::fb2::parse(reader).map_err(|e| ScanError::Parse(e.to_string())),
-        "epub" => {
-            // EPUB needs Read + Seek, reopen as file
-            let file = fs::File::open(path)?;
-            parsers::epub::parse(file).map_err(|e| ScanError::Parse(e.to_string()))
-        }
-        "mobi" => parsers::mobi::parse(reader).map_err(|e| ScanError::Parse(e.to_string())),
-        "pdf" => {
-            let fallback_title = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let mut meta = BookMeta {
-                title: fallback_title.clone(),
-                ..Default::default()
-            };
-
-            match crate::pdf::extract_metadata_from_path(path) {
-                Ok(pdf_meta) => {
-                    if let Some(title) = pdf_meta.title {
-                        meta.title = title;
-                    }
-                    if let Some(author) = pdf_meta.author {
-                        meta.authors = vec![author];
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to extract PDF metadata for {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
-
-            if meta.title.trim().is_empty() {
-                meta.title = fallback_title;
-            }
-
-            match crate::pdf::render_first_page_jpeg_from_path(path, cover_cfg) {
-                Ok(cover) => {
-                    meta.cover_data = Some(cover);
-                    meta.cover_type = "image/jpeg".to_string();
-                }
-                Err(e) => {
-                    warn!("Failed to render PDF cover for {}: {}", path.display(), e);
-                }
-            }
-
-            Ok(meta)
-        }
-        "djvu" => {
-            let fallback_title = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let mut meta = BookMeta {
-                title: fallback_title,
-                ..Default::default()
-            };
-
-            match crate::djvu::render_first_page_jpeg_from_path(path, cover_cfg) {
-                Ok(cover) => {
-                    meta.cover_data = Some(cover);
-                    meta.cover_type = "image/jpeg".to_string();
-                }
-                Err(e) => {
-                    warn!("Failed to render DJVU cover for {}: {}", path.display(), e);
-                }
-            }
-
-            Ok(meta)
-        }
-        _ => {
-            // For unsupported formats, return minimal metadata from filename
-            Ok(BookMeta {
-                title: path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string(),
-                ..Default::default()
-            })
-        }
-    }
-}
-
-/// Parse book metadata from in-memory bytes.
-pub fn parse_book_bytes(
-    data: &[u8],
-    ext: &str,
-    filename: &str,
-    cover_cfg: CoverImageConfig,
-) -> Result<BookMeta, ScanError> {
-    match ext {
-        "fb2" => {
-            let reader = BufReader::new(Cursor::new(data));
-            parsers::fb2::parse(reader).map_err(|e| ScanError::Parse(e.to_string()))
-        }
-        "epub" => {
-            let cursor = Cursor::new(data);
-            parsers::epub::parse(cursor).map_err(|e| ScanError::Parse(e.to_string()))
-        }
-        "mobi" => parsers::mobi::parse_bytes(data).map_err(|e| ScanError::Parse(e.to_string())),
-        "pdf" => {
-            let fallback_title = Path::new(filename)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let mut meta = BookMeta {
-                title: fallback_title.clone(),
-                ..Default::default()
-            };
-
-            match crate::pdf::extract_metadata_from_bytes(data) {
-                Ok(pdf_meta) => {
-                    if let Some(title) = pdf_meta.title {
-                        meta.title = title;
-                    }
-                    if let Some(author) = pdf_meta.author {
-                        meta.authors = vec![author];
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to extract PDF metadata from archive bytes: {}", e);
-                }
-            }
-
-            if meta.title.trim().is_empty() {
-                meta.title = fallback_title;
-            }
-
-            match crate::pdf::render_first_page_jpeg_from_bytes(data, cover_cfg) {
-                Ok(cover) => {
-                    meta.cover_data = Some(cover);
-                    meta.cover_type = "image/jpeg".to_string();
-                }
-                Err(e) => {
-                    warn!("Failed to render PDF cover from archive bytes: {}", e);
-                }
-            }
-            Ok(meta)
-        }
-        "djvu" => {
-            let fallback_title = Path::new(filename)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let mut meta = BookMeta {
-                title: fallback_title,
-                ..Default::default()
-            };
-
-            match crate::djvu::render_first_page_jpeg_from_bytes(data, cover_cfg) {
-                Ok(cover) => {
-                    meta.cover_data = Some(cover);
-                    meta.cover_type = "image/jpeg".to_string();
-                }
-                Err(e) => {
-                    warn!("Failed to render DJVU cover from archive bytes: {}", e);
-                }
-            }
-
-            Ok(meta)
-        }
-        _ => Ok(BookMeta {
-            title: Path::new(filename)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-            ..Default::default()
-        }),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ZIP reading / validation
-// ---------------------------------------------------------------------------
-
-struct ZipBookEntry {
-    filename: String,
-    extension: String,
-    size: i64,
-    data: Vec<u8>,
-}
-
-/// Iterate ZIP entries, read matching files into memory, validate size if
-/// requested, and hand data to a callback.
-fn for_each_matching_zip_entry<S, H>(
-    path: &Path,
-    extensions: &HashSet<String>,
-    test_files: bool,
-    mut select: S,
-    mut on_entry: H,
-) -> Result<(), ScanError>
-where
-    S: FnMut(&str, &str, &str) -> bool,
-    H: FnMut(String, String, u64, Vec<u8>),
-{
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut archive = zip::ZipArchive::new(reader)?;
-
-    for i in 0..archive.len() {
-        let mut entry = match archive.by_index(i) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        if entry.is_dir() {
-            continue;
-        }
-
-        let name = entry.name().to_string();
-        let ext = Path::new(&name)
-            .extension()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_lowercase();
-        if !extensions.contains(&ext) {
-            continue;
-        }
-
-        let filename = Path::new(&name)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        if !select(&name, &filename, &ext) {
-            continue;
-        }
-
-        let declared_size = entry.size();
-        let mut data = Vec::new();
-        if let Err(e) = std::io::Read::read_to_end(&mut entry, &mut data) {
-            warn!("Failed to read {name} from ZIP: {e}");
-            continue;
-        }
-
-        if test_files && data.len() as u64 != declared_size {
-            warn!(
-                "Size mismatch for {} in {}: expected {}, got {}",
-                name,
-                path.display(),
-                declared_size,
-                data.len()
-            );
-            continue;
-        }
-
-        on_entry(filename, ext, declared_size, data);
-    }
-
-    Ok(())
-}
-
-/// Read all matching book files from a ZIP archive.
-/// When `test_files` is enabled, entries whose extracted size does not match
-/// the declared size are skipped.
-fn read_zip_entries(
-    path: &Path,
-    extensions: &HashSet<String>,
-    test_files: bool,
-) -> Result<Vec<ZipBookEntry>, ScanError> {
-    let mut entries = Vec::new();
-
-    for_each_matching_zip_entry(
-        path,
-        extensions,
-        test_files,
-        |_, _, _| true,
-        |filename, ext, declared_size, data| {
-            entries.push(ZipBookEntry {
-                filename,
-                extension: ext,
-                size: declared_size as i64,
-                data,
-            });
-        },
-    )?;
-
-    Ok(entries)
-}
-
-/// Read selected book files from a ZIP archive and parse metadata for each
-/// matched entry, keyed by basename filename.
-fn read_selected_zip_entries_meta(
-    path: &Path,
-    extensions: &HashSet<String>,
-    needed_filenames: &HashSet<String>,
-    test_files: bool,
-    cover_cfg: CoverImageConfig,
-) -> Result<HashMap<String, BookMeta>, ScanError> {
-    let mut out = HashMap::new();
-
-    for_each_matching_zip_entry(
-        path,
-        extensions,
-        test_files,
-        |_, filename, _| needed_filenames.contains(filename),
-        |filename, ext, _, data| {
-            if out.contains_key(&filename) {
-                warn!(
-                    "Duplicate basename '{}' in ZIP {}; keeping first matched entry",
-                    filename,
-                    path.display()
-                );
-                return;
-            }
-
-            if let Ok(meta) = parse_book_bytes(&data, &ext, &filename, cover_cfg) {
-                out.insert(filename, meta);
-            }
-        },
-    )?;
-
-    Ok(out)
-}
-
-/// Validate ZIP archive integrity by reading every entry (triggers CRC check).
-/// Returns `false` if any entry is corrupt.
-fn validate_zip_integrity(path: &Path) -> Result<bool, ScanError> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut archive = zip::ZipArchive::new(reader)?;
-    for i in 0..archive.len() {
-        let mut entry = match archive.by_index(i) {
-            Ok(e) => e,
-            Err(_) => return Ok(false),
-        };
-        let mut buf = Vec::new();
-        if std::io::Read::read_to_end(&mut entry, &mut buf).is_err() {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-// ---------------------------------------------------------------------------
-// Catalog / author / series helpers (public API — used by upload, admin)
-// ---------------------------------------------------------------------------
-
-/// Ensure a catalog row exists for the given path, creating it if needed.
-pub async fn ensure_catalog(
-    pool: &DbPool,
-    path: &str,
-    cat_type: CatType,
-) -> Result<i64, ScanError> {
-    if let Some(cat) = catalogs::find_by_path(pool, path).await? {
-        return Ok(cat.id);
-    }
-
-    // Determine parent catalog
-    let parent_path = Path::new(path).parent();
-    let parent_id = match parent_path {
-        Some(p) if !p.as_os_str().is_empty() => {
-            let pp = p.to_string_lossy().to_string();
-            // Recursively ensure parent exists
-            Some(Box::pin(ensure_catalog(pool, &pp, cat_type)).await?)
-        }
-        _ => None,
-    };
-
-    let cat_name = Path::new(path)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let id = catalogs::insert(pool, parent_id, path, &cat_name, cat_type, 0, "").await?;
-    Ok(id)
-}
-
-/// Ensure a catalog for an archive exists and update its archive metadata.
-async fn ensure_archive_catalog(
-    pool: &DbPool,
-    path: &str,
-    cat_type: CatType,
-    cat_size: i64,
-    cat_mtime: &str,
-) -> Result<i64, ScanError> {
-    if let Some(cat) = catalogs::find_by_path(pool, path).await? {
-        if cat.cat_type != cat_type as i32 || cat.cat_size != cat_size || cat.cat_mtime != cat_mtime
-        {
-            catalogs::update_archive_meta(pool, cat.id, cat_type, cat_size, cat_mtime).await?;
-        }
-        return Ok(cat.id);
-    }
-
-    // Determine parent catalog
-    let parent_path = Path::new(path).parent();
-    let parent_id = match parent_path {
-        Some(p) if !p.as_os_str().is_empty() => {
-            let pp = p.to_string_lossy().to_string();
-            Some(Box::pin(ensure_catalog(pool, &pp, CatType::Normal)).await?)
-        }
-        _ => None,
-    };
-
-    let cat_name = Path::new(path)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let id = catalogs::insert(
-        pool, parent_id, path, &cat_name, cat_type, cat_size, cat_mtime,
-    )
-    .await?;
-    Ok(id)
-}
-
-/// Find or create an author by name.
-pub async fn ensure_author(pool: &DbPool, full_name: &str) -> Result<i64, ScanError> {
-    if let Some(a) = authors::find_by_name(pool, full_name).await? {
-        return Ok(a.id);
-    }
-    let search = full_name.to_uppercase();
-    let lang_code = detect_lang_code(full_name);
-    let id = authors::insert(pool, full_name, &search, lang_code).await?;
-    Ok(id)
-}
-
-/// Find or create a series by name.
-pub async fn ensure_series(pool: &DbPool, ser_name: &str) -> Result<i64, ScanError> {
-    if let Some(s) = series::find_by_name(pool, ser_name).await? {
-        return Ok(s.id);
-    }
-    let search = ser_name.to_uppercase();
-    let lang_code = detect_lang_code(ser_name);
-    let id = series::insert(pool, ser_name, &search, lang_code).await?;
-    Ok(id)
-}
-
-// ---------------------------------------------------------------------------
-// Cache-aware helpers (scanner-internal, uses DashMap to reduce DB round-trips)
-// ---------------------------------------------------------------------------
-
-async fn cached_ensure_catalog(
-    ctx: &ScanContext,
-    path: &str,
-    cat_type: CatType,
-) -> Result<i64, ScanError> {
-    if let Some(id) = ctx.catalog_cache.get(path) {
-        return Ok(*id);
-    }
-    let id = ensure_catalog(&ctx.pool, path, cat_type).await?;
-    ctx.catalog_cache.insert(path.to_string(), id);
-    Ok(id)
-}
-
-async fn cached_ensure_author(ctx: &ScanContext, full_name: &str) -> Result<i64, ScanError> {
-    if let Some(id) = ctx.author_cache.get(full_name) {
-        return Ok(*id);
-    }
-    let id = ensure_author(&ctx.pool, full_name).await?;
-    ctx.author_cache.insert(full_name.to_string(), id);
-    Ok(id)
-}
-
-async fn cached_ensure_series(ctx: &ScanContext, ser_name: &str) -> Result<i64, ScanError> {
-    if let Some(id) = ctx.series_cache.get(ser_name) {
-        return Ok(*id);
-    }
-    let id = ensure_series(&ctx.pool, ser_name).await?;
-    ctx.series_cache.insert(ser_name.to_string(), id);
-    Ok(id)
-}
-
-// ---------------------------------------------------------------------------
-// Book insertion (public + cache-aware scanner-internal)
-// ---------------------------------------------------------------------------
-
-/// Insert a book record and link authors, genres, series (scanner-internal,
-/// uses DashMap-cached ensure functions).
-#[allow(clippy::too_many_arguments)]
-async fn ctx_insert_book_with_meta(
-    ctx: &ScanContext,
-    catalog_id: i64,
-    filename: &str,
-    path: &str,
-    format: &str,
-    size: i64,
-    cat_type: CatType,
-    meta: &BookMeta,
-) -> Result<i64, ScanError> {
-    let title = if meta.title.is_empty() {
-        Path::new(filename)
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string()
-    } else {
-        meta.title.clone()
-    };
-    let search_title = title.to_uppercase();
-    let lang = &meta.lang;
-    let lang_code = detect_lang_code(&title);
-    let has_cover = if meta.cover_data.is_some() { 1 } else { 0 };
-
-    // Strip high Unicode from annotation (MySQL 3-byte UTF8 compat)
-    let annotation: String = meta
-        .annotation
-        .chars()
-        .filter(|c| (*c as u32) < 0x10000)
-        .collect();
-
-    let book_id = books::insert(
-        &ctx.pool,
-        catalog_id,
-        filename,
-        path,
-        format,
-        &title,
-        &search_title,
-        &annotation,
-        &meta.docdate,
-        lang,
-        lang_code,
-        size,
-        cat_type,
-        has_cover,
-        &meta.cover_type,
-    )
-    .await?;
-
-    // Save cover to disk
-    if let Some(ref cover_data) = meta.cover_data
-        && let Err(e) = save_cover(
-            &ctx.covers_path,
-            book_id,
-            cover_data,
-            &meta.cover_type,
-            ctx.cover_image_cfg,
-        )
-    {
-        warn!("Failed to save cover for book {book_id}: {e}");
-    }
-
-    // Link authors
-    if meta.authors.is_empty() {
-        let author_id = cached_ensure_author(ctx, "Unknown").await?;
-        authors::link_book(&ctx.pool, book_id, author_id).await?;
-    } else {
-        for author_name in &meta.authors {
-            let name = normalise_author_name(author_name);
-            if name.is_empty() {
-                continue;
-            }
-            let author_id = cached_ensure_author(ctx, &name).await?;
-            authors::link_book(&ctx.pool, book_id, author_id).await?;
-        }
-    }
-    books::update_author_key(&ctx.pool, book_id).await?;
-
-    // Link genres
-    for genre_code in &meta.genres {
-        genres::link_book_by_code(&ctx.pool, book_id, genre_code).await?;
-    }
-
-    // Link series
-    if let Some(ref ser_title) = meta.series_title
-        && !ser_title.is_empty()
-    {
-        let series_id = cached_ensure_series(ctx, ser_title).await?;
-        series::link_book(&ctx.pool, book_id, series_id, meta.series_index).await?;
-    }
-
-    Ok(book_id)
-}
-
-/// Insert a book record and link authors, genres, series.
-/// Saves cover image to `covers_path` if present.
-/// (Public API — used by upload handler.)
-#[allow(clippy::too_many_arguments)]
-pub async fn insert_book_with_meta(
-    pool: &DbPool,
-    catalog_id: i64,
-    filename: &str,
-    path: &str,
-    format: &str,
-    size: i64,
-    cat_type: CatType,
-    meta: &BookMeta,
-    covers_path: &Path,
-    cover_cfg: CoverImageConfig,
-) -> Result<i64, ScanError> {
-    let title = if meta.title.is_empty() {
-        Path::new(filename)
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string()
-    } else {
-        meta.title.clone()
-    };
-    let search_title = title.to_uppercase();
-    let lang = &meta.lang;
-    let lang_code = detect_lang_code(&title);
-    let has_cover = if meta.cover_data.is_some() { 1 } else { 0 };
-
-    // Strip high Unicode from annotation (MySQL 3-byte UTF8 compat)
-    let annotation: String = meta
-        .annotation
-        .chars()
-        .filter(|c| (*c as u32) < 0x10000)
-        .collect();
-
-    let book_id = books::insert(
-        pool,
-        catalog_id,
-        filename,
-        path,
-        format,
-        &title,
-        &search_title,
-        &annotation,
-        &meta.docdate,
-        lang,
-        lang_code,
-        size,
-        cat_type,
-        has_cover,
-        &meta.cover_type,
-    )
-    .await?;
-
-    // Save cover to disk
-    if let Some(ref cover_data) = meta.cover_data
-        && let Err(e) = save_cover(
-            covers_path,
-            book_id,
-            cover_data,
-            &meta.cover_type,
-            cover_cfg,
-        )
-    {
-        warn!("Failed to save cover for book {book_id}: {e}");
-    }
-
-    // Link authors
-    if meta.authors.is_empty() {
-        // Ensure at least one author
-        let author_id = ensure_author(pool, "Unknown").await?;
-        authors::link_book(pool, book_id, author_id).await?;
-    } else {
-        for author_name in &meta.authors {
-            let name = normalise_author_name(author_name);
-            if name.is_empty() {
-                continue;
-            }
-            let author_id = ensure_author(pool, &name).await?;
-            authors::link_book(pool, book_id, author_id).await?;
-        }
-    }
-    books::update_author_key(pool, book_id).await?;
-
-    // Link genres
-    for genre_code in &meta.genres {
-        genres::link_book_by_code(pool, book_id, genre_code).await?;
-    }
-
-    // Link series
-    if let Some(ref ser_title) = meta.series_title
-        && !ser_title.is_empty()
-    {
-        let series_id = ensure_series(pool, ser_title).await?;
-        series::link_book(pool, book_id, series_id, meta.series_index).await?;
-    }
-
-    Ok(book_id)
-}
-
-// ---------------------------------------------------------------------------
-// Skip-unchanged logic
-// ---------------------------------------------------------------------------
-
-/// Try to skip scanning an unchanged ZIP archive.
-/// With `skip_unchanged` enabled, also checks mtime (backward-compatible with
-/// empty mtime in old DB records).
-async fn try_skip_zip_archive(
-    pool: &DbPool,
-    rel_zip: &str,
-    zip_size: i64,
-    skip_unchanged: bool,
-    mtime: &str,
-) -> Result<bool, ScanError> {
-    let Some(cat) = catalogs::find_by_path(pool, rel_zip).await? else {
-        return Ok(false);
-    };
-    if CatType::try_from(cat.cat_type).ok() != Some(CatType::Zip) || cat.cat_size != zip_size {
-        return Ok(false);
-    }
-    // When skip_unchanged is enabled, also compare mtime (skip this check if
-    // either side is empty for backward compatibility with pre-mtime records).
-    if skip_unchanged && !mtime.is_empty() && !cat.cat_mtime.is_empty() && cat.cat_mtime != mtime {
-        return Ok(false);
-    }
-    let updated = books::set_avail_by_path(pool, rel_zip, AvailStatus::Confirmed).await?;
-    Ok(updated > 0)
-}
-
-/// Try to skip scanning an unchanged INPX archive.
-async fn try_skip_inpx_archive(
-    pool: &DbPool,
-    rel_inpx: &str,
-    inpx_dir: &str,
-    inpx_size: i64,
-    skip_unchanged: bool,
-    mtime: &str,
-) -> Result<bool, ScanError> {
-    let Some(cat) = catalogs::find_by_path(pool, rel_inpx).await? else {
-        return Ok(false);
-    };
-    if CatType::try_from(cat.cat_type).ok() != Some(CatType::Inpx) || cat.cat_size != inpx_size {
-        return Ok(false);
-    }
-    if skip_unchanged && !mtime.is_empty() && !cat.cat_mtime.is_empty() && cat.cat_mtime != mtime {
-        return Ok(false);
-    }
-    let updated = books::set_avail_for_inpx_dir(pool, inpx_dir, AvailStatus::Confirmed).await?;
-    Ok(updated > 0)
-}
-
 // ---------------------------------------------------------------------------
 // Covers & utilities
 // ---------------------------------------------------------------------------
-
-pub(crate) fn normalize_cover_for_storage_with_options(
-    data: &[u8],
-    mime: &str,
-    cover_cfg: CoverImageConfig,
-) -> (Vec<u8>, String) {
-    let max_dimension_px = cover_cfg.scale_to();
-    let jpeg_quality = cover_cfg.jpeg_quality();
-
-    let Ok(img) = image::load_from_memory(data) else {
-        // Keep original bytes if decoder can't parse this format.
-        return (data.to_vec(), normalize_mime(mime).to_string());
-    };
-
-    let (w, h) = img.dimensions();
-    let is_jpeg = matches!(mime, "image/jpeg" | "image/jpg" | "image/pjpeg");
-    let needs_resize = w.max(h) > max_dimension_px;
-    let needs_format_conversion = !is_jpeg;
-
-    if !needs_resize && !needs_format_conversion {
-        return (data.to_vec(), normalize_mime(mime).to_string());
-    }
-
-    let processed = if needs_resize {
-        img.resize(
-            max_dimension_px,
-            max_dimension_px,
-            image::imageops::FilterType::Lanczos3,
-        )
-    } else {
-        img
-    };
-
-    // Store decodable covers as JPEG to ensure uniform quality/size handling.
-    if let Some(bytes) = encode_jpeg(&processed, jpeg_quality) {
-        return (bytes, "image/jpeg".to_string());
-    }
-
-    // Fallback if encoding fails for any reason.
-    (data.to_vec(), normalize_mime(mime).to_string())
-}
-
-/// Save cover image bytes to disk using hierarchical cover storage.
-pub fn save_cover(
-    covers_path: &Path,
-    book_id: i64,
-    data: &[u8],
-    mime: &str,
-    cover_cfg: CoverImageConfig,
-) -> Result<(), std::io::Error> {
-    let (normalized_data, normalized_mime) =
-        normalize_cover_for_storage_with_options(data, mime, cover_cfg);
-    let ext = mime_to_ext(&normalized_mime);
-    let path = cover_storage_path(covers_path, book_id, ext);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&path, normalized_data)
-}
-
-/// Return hierarchical storage path for a cover file.
-/// Layout: `{covers_dir}/{bucket_thousands}/{book_id}.{ext}`.
-pub fn cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
-    let id = book_id.unsigned_abs();
-    let bucket_thousands = (id / 1_000) % 1_000;
-    covers_path
-        .join(format!("{bucket_thousands:03}"))
-        .join(format!("{book_id}.{ext}"))
-}
-
-/// Return old two-level hierarchical storage path for a cover file.
-/// Layout: `{covers_dir}/{bucket_millions}/{bucket_thousands}/{book_id}.{ext}`.
-pub fn two_level_cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
-    let id = book_id.unsigned_abs();
-    let bucket_millions = (id / 1_000_000) % 1_000;
-    let bucket_thousands = (id / 1_000) % 1_000;
-    covers_path
-        .join(format!("{bucket_millions:03}"))
-        .join(format!("{bucket_thousands:03}"))
-        .join(format!("{book_id}.{ext}"))
-}
-
-/// Return legacy flat storage path for a cover file.
-pub fn legacy_cover_storage_path(covers_path: &Path, book_id: i64, ext: &str) -> PathBuf {
-    covers_path.join(format!("{book_id}.{ext}"))
-}
-
-fn mime_to_ext(mime: &str) -> &str {
-    match mime {
-        "image/png" => "png", // legacy/decode-fallback covers
-        "image/gif" => "gif", // legacy/decode-fallback covers
-        _ => "jpg",
-    }
-}
-
-fn normalize_mime(mime: &str) -> &str {
-    match mime {
-        "image/png" => "image/png",
-        "image/gif" => "image/gif",
-        _ => "image/jpeg",
-    }
-}
-
-fn encode_jpeg(img: &DynamicImage, quality: u8) -> Option<Vec<u8>> {
-    let mut out = Cursor::new(Vec::new());
-    let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
-    encoder.encode_image(img).ok()?;
-    Some(out.into_inner())
-}
-
-/// Remove cover file for a book (tries all known extensions and layouts).
-fn delete_cover(covers_path: &Path, book_id: i64) {
-    for ext in &["jpg", "png", "gif"] {
-        for path in [
-            cover_storage_path(covers_path, book_id, ext),
-            two_level_cover_storage_path(covers_path, book_id, ext),
-            legacy_cover_storage_path(covers_path, book_id, ext),
-        ] {
-            if path.exists() {
-                match fs::remove_file(&path) {
-                    Ok(()) => remove_empty_cover_dirs(covers_path, &path),
-                    Err(e) => warn!("Failed to remove cover {}: {e}", path.display()),
-                }
-            }
-        }
-    }
-}
-
-fn remove_empty_cover_dirs(covers_path: &Path, file_path: &Path) {
-    let Some(dir) = file_path.parent() else {
-        return;
-    };
-    if dir == covers_path {
-        return;
-    }
-    let _ = fs::remove_dir(dir);
-    if let Some(parent) = dir.parent()
-        && parent != covers_path
-    {
-        let _ = fs::remove_dir(parent);
-    }
-}
 
 fn rel_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
@@ -1746,7 +588,7 @@ pub enum ScanError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("ZIP error: {0}")]
-    Zip(#[from] zip::result::ZipError),
+    Zip(#[from] ::zip::result::ZipError),
     #[error("parse error: {0}")]
     Parse(String),
     #[error("internal error: {0}")]
@@ -1757,7 +599,8 @@ pub enum ScanError {
 mod tests {
     use super::*;
     use crate::db::create_test_pool;
-    use std::io::Write;
+    use image::{DynamicImage, GenericImageView};
+    use std::io::{Cursor, Write};
     use tempfile::tempdir;
 
     fn test_cover_cfg() -> CoverImageConfig {
@@ -1766,9 +609,9 @@ mod tests {
 
     fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
         let file = fs::File::create(path).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let mut zip = ::zip::ZipWriter::new(file);
+        let opts = ::zip::write::SimpleFileOptions::default()
+            .compression_method(::zip::CompressionMethod::Stored);
         for (name, data) in entries {
             zip.start_file(*name, opts).unwrap();
             zip.write_all(data).unwrap();
@@ -1820,11 +663,11 @@ mod tests {
         exts.insert("fb2".to_string());
         exts.insert("epub".to_string());
 
-        let entries = read_zip_entries(&zip_path, &exts, false).unwrap();
+        let entries = zip::read_zip_entries(&zip_path, &exts, false).unwrap();
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().any(|e| e.filename == "a.fb2"));
         assert!(entries.iter().any(|e| e.filename == "c.epub"));
-        assert!(validate_zip_integrity(&zip_path).unwrap());
+        assert!(zip::validate_zip_integrity(&zip_path).unwrap());
     }
 
     #[test]
@@ -1835,11 +678,11 @@ mod tests {
 
         let exts = HashSet::from(["fb2".to_string()]);
         assert!(matches!(
-            read_zip_entries(&bad, &exts, false),
+            zip::read_zip_entries(&bad, &exts, false),
             Err(ScanError::Zip(_))
         ));
         assert!(matches!(
-            validate_zip_integrity(&bad),
+            zip::validate_zip_integrity(&bad),
             Err(ScanError::Zip(_))
         ));
     }
@@ -1919,9 +762,9 @@ root_path = "/tmp"
             "2-level outer bucket dir should be removed"
         );
 
-        assert_eq!(mime_to_ext("image/png"), "png");
-        assert_eq!(mime_to_ext("image/gif"), "gif");
-        assert_eq!(mime_to_ext("image/jpeg"), "jpg");
+        assert_eq!(cover::mime_to_ext("image/png"), "png");
+        assert_eq!(cover::mime_to_ext("image/gif"), "gif");
+        assert_eq!(cover::mime_to_ext("image/jpeg"), "jpg");
 
         assert_eq!(
             cover_storage_path(dir.path(), 1_500_123, "jpg"),

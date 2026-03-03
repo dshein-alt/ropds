@@ -53,8 +53,27 @@ pub struct InpxRecord {
 /// Parse all book records from an INPX archive.
 /// `inpx_reader` should be a seekable reader over the .inpx ZIP file.
 pub fn parse<R: Read + Seek>(inpx_reader: R) -> Result<Vec<InpxRecord>, InpxError> {
-    let mut archive = zip::ZipArchive::new(inpx_reader)?;
     let mut records = Vec::new();
+    parse_grouped_streaming(inpx_reader, |_folder, mut batch| {
+        records.append(&mut batch);
+        Ok(())
+    })?;
+    Ok(records)
+}
+
+/// Stream records from an INPX archive by ZIP group (`.inp` entry).
+///
+/// Each callback invocation contains all records parsed from one `.inp` file,
+/// mapped to its default ZIP folder name (e.g. `pack-0001.zip`).
+/// Returns total number of parsed records delivered to `on_batch`.
+pub fn parse_grouped_streaming<R: Read + Seek, F>(
+    inpx_reader: R,
+    mut on_batch: F,
+) -> Result<u64, InpxError>
+where
+    F: FnMut(String, Vec<InpxRecord>) -> Result<(), InpxError>,
+{
+    let mut archive = zip::ZipArchive::new(inpx_reader)?;
     let field_index =
         parse_structure_info(&mut archive).unwrap_or_else(InpxFieldIndex::default_layout);
 
@@ -71,101 +90,113 @@ pub fn parse<R: Read + Seek>(inpx_reader: R) -> Result<Vec<InpxRecord>, InpxErro
         })
         .collect();
 
+    let mut total_parsed = 0u64;
     for inp_name in &inp_names {
         let folder = default_folder(inp_name);
         let entry = archive.by_name(inp_name)?;
         let reader = BufReader::new(entry);
-        parse_inp(reader, &folder, &field_index, &mut records);
+        let records = parse_inp_records(reader, &folder, &field_index);
+        if !records.is_empty() {
+            total_parsed += records.len() as u64;
+            on_batch(folder, records)?;
+        }
     }
 
-    Ok(records)
+    Ok(total_parsed)
 }
 
-/// Parse a single .inp text file, appending records to `out`.
-fn parse_inp(reader: impl BufRead, folder: &str, idx: &InpxFieldIndex, out: &mut Vec<InpxRecord>) {
+fn parse_inp_line(line: &str, folder: &str, idx: &InpxFieldIndex) -> Option<InpxRecord> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+
+    let fields: Vec<&str> = line.split(INPX_SEPARATOR as char).collect();
+    if fields.len() < idx.min_fields {
+        return None;
+    }
+
+    // Skip deleted records
+    if let Some(del_idx) = idx.del {
+        let del = fields[del_idx].trim();
+        if !del.is_empty() && del != "0" {
+            return None;
+        }
+    }
+
+    let file_stem = fields[idx.file].trim();
+    let ext = fields[idx.ext].trim();
+    let filename = format!("{file_stem}.{ext}");
+    let format = ext.to_lowercase();
+
+    let title = strip_meta(fields[idx.title]);
+    let lang = strip_meta(fields[idx.lang]);
+    let docdate = strip_meta(fields[idx.date]);
+
+    // Authors: colon-separated, commas replaced with spaces
+    let authors: Vec<String> = fields[idx.author]
+        .split(':')
+        .map(|a| {
+            a.replace(',', " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|a| !a.is_empty())
+        .collect();
+
+    // Genres: colon-separated, lowercased
+    let genres: Vec<String> = fields[idx.genre]
+        .split(':')
+        .map(|g| strip_meta(g).to_lowercase())
+        .filter(|g| !g.is_empty())
+        .collect();
+
+    // Series: first item from colon-separated list
+    let series_title = fields[idx.series]
+        .split(':')
+        .next()
+        .map(strip_meta)
+        .filter(|s| !s.is_empty());
+
+    let series_index = fields[idx.ser_no].trim().parse::<i32>().unwrap_or(0);
+
+    let size = fields[idx.size].trim().parse::<i64>().unwrap_or(0);
+
+    let meta = BookMeta {
+        title,
+        authors,
+        genres,
+        lang,
+        docdate,
+        series_title,
+        series_index,
+        annotation: String::new(),
+        cover_data: None,
+        cover_type: String::new(),
+    };
+
+    Some(InpxRecord {
+        filename,
+        folder: folder.to_string(),
+        format,
+        size,
+        meta,
+    })
+}
+
+fn parse_inp_records(reader: impl BufRead, folder: &str, idx: &InpxFieldIndex) -> Vec<InpxRecord> {
+    let mut records = Vec::new();
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
             Err(_) => continue,
         };
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+        if let Some(record) = parse_inp_line(&line, folder, idx) {
+            records.push(record);
         }
-
-        let fields: Vec<&str> = line.split(INPX_SEPARATOR as char).collect();
-        if fields.len() < idx.min_fields {
-            continue;
-        }
-
-        // Skip deleted records
-        if let Some(del_idx) = idx.del {
-            let del = fields[del_idx].trim();
-            if !del.is_empty() && del != "0" {
-                continue;
-            }
-        }
-
-        let file_stem = fields[idx.file].trim();
-        let ext = fields[idx.ext].trim();
-        let filename = format!("{file_stem}.{ext}");
-        let format = ext.to_lowercase();
-
-        let title = strip_meta(fields[idx.title]);
-        let lang = strip_meta(fields[idx.lang]);
-        let docdate = strip_meta(fields[idx.date]);
-
-        // Authors: colon-separated, commas replaced with spaces
-        let authors: Vec<String> = fields[idx.author]
-            .split(':')
-            .map(|a| {
-                a.replace(',', " ")
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
-            .filter(|a| !a.is_empty())
-            .collect();
-
-        // Genres: colon-separated, lowercased
-        let genres: Vec<String> = fields[idx.genre]
-            .split(':')
-            .map(|g| strip_meta(g).to_lowercase())
-            .filter(|g| !g.is_empty())
-            .collect();
-
-        // Series: first item from colon-separated list
-        let series_title = fields[idx.series]
-            .split(':')
-            .next()
-            .map(strip_meta)
-            .filter(|s| !s.is_empty());
-
-        let series_index = fields[idx.ser_no].trim().parse::<i32>().unwrap_or(0);
-
-        let size = fields[idx.size].trim().parse::<i64>().unwrap_or(0);
-
-        let meta = BookMeta {
-            title,
-            authors,
-            genres,
-            lang,
-            docdate,
-            series_title,
-            series_index,
-            annotation: String::new(),
-            cover_data: None,
-            cover_type: String::new(),
-        };
-
-        out.push(InpxRecord {
-            filename,
-            folder: folder.to_string(),
-            format,
-            size,
-            meta,
-        });
     }
+    records
 }
 
 /// Default folder for an .inp entry: strip the .inp extension, append .zip.
@@ -362,6 +393,56 @@ mod tests {
         assert_eq!(r.meta.series_title, Some("Series".to_string()));
         assert_eq!(r.meta.series_index, 2);
         assert_eq!(r.size, 123);
+    }
+
+    #[test]
+    fn test_parse_grouped_streaming_emits_one_group_per_inp() {
+        let first = inpx_line([
+            "Author,One",
+            "sf",
+            "First Book",
+            "",
+            "0",
+            "first",
+            "111",
+            "0",
+            "fb2",
+            "2001",
+            "en",
+        ]);
+        let second = inpx_line([
+            "Author,Two",
+            "sf",
+            "Second Book",
+            "",
+            "0",
+            "second",
+            "222",
+            "0",
+            "fb2",
+            "2002",
+            "en",
+        ]);
+        let zip_data = make_inpx_zip(&[
+            ("pack-0001.inp", &format!("{first}\n")),
+            ("pack-0002.inp", &format!("{second}\n")),
+        ]);
+
+        let mut groups: Vec<(String, Vec<InpxRecord>)> = Vec::new();
+        let parsed = parse_grouped_streaming(std::io::Cursor::new(zip_data), |folder, records| {
+            groups.push((folder, records));
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(parsed, 2);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].0, "pack-0001.zip");
+        assert_eq!(groups[0].1.len(), 1);
+        assert_eq!(groups[0].1[0].filename, "first.fb2");
+        assert_eq!(groups[1].0, "pack-0002.zip");
+        assert_eq!(groups[1].1.len(), 1);
+        assert_eq!(groups[1].1[0].filename, "second.fb2");
     }
 
     #[test]
