@@ -246,6 +246,52 @@ pub async fn find_by_path_and_filename(
         .await
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ExistingBookIndexRow {
+    pub id: i64,
+    pub path: String,
+    pub filename: String,
+}
+
+pub async fn list_existing_for_scan(
+    pool: &DbPool,
+) -> Result<Vec<ExistingBookIndexRow>, sqlx::Error> {
+    // Full in-memory snapshot to eliminate per-book lookup queries during scan.
+    // Trade-off: memory usage scales with total book rows.
+    let sql = pool.sql("SELECT id, path, filename FROM books");
+    sqlx::query_as::<_, ExistingBookIndexRow>(&sql)
+        .fetch_all(pool.inner())
+        .await
+}
+
+pub async fn set_avail_confirmed_for_ids(pool: &DbPool, ids: &[i64]) -> Result<u64, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut total_updated = 0u64;
+
+    // Run chunked updates in a single transaction for all-or-nothing behavior.
+    let mut tx = pool.inner().begin().await?;
+    for chunk in ids.chunks(500) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let query_sql =
+            format!("UPDATE books SET avail = ? WHERE avail = ? AND id IN ({placeholders})");
+        let sql = pool.sql(&query_sql);
+
+        let mut query = sqlx::query(&sql)
+            .bind(AvailStatus::Confirmed as i32)
+            .bind(AvailStatus::Unverified as i32);
+        for id in chunk {
+            query = query.bind(*id);
+        }
+        total_updated += query.execute(&mut *tx).await?.rows_affected();
+    }
+    tx.commit().await?;
+
+    Ok(total_updated)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn insert(
     pool: &DbPool,
@@ -299,7 +345,7 @@ pub async fn insert(
 }
 
 pub async fn set_avail_all(pool: &DbPool, avail: AvailStatus) -> Result<u64, sqlx::Error> {
-    let sql = pool.sql("UPDATE books SET avail = ?");
+    let sql = pool.sql("UPDATE books SET avail = ? WHERE avail > 0");
     let result = sqlx::query(&sql)
         .bind(avail as i32)
         .execute(pool.inner())
@@ -1473,14 +1519,59 @@ mod tests {
         let pool = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
         let first = insert_test_book(&pool, cat, "Random One", 2).await;
-        insert_test_book(&pool, cat, "Random Two", 2).await;
+        let second = insert_test_book(&pool, cat, "Random Two", 2).await;
 
         let random = get_random(&pool).await.unwrap().unwrap();
         assert!(random.id == first || random.id > 0);
 
+        set_avail(&pool, first, AvailStatus::Deleted).await.unwrap();
         let updated = set_avail_all(&pool, AvailStatus::Deleted).await.unwrap();
-        assert_eq!(updated, 2);
+        assert_eq!(updated, 1);
         assert!(get_random(&pool).await.unwrap().is_none());
+        assert_eq!(
+            get_by_id(&pool, first).await.unwrap().unwrap().avail,
+            AvailStatus::Deleted as i32
+        );
+        assert_eq!(
+            get_by_id(&pool, second).await.unwrap().unwrap().avail,
+            AvailStatus::Deleted as i32
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_avail_confirmed_for_ids_only_marks_unverified_rows() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let deleted = insert_test_book(&pool, cat, "Deleted", 2).await;
+        let unverified = insert_test_book(&pool, cat, "Unverified", 2).await;
+        let confirmed = insert_test_book(&pool, cat, "Confirmed", 2).await;
+
+        set_avail(&pool, deleted, AvailStatus::Deleted)
+            .await
+            .unwrap();
+        set_avail(&pool, unverified, AvailStatus::Unverified)
+            .await
+            .unwrap();
+        set_avail(&pool, confirmed, AvailStatus::Confirmed)
+            .await
+            .unwrap();
+
+        let updated = set_avail_confirmed_for_ids(&pool, &[deleted, unverified, confirmed])
+            .await
+            .unwrap();
+        assert_eq!(updated, 1);
+        assert_eq!(
+            get_by_id(&pool, deleted).await.unwrap().unwrap().avail,
+            AvailStatus::Deleted as i32
+        );
+        assert_eq!(
+            get_by_id(&pool, unverified).await.unwrap().unwrap().avail,
+            AvailStatus::Confirmed as i32
+        );
+        assert_eq!(
+            get_by_id(&pool, confirmed).await.unwrap().unwrap().avail,
+            AvailStatus::Confirmed as i32
+        );
     }
 
     #[tokio::test]

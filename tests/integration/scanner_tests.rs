@@ -65,6 +65,48 @@ async fn scan_adds_books_from_zip() {
     );
 }
 
+/// Duplicate basenames in one ZIP should only be inserted once.
+#[tokio::test]
+async fn scan_zip_duplicate_entries_insert_once() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let mut config = test_config(lib_dir.path(), covers_dir.path());
+    config.scanner.workers_num = 4;
+
+    let fb2_bytes = std::fs::read(test_data_dir().join("test_book.fb2")).unwrap();
+    let zip_path = lib_dir.path().join("dups.zip");
+    {
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("a/dup.fb2", opts).unwrap();
+        zip.write_all(&fb2_bytes).unwrap();
+        zip.start_file("b/dup.fb2", opts).unwrap();
+        zip.write_all(&fb2_bytes).unwrap();
+        zip.finish().unwrap();
+    }
+
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    assert_eq!(
+        stats.books_added, 1,
+        "duplicate ZIP entry should not double-insert"
+    );
+    assert_eq!(
+        stats.books_skipped, 1,
+        "duplicate ZIP entry should be skipped"
+    );
+    assert!(
+        books::find_by_path_and_filename(&pool, "dups.zip", "dup.fb2")
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
 /// INPX processing enriches records from referenced ZIP entries (annotation + cover).
 #[tokio::test]
 async fn scan_inpx_enriches_annotation_and_cover_from_zip() {
@@ -297,6 +339,40 @@ async fn scan_deletes_removed_books() {
         .await
         .unwrap();
     assert_eq!(deleted.len(), 1);
+}
+
+/// If scan hits errors, unavailable-book deletion is skipped for safety.
+#[tokio::test]
+async fn scan_skips_deletion_when_scan_has_errors() {
+    let _lock = SCAN_MUTEX.lock().await;
+
+    let pool = db::create_test_pool().await;
+    let lib_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let config = test_config(lib_dir.path(), covers_dir.path());
+
+    copy_test_files(lib_dir.path(), &["test_book.fb2", "test_book.epub"]);
+    scanner::run_scan(&pool, &config).await.unwrap();
+
+    std::fs::remove_file(lib_dir.path().join("test_book.fb2")).unwrap();
+    std::fs::write(lib_dir.path().join("broken.zip"), b"not a real zip archive").unwrap();
+
+    let stats = scanner::run_scan(&pool, &config).await.unwrap();
+    assert!(stats.errors > 0, "scan should report at least one error");
+    assert_eq!(
+        stats.books_deleted, 0,
+        "deletion step must be skipped when scan has errors"
+    );
+
+    let removed_book = books::find_by_path_and_filename(&pool, "", "test_book.fb2")
+        .await
+        .unwrap()
+        .expect("removed book row should still exist");
+    assert_eq!(
+        removed_book.avail,
+        AvailStatus::Unverified as i32,
+        "removed book should remain unverified until a clean scan"
+    );
 }
 
 /// Various FB2 metadata combinations are parsed correctly.
