@@ -37,12 +37,11 @@ pub async fn delete_book(
             .root_path
             .join(&book.path)
             .join(&book.filename);
-        if let Err(e) = std::fs::remove_file(&full_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::error!("Failed to delete book file {full_path:?}: {e}");
-                return Redirect::to(&redirect_url(&params, "error=file_delete_error"))
-                    .into_response();
-            }
+        if let Err(e) = std::fs::remove_file(&full_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::error!("Failed to delete book file {full_path:?}: {e}");
+            return Redirect::to(&redirect_url(&params, "error=file_delete_error")).into_response();
         }
     } else {
         // For ZIP/INPX: add to suppression table
