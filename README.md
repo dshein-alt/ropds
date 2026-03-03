@@ -213,6 +213,13 @@ For SQLite, recommended scanner parallelism is `workers_num = 2..4`. Higher valu
 
 Migrations run automatically on startup. Backend-specific migration sets are embedded at build time and selected by database backend (`sqlite://`, `postgres://`, `mysql://`).
 
+### Backend migration (SQLite -> PostgreSQL / MySQL)
+
+Use `scripts/migrate_sqlite.py` for full data migration between backends.
+
+- English step-by-step guide: [`scripts/README.md`](scripts/README.md)
+- Russian step-by-step guide: [`scripts/README_RU.md`](scripts/README_RU.md)
+
 ## Tech Stack
 
 | | |
