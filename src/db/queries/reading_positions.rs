@@ -58,10 +58,18 @@ pub async fn get_position(
     user_id: i64,
     book_id: i64,
 ) -> Result<Option<ReadingPosition>, sqlx::Error> {
-    let sql = pool.sql(
-        "SELECT id, user_id, book_id, position, progress, updated_at \
-         FROM reading_positions WHERE user_id = ? AND book_id = ?",
-    );
+    let raw = match pool.backend() {
+        crate::db::DbBackend::Postgres => {
+            "SELECT id, user_id, book_id, position, \
+             CAST(progress AS DOUBLE PRECISION) AS progress, updated_at \
+             FROM reading_positions WHERE user_id = ? AND book_id = ?"
+        }
+        _ => {
+            "SELECT id, user_id, book_id, position, progress, updated_at \
+             FROM reading_positions WHERE user_id = ? AND book_id = ?"
+        }
+    };
+    let sql = pool.sql(raw);
     sqlx::query_as::<_, ReadingPosition>(&sql)
         .bind(user_id)
         .bind(book_id)
@@ -86,14 +94,26 @@ pub async fn get_recent(
     user_id: i64,
     limit: i64,
 ) -> Result<Vec<RecentRead>, sqlx::Error> {
-    let sql = pool.sql(
-        "SELECT rp.book_id, b.title, b.format, rp.progress, rp.updated_at \
-         FROM reading_positions rp \
-         JOIN books b ON b.id = rp.book_id \
-         WHERE rp.user_id = ? AND b.avail > 0 \
-         ORDER BY rp.updated_at DESC \
-         LIMIT ?",
-    );
+    let raw = match pool.backend() {
+        crate::db::DbBackend::Postgres => {
+            "SELECT rp.book_id, b.title, b.format, \
+             CAST(rp.progress AS DOUBLE PRECISION) AS progress, rp.updated_at \
+             FROM reading_positions rp \
+             JOIN books b ON b.id = rp.book_id \
+             WHERE rp.user_id = ? AND b.avail > 0 \
+             ORDER BY rp.updated_at DESC \
+             LIMIT ?"
+        }
+        _ => {
+            "SELECT rp.book_id, b.title, b.format, rp.progress, rp.updated_at \
+             FROM reading_positions rp \
+             JOIN books b ON b.id = rp.book_id \
+             WHERE rp.user_id = ? AND b.avail > 0 \
+             ORDER BY rp.updated_at DESC \
+             LIMIT ?"
+        }
+    };
+    let sql = pool.sql(raw);
     sqlx::query_as::<_, RecentRead>(&sql)
         .bind(user_id)
         .bind(limit)
@@ -130,8 +150,12 @@ pub async fn get_progress_map(
     let placeholders = std::iter::repeat_n("?", book_ids.len())
         .collect::<Vec<_>>()
         .join(", ");
+    let progress_col = match pool.backend() {
+        crate::db::DbBackend::Postgres => "CAST(progress AS DOUBLE PRECISION)",
+        _ => "progress",
+    };
     let raw = format!(
-        "SELECT book_id, progress FROM reading_positions \
+        "SELECT book_id, {progress_col} AS progress FROM reading_positions \
          WHERE user_id = ? AND book_id IN ({placeholders})"
     );
     let sql = pool.sql(&raw);
