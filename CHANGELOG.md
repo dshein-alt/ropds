@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026.03.03
+
+### Added
+- Added broader scanner regression coverage for archive deduplication and availability-state handling.
+
+### Changed
+- Refactored scanner internals into dedicated modules for book parsing, archive handling, database operations, INPX processing, and cover storage.
+- Improved scan throughput and stability for large libraries with deferred batched writes and in-memory lookup optimization.
+- Improved INPX processing flow with streaming group handling and safer worker coordination.
+
+### Fixed
+- Fixed scan availability transitions so deleted books are not reactivated during verification.
+- Improved resilience when processing partially unreadable ZIP archives.
+- Fixed scanner availability confirmation behavior to only update books in the expected intermediate state.
+
 ## [0.8.9] - 2026.03.03
 
 ### Added
