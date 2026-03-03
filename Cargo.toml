@@ -1,6 +1,6 @@
 [package]
 name = "ropds"
-version = "0.8.7"
+version = "0.8.8"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -40,7 +40,7 @@ time = "0.3"
 
 # Scanner: filesystem, archives, XML parsing, images, parallelism
 walkdir = "2"
-zip = "8.1"
+zip = "8.2"
 dashmap = "6"
 quick-xml = "0.39"
 base64 = "0.22"
