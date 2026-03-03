@@ -1,5 +1,5 @@
 use ropds::db;
-use ropds::db::queries::bookshelf;
+use ropds::db::queries::{bookshelf, reading_positions};
 use ropds::scanner;
 
 use super::*;
@@ -85,6 +85,9 @@ async fn bookshelf_remove() {
 
     // Add to shelf directly via DB
     bookshelf::upsert(&pool, user_id, book.id).await.unwrap();
+    reading_positions::save_position(&pool, user_id, book.id, "page:10", 0.4, 100)
+        .await
+        .unwrap();
     assert!(
         bookshelf::is_on_shelf(&pool, user_id, book.id)
             .await
@@ -107,6 +110,13 @@ async fn bookshelf_remove() {
             .unwrap(),
         "book should be removed from shelf"
     );
+    assert!(
+        reading_positions::get_position(&pool, user_id, book.id)
+            .await
+            .unwrap()
+            .is_none(),
+        "reading history should be removed when book is removed from shelf"
+    );
 }
 
 /// Clear all books from the bookshelf.
@@ -126,6 +136,12 @@ async fn bookshelf_clear_all() {
         .unwrap();
     bookshelf::upsert(&pool, user_id, book1.id).await.unwrap();
     bookshelf::upsert(&pool, user_id, book2.id).await.unwrap();
+    reading_positions::save_position(&pool, user_id, book1.id, "pos-1", 0.1, 100)
+        .await
+        .unwrap();
+    reading_positions::save_position(&pool, user_id, book2.id, "pos-2", 0.2, 100)
+        .await
+        .unwrap();
     assert_eq!(bookshelf::count_by_user(&pool, user_id).await.unwrap(), 2);
 
     // Clear via web
@@ -141,6 +157,20 @@ async fn bookshelf_clear_all() {
         bookshelf::count_by_user(&pool, user_id).await.unwrap(),
         0,
         "bookshelf should be empty after clear"
+    );
+    assert!(
+        reading_positions::get_position(&pool, user_id, book1.id)
+            .await
+            .unwrap()
+            .is_none(),
+        "reading history for cleared shelf books should be removed"
+    );
+    assert!(
+        reading_positions::get_position(&pool, user_id, book2.id)
+            .await
+            .unwrap()
+            .is_none(),
+        "reading history for cleared shelf books should be removed"
     );
 }
 

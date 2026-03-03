@@ -149,6 +149,31 @@ pub async fn get_progress_map(
     Ok(map)
 }
 
+/// Delete a reading position for one user/book pair.
+pub async fn delete_position(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
+    let sql = pool.sql("DELETE FROM reading_positions WHERE user_id = ? AND book_id = ?");
+    sqlx::query(&sql)
+        .bind(user_id)
+        .bind(book_id)
+        .execute(pool.inner())
+        .await?;
+    Ok(())
+}
+
+/// Delete reading positions for books currently present on the user's bookshelf.
+pub async fn delete_for_user_bookshelf(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
+    let sql = pool.sql(
+        "DELETE FROM reading_positions WHERE user_id = ? \
+         AND book_id IN (SELECT book_id FROM bookshelf WHERE user_id = ?)",
+    );
+    sqlx::query(&sql)
+        .bind(user_id)
+        .bind(user_id)
+        .execute(pool.inner())
+        .await?;
+    Ok(())
+}
+
 /// Delete reading positions beyond the `keep` most recent for a user.
 async fn prune_oldest(pool: &DbPool, user_id: i64, keep: i64) -> Result<(), sqlx::Error> {
     // Count first to avoid unnecessary delete
@@ -464,5 +489,67 @@ mod tests {
         assert_eq!(map.len(), 1);
         assert!((map[&b1] - 0.2).abs() < f64::EPSILON);
         assert!(!map.contains_key(&b3));
+    }
+
+    #[tokio::test]
+    async fn test_delete_position_removes_only_target_book() {
+        let pool = create_test_pool().await;
+        let user_id = insert_user(&pool, "delete_pos_user").await;
+        let cat_id = ensure_catalog(&pool).await;
+        let b1 = insert_book(&pool, cat_id, "Delete Pos Book A").await;
+        let b2 = insert_book(&pool, cat_id, "Delete Pos Book B").await;
+
+        save_position(&pool, user_id, b1, "p1", 0.2, 100)
+            .await
+            .unwrap();
+        save_position(&pool, user_id, b2, "p2", 0.7, 100)
+            .await
+            .unwrap();
+
+        delete_position(&pool, user_id, b1).await.unwrap();
+
+        assert!(get_position(&pool, user_id, b1).await.unwrap().is_none());
+        assert!(get_position(&pool, user_id, b2).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_delete_for_user_bookshelf_removes_positions_for_shelf_books_only() {
+        let pool = create_test_pool().await;
+        let user_id = insert_user(&pool, "delete_shelf_user").await;
+        let cat_id = ensure_catalog(&pool).await;
+        let on_shelf_book = insert_book(&pool, cat_id, "Shelf Book A").await;
+        let off_shelf_book = insert_book(&pool, cat_id, "Shelf Book B").await;
+
+        save_position(&pool, user_id, on_shelf_book, "shelf", 0.1, 100)
+            .await
+            .unwrap();
+        save_position(&pool, user_id, off_shelf_book, "off", 0.3, 100)
+            .await
+            .unwrap();
+
+        let sql = pool.sql(
+            "INSERT INTO bookshelf (user_id, book_id, read_time) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        );
+        sqlx::query(&sql)
+            .bind(user_id)
+            .bind(on_shelf_book)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+
+        delete_for_user_bookshelf(&pool, user_id).await.unwrap();
+
+        assert!(
+            get_position(&pool, user_id, on_shelf_book)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            get_position(&pool, user_id, off_shelf_book)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 }

@@ -82,6 +82,7 @@ pub async fn bookshelf_toggle(
         .unwrap_or(false);
     if on_shelf {
         let _ = bookshelf::delete_one(&state.db, user_id, form.book_id).await;
+        let _ = reading_positions::delete_position(&state.db, user_id, form.book_id).await;
     } else {
         let _ = bookshelf::upsert(&state.db, user_id, form.book_id).await;
     }
@@ -314,6 +315,7 @@ pub async fn bookshelf_clear(
         None => return Redirect::to("/web/login").into_response(),
     };
 
+    let _ = reading_positions::delete_for_user_bookshelf(&state.db, user_id).await;
     let _ = crate::db::queries::bookshelf::clear_all(&state.db, user_id).await;
     Redirect::to("/web/bookshelf").into_response()
 }
