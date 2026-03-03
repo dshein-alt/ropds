@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.9] - 2026.03.03
+
+### Added
+- Added a SQLite-to-PostgreSQL/MySQL migration script with full data transfer, logging, and migration-state validation.
+- Added support for running target DB commands through a container runtime when database client tools are not installed on the host.
+- Added step-by-step migration guides for PostgreSQL and MariaDB in English and Russian.
+
+### Changed
+- Updated project documentation with direct references to database backend migration workflows.
+
+### Fixed
+- Fixed PostgreSQL reader progress handling so read history and last-read updates work correctly.
+
 ## [0.8.8] - 2026.03.03
 
 ### Changed
