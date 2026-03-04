@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026.03.04
+
+### Added
+- Added OAuth sign-in support for Google, Yandex, and Keycloak with controlled access approval.
+- Added admin access-request moderation flow with approve, reject, ban, reinstate, and account-link options.
+- Added OPDS password regeneration for OAuth users in the profile page.
+- Added optional SMTP notifications for new and repeated OAuth access requests.
+
+### Changed
+- Updated project documentation with OAuth setup, approval workflow, and SMTP configuration guidance.
+
 ## [0.9.0] - 2026.03.03
 
 ### Added
