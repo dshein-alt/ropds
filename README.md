@@ -18,6 +18,7 @@ The goal is simple: **a personal library server you can set up once and forget a
 - **OPDS 1.2 compatible** — works with any OPDS reader (KOReader, Moon+ Reader, Librera, etc.)
 - **Built-in book reader** — read EPUB, FB2, MOBI, DjVu, and PDF directly in the browser with position sync
 - **Bookshelf & uploads** — personal reading lists and book uploads with auto-extracted metadata
+- **OAuth access flow** — social/SSO sign-in with admin approval queue and optional email notifications
 - **Responsive web UI** — browse, search, and manage your library with light/dark theme
 
 This project is also an **educational pet-project** exploring modern Rust ecosystem and heavy use of **competitive LLM coding agents** throughout development.
@@ -64,7 +65,16 @@ This project is also an **educational pet-project** exploring modern Rust ecosys
 - Multi-user support with built-in admin panel
 - Create and delete users, reset passwords, toggle upload permissions
 - Users manage their own profile: display name and password
+- OAuth users can regenerate a dedicated OPDS password from their profile page
 - Forced password change on first login when set by admin
+
+**OAuth & Access Requests**
+- OAuth sign-in providers: Google, Yandex, Keycloak (OIDC)
+- New OAuth users enter a pending state until approved by an administrator
+- Admins can approve, reject, ban, or reinstate OAuth access requests
+- Admin approval supports linking an OAuth identity to an existing local user
+- Keycloak supports optional auto-approval and role-based upload/admin mapping
+- Optional SMTP email notification to admin for new and re-applied access requests
 
 **Embedded Book Reader**
 - Read EPUB, FB2, MOBI, DjVu, and PDF directly in the browser — no downloads needed
@@ -191,6 +201,38 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 | `[web]` | Default language (`en`, `ru`), default theme (`light`, `dark`) |
 | `[upload]` | Enable/disable uploads, staging directory, size limit |
 | `[reader]` | Enable/disable embedded reader, reading history size |
+| `[oauth]` | OAuth provider credentials, moderation settings, Keycloak role mapping, admin notification target |
+| `[smtp]` | SMTP server settings for outbound email notifications |
+
+`server.base_url` is required for OAuth callback URLs and links included in admin notification emails.
+
+## OAuth Login & Approval
+
+1. Set `server.base_url` to your externally reachable URL.
+2. Configure at least one provider in `[oauth]` (`google_*`, `yandex_*`, or Keycloak settings).
+3. (Optional) Enable admin notifications with `oauth.notify_admin_email` and `[smtp]` settings.
+4. Users sign in from `/web/login` using an OAuth button.
+5. New users appear in **Admin -> Access Requests** and can be approved, rejected, banned, or linked to an existing account.
+
+Example (minimal):
+
+```toml
+[server]
+base_url = "https://books.example.com"
+
+[oauth]
+google_client_id = "..."
+google_client_secret = "..."
+notify_admin_email = "admin@example.com"
+
+[smtp]
+host = "smtp.example.com"
+port = 587
+username = "smtp-user"
+password = "smtp-pass"
+from = "ropds@example.com"
+starttls = true
+```
 
 ## Supported Formats
 
