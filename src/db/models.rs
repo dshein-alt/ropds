@@ -94,6 +94,19 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct OAuthIdentity {
+    pub id: i64,
+    pub user_id: i64,
+    pub provider: String,
+    pub provider_uid: String,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub status: String, // "pending" | "active" | "rejected" | "banned"
+    pub rejected_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Counter {
     pub name: String,
     pub value: i64,

@@ -14,12 +14,17 @@ pub struct UserView {
     pub password_change_required: i32,
     pub display_name: String,
     pub allow_upload: i32,
+    pub is_oauth: i32,
 }
 
 /// Get all users for admin panel listing (excludes password_hash).
 pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> {
     let sql = pool.sql(
-        "SELECT id, username, is_superuser, created_at, last_login, password_change_required, display_name, allow_upload FROM users ORDER BY id"
+        "SELECT u.id, u.username, u.is_superuser, u.created_at, u.last_login, \
+         u.password_change_required, u.display_name, u.allow_upload, \
+         CASE WHEN EXISTS (SELECT 1 FROM oauth_identities WHERE user_id = u.id AND status = 'active') \
+         THEN 1 ELSE 0 END AS is_oauth \
+         FROM users u ORDER BY u.id"
     );
     let users: Vec<UserView> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
     Ok(users)
@@ -153,6 +158,60 @@ pub async fn get_username(pool: &DbPool, user_id: i64) -> Result<String, sqlx::E
         .fetch_optional(pool.inner())
         .await?;
     Ok(row.map(|(v,)| v).unwrap_or_default())
+}
+
+/// Get user ID by username.
+pub async fn get_id_by_username(pool: &DbPool, username: &str) -> Result<Option<i64>, sqlx::Error> {
+    let sql = pool.sql("SELECT id FROM users WHERE username = ?");
+    let row: Option<(i64,)> = sqlx::query_as(&sql)
+        .bind(username)
+        .fetch_optional(pool.inner())
+        .await?;
+    Ok(row.map(|(id,)| id))
+}
+
+/// Update a user's username.
+pub async fn update_username(
+    pool: &DbPool,
+    user_id: i64,
+    username: &str,
+) -> Result<(), sqlx::Error> {
+    let sql = pool.sql("UPDATE users SET username = ? WHERE id = ?");
+    sqlx::query(&sql)
+        .bind(username)
+        .bind(user_id)
+        .execute(pool.inner())
+        .await?;
+    Ok(())
+}
+
+/// Create a new OAuth-originated user. Sets password_change_required = 0
+/// because OAuth users authenticate via provider — they never need to set a password.
+pub async fn create_oauth_user(
+    pool: &DbPool,
+    username: &str,
+    password_hash: &str,
+    is_superuser: i32,
+    display_name: &str,
+) -> Result<i64, sqlx::Error> {
+    let sql = pool.sql(
+        "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) \
+         VALUES (?, ?, ?, 0, ?)",
+    );
+    sqlx::query(&sql)
+        .bind(username)
+        .bind(password_hash)
+        .bind(is_superuser)
+        .bind(display_name)
+        .execute(pool.inner())
+        .await?;
+
+    let sql = pool.sql("SELECT id FROM users WHERE username = ?");
+    let row: (i64,) = sqlx::query_as(&sql)
+        .bind(username)
+        .fetch_one(pool.inner())
+        .await?;
+    Ok(row.0)
 }
 
 /// Check if user must change password before accessing the app.
@@ -320,5 +379,38 @@ mod tests {
 
         let user = get_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(user.display_name, "");
+    }
+
+    #[tokio::test]
+    async fn test_get_id_by_username_and_update_username() {
+        let pool = create_test_pool().await;
+        let id = create(&pool, "rename-me", "hash", 0, "").await.unwrap();
+
+        assert_eq!(
+            get_id_by_username(&pool, "rename-me").await.unwrap(),
+            Some(id)
+        );
+
+        update_username(&pool, id, "renamed").await.unwrap();
+
+        assert_eq!(get_id_by_username(&pool, "rename-me").await.unwrap(), None);
+        assert_eq!(
+            get_id_by_username(&pool, "renamed").await.unwrap(),
+            Some(id)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_oauth_user_no_password_change_required() {
+        let pool = create_test_pool().await;
+        let id = create_oauth_user(&pool, "guser", "", 0, "Google User")
+            .await
+            .unwrap();
+        assert!(id > 0);
+        let required = password_change_required(&pool, id).await.unwrap();
+        assert!(
+            !required,
+            "OAuth users must not be forced to change password"
+        );
     }
 }

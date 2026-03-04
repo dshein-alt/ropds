@@ -4,6 +4,7 @@ pub mod bookshelf;
 pub mod catalogs;
 pub mod counters;
 pub mod genres;
+pub mod oauth;
 pub mod reading_positions;
 pub mod series;
 pub mod suppressed;
