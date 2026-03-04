@@ -14,6 +14,7 @@ mod book_delete;
 mod book_edit;
 mod duplicates;
 mod genres;
+pub mod oauth_requests;
 mod scan;
 mod user_pages;
 
@@ -60,6 +61,14 @@ fn get_session_user_id(jar: &CookieJar, secret: &[u8]) -> Option<i64> {
 fn is_valid_password(password: &str) -> bool {
     let len = password.chars().count();
     (8..=32).contains(&len)
+}
+
+/// Validate username characters: ASCII alnum plus dot, dash and underscore.
+fn is_valid_username(username: &str) -> bool {
+    !username.is_empty()
+        && username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 /// Validate book title: non-empty, max 256 chars, no control characters.

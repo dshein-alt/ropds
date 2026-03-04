@@ -97,6 +97,38 @@ pub async fn admin_page(
     ctx.insert("cfg_delete_logical", &state.config.scanner.delete_logical);
     ctx.insert("is_scanning", &crate::scanner::is_scanning());
 
+    // OAuth access requests (for Access Requests accordion)
+    let pending_identities = crate::db::queries::oauth::list_by_status(&state.db, "pending")
+        .await
+        .unwrap_or_default();
+    let mut pending: Vec<serde_json::Value> = Vec::with_capacity(pending_identities.len());
+    for item in pending_identities {
+        let source_username = users::get_username(&state.db, item.user_id)
+            .await
+            .unwrap_or_default();
+        pending.push(serde_json::json!({
+            "id": item.id,
+            "user_id": item.user_id,
+            "provider": item.provider,
+            "provider_uid": item.provider_uid,
+            "email": item.email,
+            "display_name": item.display_name,
+            "status": item.status,
+            "rejected_at": item.rejected_at,
+            "created_at": item.created_at,
+            "source_username": source_username,
+        }));
+    }
+    let rejected = crate::db::queries::oauth::list_by_status(&state.db, "rejected")
+        .await
+        .unwrap_or_default();
+    let banned = crate::db::queries::oauth::list_by_status(&state.db, "banned")
+        .await
+        .unwrap_or_default();
+    ctx.insert("pending", &pending);
+    ctx.insert("rejected", &rejected);
+    ctx.insert("banned", &banned);
+
     match state.tera.render("web/admin.html", &ctx) {
         Ok(html) => Ok(Html(html)),
         Err(e) => {
@@ -133,6 +165,9 @@ pub async fn create_user(
     let username = form.username.trim();
     if username.is_empty() {
         return Redirect::to("/web/admin?error=username_empty").into_response();
+    }
+    if !is_valid_username(username) {
+        return Redirect::to("/web/admin?error=username_invalid").into_response();
     }
     if !is_valid_password(&form.password) {
         return Redirect::to("/web/admin?error=password_short").into_response();
@@ -255,11 +290,23 @@ pub async fn toggle_upload(
 /// GET /web/profile — render profile page for authenticated users.
 pub async fn profile_page(State(state): State<AppState>, jar: CookieJar) -> Response {
     let secret = state.config.server.session_secret.as_bytes();
-    if get_session_user_id(&jar, secret).is_none() {
-        return Redirect::to("/web/login").into_response();
-    }
+    let user_id = match get_session_user_id(&jar, secret) {
+        Some(id) => id,
+        None => return Redirect::to("/web/login").into_response(),
+    };
 
-    let ctx = build_context(&state, &jar, "profile").await;
+    let mut ctx = build_context(&state, &jar, "profile").await;
+
+    // Check if user has an active OAuth identity (for OPDS Access card)
+    let identities = crate::db::queries::oauth::list_for_user(&state.db, user_id)
+        .await
+        .unwrap_or_default();
+    let is_oauth_user = identities.iter().any(|i| i.status == "active");
+    ctx.insert("is_oauth_user", &is_oauth_user);
+    let base = &state.config.server.base_url;
+    ctx.insert("opds_url", &format!("{base}/opds"));
+    ctx.insert("opds_v2_url", &format!("{base}/opds/v2"));
+
     match state.tera.render("web/profile.html", &ctx) {
         Ok(html) => Html(html).into_response(),
         Err(e) => {
@@ -424,4 +471,47 @@ pub async fn change_password_submit(
         .unwrap_or_else(|| "/web".to_string());
 
     Redirect::to(&redirect_to).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct OpdsResetForm {
+    pub csrf_token: String,
+}
+
+/// POST /web/profile/opds-reset
+/// Generates a new random OPDS password for OAuth users. Shows it once.
+pub async fn opds_password_reset(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<OpdsResetForm>,
+) -> Response {
+    let secret = state.config.server.session_secret.as_bytes();
+    if !validate_csrf(&jar, secret, &form.csrf_token) {
+        return (StatusCode::FORBIDDEN, "CSRF validation failed").into_response();
+    }
+
+    let user_id = match get_session_user_id(&jar, secret) {
+        Some(id) => id,
+        None => return Redirect::to("/web/login").into_response(),
+    };
+
+    // Only for OAuth users (must have at least one active oauth_identity).
+    let identities = crate::db::queries::oauth::list_for_user(&state.db, user_id)
+        .await
+        .unwrap_or_default();
+    let is_oauth_user = identities.iter().any(|i| i.status == "active");
+    if !is_oauth_user {
+        return (StatusCode::FORBIDDEN, "Not an OAuth user").into_response();
+    }
+
+    let new_password = crate::password::generate_opds_password();
+    let new_hash = crate::password::hash(&new_password);
+
+    if let Err(e) = users::update_password(&state.db, user_id, &new_hash).await {
+        tracing::error!("OPDS password reset failed: {e}");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Reset failed").into_response();
+    }
+
+    // Return the new password as JSON for inline display.
+    axum::Json(serde_json::json!({"password": new_password})).into_response()
 }

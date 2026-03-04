@@ -20,6 +20,7 @@ mod tests {
                 log_level: "info".to_string(),
                 session_secret: "test-secret".to_string(),
                 session_ttl_hours: 24,
+                base_url: String::new(),
             },
             library: LibraryConfig {
                 root_path: PathBuf::from("/tmp/books"),
@@ -70,6 +71,8 @@ mod tests {
                 max_upload_size_mb: 10,
             },
             reader: ReaderConfig::default(),
+            oauth: Default::default(),
+            smtp: Default::default(),
         };
 
         let tera = tera::Tera::default();
@@ -130,6 +133,19 @@ mod tests {
         assert!(is_valid_password("12345678"));
         assert!(is_valid_password(&"x".repeat(32)));
         assert!(!is_valid_password(&"x".repeat(33)));
+    }
+
+    #[test]
+    fn test_is_valid_username_allowed_chars_only() {
+        assert!(is_valid_username("john.doe"));
+        assert!(is_valid_username("john_doe"));
+        assert!(is_valid_username("john-doe"));
+        assert!(is_valid_username("john123"));
+
+        assert!(!is_valid_username(""));
+        assert!(!is_valid_username("john doe"));
+        assert!(!is_valid_username("john@doe"));
+        assert!(!is_valid_username("иван"));
     }
 
     #[test]

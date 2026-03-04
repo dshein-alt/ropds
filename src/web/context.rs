@@ -116,6 +116,16 @@ pub async fn build_context(state: &AppState, jar: &CookieJar, active_page: &str)
     ctx.insert("display_name", &display_name);
     ctx.insert("username", &username);
 
+    // Pending OAuth access requests (badge count for admin navbar)
+    if is_superuser == 1 {
+        let pending_count = crate::db::queries::oauth::count_pending(&state.db)
+            .await
+            .unwrap_or(0);
+        ctx.insert("oauth_pending_count", &pending_count);
+    } else {
+        ctx.insert("oauth_pending_count", &0_i64);
+    }
+
     // Upload permission: global config AND (admin OR user has allow_upload)
     let can_upload =
         state.config.upload.allow_upload && (is_superuser == 1 || user_allow_upload == 1);

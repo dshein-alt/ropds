@@ -2,6 +2,7 @@ pub mod admin;
 pub mod auth;
 pub mod context;
 pub mod i18n;
+pub mod oauth;
 pub mod pagination;
 pub mod upload;
 pub mod views;
@@ -43,6 +44,20 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/section/delete", post(admin::delete_section))
         .route("/books/{id}/delete", post(admin::delete_book))
         .route("/duplicates", get(admin::duplicates_page))
+        .route("/oauth-requests", get(admin::oauth_requests::page))
+        .route(
+            "/oauth-requests/{id}/approve",
+            post(admin::oauth_requests::approve),
+        )
+        .route(
+            "/oauth-requests/{id}/reject",
+            post(admin::oauth_requests::reject),
+        )
+        .route("/oauth-requests/{id}/ban", post(admin::oauth_requests::ban))
+        .route(
+            "/oauth-requests/{id}/reinstate",
+            post(admin::oauth_requests::reinstate),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             admin::require_superuser,
@@ -62,6 +77,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/set-language", get(views::set_language))
         .route("/login", get(auth::login_page).post(auth::login_submit))
         .route("/logout", get(auth::logout))
+        .route("/oauth/login/{provider}", get(oauth::login))
+        .route("/oauth/callback/{provider}", get(oauth::callback))
         .route(
             "/change-password",
             get(admin::change_password_page).post(admin::change_password_submit),
@@ -72,6 +89,7 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/profile/display-name",
             post(admin::profile_update_display_name),
         )
+        .route("/profile/opds-reset", post(admin::opds_password_reset))
         .route("/download/{book_id}/{zip_flag}", get(views::web_download))
         .route("/bookshelf", get(views::bookshelf_page))
         .route("/bookshelf/cards", get(views::bookshelf_cards))
@@ -120,6 +138,7 @@ mod tests {
                 log_level: "info".to_string(),
                 session_secret: "test-secret".to_string(),
                 session_ttl_hours: 24,
+                base_url: String::new(),
             },
             library: LibraryConfig {
                 root_path: PathBuf::from("/tmp/books"),
@@ -173,6 +192,8 @@ mod tests {
                 enable: true,
                 read_history_max: 100,
             },
+            oauth: Default::default(),
+            smtp: Default::default(),
         };
 
         let pool = create_test_pool().await;
