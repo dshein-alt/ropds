@@ -201,7 +201,7 @@ sudo journalctl -u ropds.service -f
 | `[web]` | Язык по умолчанию (`en`, `ru`), тема (`light`, `dark`) |
 | `[upload]` | Включение загрузки, директория, лимит размера файла |
 | `[reader]` | Включение встроенной читалки, размер истории чтения |
-| `[oauth]` | OAuth-провайдеры, параметры модерации, маппинг ролей Keycloak, адрес для уведомлений |
+| `[oauth]` | OAuth-провайдеры, параметры модерации, маппинг ролей Keycloak, переключатель уведомлений |
 | `[smtp]` | SMTP-настройки для исходящих уведомлений |
 
 `server.base_url` обязателен для корректных OAuth callback URL и ссылок в email-уведомлениях администратору.
@@ -210,7 +210,7 @@ sudo journalctl -u ropds.service -f
 
 1. Укажите `server.base_url` как внешний URL сервера.
 2. Настройте минимум одного OAuth-провайдера в `[oauth]` (`google_*`, `yandex_*` или Keycloak).
-3. (Опционально) Включите уведомления через `oauth.notify_admin_email` и параметры `[smtp]`.
+3. (Опционально) Включите уведомления через `oauth.notify_admin_email = true` и параметры `[smtp]`.
 4. Пользователь входит через кнопку OAuth на странице `/web/login`.
 5. Новые пользователи появляются в **Админка -> Access Requests**, где их можно подтвердить, отклонить, заблокировать или привязать к существующему пользователю.
 
@@ -223,7 +223,7 @@ base_url = "https://books.example.com"
 [oauth]
 google_client_id = "..."
 google_client_secret = "..."
-notify_admin_email = "admin@example.com"
+notify_admin_email = true
 
 [smtp]
 host = "smtp.example.com"
@@ -231,6 +231,7 @@ port = 587
 username = "smtp-user"
 password = "smtp-pass"
 from = "ropds@example.com"
+send_to = ["admin@example.com", "alerts@example.com"]
 starttls = true
 ```
 

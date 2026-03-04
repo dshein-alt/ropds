@@ -68,7 +68,7 @@ keycloak_role_upload      = "ropds_can_upload"
 keycloak_role_admin       = "ropds_admin"
 keycloak_button_label     = "Company SSO"
 rejection_cooldown_hours  = 24
-notify_admin_email        = ""   # empty = no email notifications
+notify_admin_email        = false
 
 [smtp]
 host     = ""
@@ -76,4 +76,5 @@ port     = 587
 username = ""
 password = ""
 from     = ""
+send_to  = ["admin@example.com"]
 starttls = true

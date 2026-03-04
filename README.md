@@ -201,7 +201,7 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 | `[web]` | Default language (`en`, `ru`), default theme (`light`, `dark`) |
 | `[upload]` | Enable/disable uploads, staging directory, size limit |
 | `[reader]` | Enable/disable embedded reader, reading history size |
-| `[oauth]` | OAuth provider credentials, moderation settings, Keycloak role mapping, admin notification target |
+| `[oauth]` | OAuth provider credentials, moderation settings, Keycloak role mapping, notification toggle |
 | `[smtp]` | SMTP server settings for outbound email notifications |
 
 `server.base_url` is required for OAuth callback URLs and links included in admin notification emails.
@@ -210,7 +210,7 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 
 1. Set `server.base_url` to your externally reachable URL.
 2. Configure at least one provider in `[oauth]` (`google_*`, `yandex_*`, or Keycloak settings).
-3. (Optional) Enable admin notifications with `oauth.notify_admin_email` and `[smtp]` settings.
+3. (Optional) Enable admin notifications with `oauth.notify_admin_email = true` and `[smtp]` settings.
 4. Users sign in from `/web/login` using an OAuth button.
 5. New users appear in **Admin -> Access Requests** and can be approved, rejected, banned, or linked to an existing account.
 
@@ -223,7 +223,7 @@ base_url = "https://books.example.com"
 [oauth]
 google_client_id = "..."
 google_client_secret = "..."
-notify_admin_email = "admin@example.com"
+notify_admin_email = true
 
 [smtp]
 host = "smtp.example.com"
@@ -231,6 +231,7 @@ port = 587
 username = "smtp-user"
 password = "smtp-pass"
 from = "ropds@example.com"
+send_to = ["admin@example.com", "alerts@example.com"]
 starttls = true
 ```
 

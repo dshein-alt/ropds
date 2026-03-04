@@ -4,17 +4,19 @@ use lettre::{
     transport::smtp::authentication::Credentials,
 };
 
-/// Returns true if SMTP is configured (host + from are non-empty).
+/// Returns true if SMTP is configured (host + from + at least one recipient).
 pub fn is_email_configured(cfg: &SmtpConfig) -> bool {
-    !cfg.host.is_empty() && !cfg.from.is_empty()
+    !cfg.host.is_empty() && !cfg.from.is_empty() && !cfg.send_to.is_empty()
 }
 
 /// Send an email asynchronously in a spawned Tokio task.
 /// Errors are logged as warnings and never surfaced to the caller.
-pub fn send_async(cfg: SmtpConfig, to: String, subject: String, body: String) {
+pub fn send_async(cfg: SmtpConfig, recipients: Vec<String>, subject: String, body: String) {
     tokio::spawn(async move {
-        if let Err(e) = do_send(&cfg, &to, &subject, &body).await {
-            tracing::warn!("Email send failed to {to}: {e}");
+        for to in recipients {
+            if let Err(e) = do_send(&cfg, &to, &subject, &body).await {
+                tracing::warn!("Email send failed to {to}: {e}");
+            }
         }
     });
 }
@@ -71,6 +73,7 @@ mod tests {
         let cfg = SmtpConfig {
             host: "smtp.example.com".into(),
             from: "ropds@example.com".into(),
+            send_to: vec!["admin@example.com".into()],
             port: 587,
             starttls: true,
             ..Default::default()

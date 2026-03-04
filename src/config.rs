@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -249,7 +250,8 @@ pub struct OauthConfig {
     pub keycloak_button_label: String,
     #[serde(default = "default_cooldown")]
     pub rejection_cooldown_hours: u64,
-    pub notify_admin_email: String,
+    #[serde(default = "default_false")]
+    pub notify_admin_email: bool,
 }
 
 impl Default for OauthConfig {
@@ -268,7 +270,7 @@ impl Default for OauthConfig {
             keycloak_role_admin: default_role_admin(),
             keycloak_button_label: default_keycloak_button_label(),
             rejection_cooldown_hours: default_cooldown(),
-            notify_admin_email: String::new(),
+            notify_admin_email: default_false(),
         }
     }
 }
@@ -282,6 +284,8 @@ pub struct SmtpConfig {
     pub username: String,
     pub password: String,
     pub from: String,
+    #[serde(default)]
+    pub send_to: Vec<String>,
     #[serde(default = "default_true")]
     pub starttls: bool,
 }
@@ -294,6 +298,7 @@ impl Default for SmtpConfig {
             username: String::new(),
             password: String::new(),
             from: String::new(),
+            send_to: Vec::new(),
             starttls: default_true(),
         }
     }
@@ -310,6 +315,7 @@ impl Config {
             source: e,
         })?;
         config.apply_legacy_cover_fallbacks();
+        config.validate()?;
         Ok(config)
     }
 
@@ -335,6 +341,48 @@ impl Config {
             self.covers.show_covers = show;
         }
     }
+
+    fn validate(&self) -> Result<(), ConfigError> {
+        if !self.oauth.notify_admin_email {
+            return Ok(());
+        }
+
+        if self.smtp.host.trim().is_empty() {
+            return Err(ConfigError::Validation(
+                "oauth.notify_admin_email=true requires [smtp].host".to_string(),
+            ));
+        }
+        if self.smtp.from.trim().is_empty() {
+            return Err(ConfigError::Validation(
+                "oauth.notify_admin_email=true requires [smtp].from".to_string(),
+            ));
+        }
+        if self.smtp.send_to.is_empty() {
+            return Err(ConfigError::Validation(
+                "oauth.notify_admin_email=true requires non-empty [smtp].send_to".to_string(),
+            ));
+        }
+
+        if lettre::message::Mailbox::from_str(self.smtp.from.trim()).is_err() {
+            return Err(ConfigError::Validation(
+                "invalid [smtp].from email address".to_string(),
+            ));
+        }
+        for recipient in &self.smtp.send_to {
+            if recipient.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "empty recipient in [smtp].send_to".to_string(),
+                ));
+            }
+            if lettre::message::Mailbox::from_str(recipient.trim()).is_err() {
+                return Err(ConfigError::Validation(format!(
+                    "invalid recipient in [smtp].send_to: {recipient}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -349,6 +397,8 @@ pub enum ConfigError {
         path: PathBuf,
         source: toml::de::Error,
     },
+    #[error("invalid config: {0}")]
+    Validation(String),
 }
 
 // Default value functions
@@ -586,13 +636,52 @@ read_history_max = 50
         let cfg: OauthConfig = toml::from_str("").unwrap();
         assert_eq!(cfg.rejection_cooldown_hours, 24);
         assert!(!cfg.keycloak_auto_approve);
+        assert!(!cfg.notify_admin_email);
     }
 
     #[test]
     fn test_smtp_config_defaults() {
         let cfg: SmtpConfig = toml::from_str("").unwrap();
         assert_eq!(cfg.port, 587);
+        assert!(cfg.send_to.is_empty());
         assert!(cfg.starttls);
+    }
+
+    #[test]
+    fn test_validate_notify_email_requires_smtp_fields() {
+        let toml_str = r#"
+[server]
+[library]
+root_path = "/books"
+[database]
+[opds]
+[scanner]
+[oauth]
+notify_admin_email = true
+[smtp]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.validate(), Err(ConfigError::Validation(_))));
+    }
+
+    #[test]
+    fn test_validate_notify_email_accepts_valid_smtp() {
+        let toml_str = r#"
+[server]
+[library]
+root_path = "/books"
+[database]
+[opds]
+[scanner]
+[oauth]
+notify_admin_email = true
+[smtp]
+host = "smtp.example.com"
+from = "ropds@example.com"
+send_to = ["admin1@example.com", "Admin Team <admin2@example.com>"]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.validate().is_ok());
     }
 
     #[test]
