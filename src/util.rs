@@ -4,7 +4,7 @@ pub fn slugify_username(name: &str) -> String {
     let slug: String = name
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect::<String>()
         .split('_')
         .filter(|s| !s.is_empty())
@@ -25,5 +25,6 @@ mod tests {
     fn test_slugify() {
         assert_eq!(slugify_username("John Smith"), "john_smith");
         assert_eq!(slugify_username(""), "user");
+        assert_eq!(slugify_username("Иван Петров"), "user");
     }
 }

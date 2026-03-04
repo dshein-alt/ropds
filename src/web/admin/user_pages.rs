@@ -513,5 +513,14 @@ pub async fn opds_password_reset(
     }
 
     // Return the new password as JSON for inline display.
-    axum::Json(serde_json::json!({"password": new_password})).into_response()
+    let mut response = axum::Json(serde_json::json!({"password": new_password})).into_response();
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        axum::http::header::PRAGMA,
+        axum::http::HeaderValue::from_static("no-cache"),
+    );
+    response
 }

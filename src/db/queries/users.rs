@@ -1,7 +1,7 @@
 use sqlx::FromRow;
 
-use crate::db::DbPool;
 use crate::db::models::User;
+use crate::db::{DbBackend, DbPool};
 
 /// User data safe for template rendering (no password_hash).
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
@@ -60,24 +60,7 @@ pub async fn create(
     is_superuser: i32,
     display_name: &str,
 ) -> Result<i64, sqlx::Error> {
-    let sql = pool.sql(
-        "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) VALUES (?, ?, ?, 1, ?)"
-    );
-    sqlx::query(&sql)
-        .bind(username)
-        .bind(password_hash)
-        .bind(is_superuser)
-        .bind(display_name)
-        .execute(pool.inner())
-        .await?;
-
-    // AnyPool last_insert_id() can return None — fallback query
-    let sql = pool.sql("SELECT id FROM users WHERE username = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
-        .bind(username)
-        .fetch_one(pool.inner())
-        .await?;
-    Ok(row.0)
+    insert_user(pool, username, password_hash, is_superuser, display_name, 1).await
 }
 
 /// Update a user's password hash.
@@ -194,18 +177,53 @@ pub async fn create_oauth_user(
     is_superuser: i32,
     display_name: &str,
 ) -> Result<i64, sqlx::Error> {
+    insert_user(pool, username, password_hash, is_superuser, display_name, 0).await
+}
+
+async fn insert_user(
+    pool: &DbPool,
+    username: &str,
+    password_hash: &str,
+    is_superuser: i32,
+    display_name: &str,
+    password_change_required: i32,
+) -> Result<i64, sqlx::Error> {
+    if pool.backend() == DbBackend::Postgres {
+        let sql = pool.sql(
+            "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) \
+             VALUES (?, ?, ?, ?, ?) RETURNING id",
+        );
+        let row: (i64,) = sqlx::query_as(&sql)
+            .bind(username)
+            .bind(password_hash)
+            .bind(is_superuser)
+            .bind(password_change_required)
+            .bind(display_name)
+            .fetch_one(pool.inner())
+            .await?;
+        return Ok(row.0);
+    }
+
     let sql = pool.sql(
         "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) \
-         VALUES (?, ?, ?, 0, ?)",
+         VALUES (?, ?, ?, ?, ?)",
     );
-    sqlx::query(&sql)
+    let result = sqlx::query(&sql)
         .bind(username)
         .bind(password_hash)
         .bind(is_superuser)
+        .bind(password_change_required)
         .bind(display_name)
         .execute(pool.inner())
         .await?;
 
+    if let Some(id) = result.last_insert_id()
+        && id > 0
+    {
+        return Ok(id);
+    }
+
+    // AnyPool last_insert_id() can return None — fallback query by unique username.
     let sql = pool.sql("SELECT id FROM users WHERE username = ?");
     let row: (i64,) = sqlx::query_as(&sql)
         .bind(username)

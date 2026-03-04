@@ -22,6 +22,7 @@ use crate::web::auth::sign_session;
 
 const STATE_COOKIE: &str = "oauth_state";
 const STATE_TTL_SECS: i64 = 600; // 10 minutes
+const MAX_USERNAME_ATTEMPTS: u32 = 1000;
 
 /// Create a signed state cookie value: `{state}:{expiry}:{sig}` (reuses HMAC from auth.rs).
 pub fn sign_oauth_state(state_value: &str, secret: &[u8]) -> String {
@@ -428,24 +429,53 @@ async fn handle_new_identity(userinfo: UserInfo, state: &AppState, jar: CookieJa
         .as_deref()
         .map(crate::util::slugify_username)
         .unwrap_or_else(|| "user".to_string());
-    let username = find_unique_username(&state.db, &base).await;
 
     let opds_password = crate::password::generate_opds_password();
     let opds_hash = crate::password::hash(&opds_password);
-    let display = userinfo
-        .display_name
-        .clone()
-        .unwrap_or_else(|| username.clone());
 
-    let user_id = match crate::db::queries::users::create_oauth_user(
-        &state.db, &username, &opds_hash, 0, &display,
-    )
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!("Failed to create OAuth user: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user").into_response();
+    // Insert-first retry loop to avoid race between "username available" check and insert.
+    // Candidate order: base, base_2, base_3, ...
+    let mut created: Option<(i64, String)> = None;
+    for attempt in 1..=MAX_USERNAME_ATTEMPTS {
+        let username = username_candidate(&base, attempt);
+        let display = userinfo
+            .display_name
+            .clone()
+            .unwrap_or_else(|| username.clone());
+
+        match crate::db::queries::users::create_oauth_user(
+            &state.db, &username, &opds_hash, 0, &display,
+        )
+        .await
+        {
+            Ok(id) => {
+                created = Some((id, username));
+                break;
+            }
+            Err(e) if is_unique_violation(&e) => {
+                continue;
+            }
+            Err(e) => {
+                tracing::error!("Failed to create OAuth user: {e}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user")
+                    .into_response();
+            }
+        }
+    }
+
+    let (user_id, _username) = match created {
+        Some(v) => v,
+        None => {
+            tracing::error!(
+                "Failed to allocate unique username after {} attempts (base='{}')",
+                MAX_USERNAME_ATTEMPTS,
+                base
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to assign username",
+            )
+                .into_response();
         }
     };
 
@@ -484,7 +514,6 @@ async fn handle_new_identity(userinfo: UserInfo, state: &AppState, jar: CookieJa
         )
         .await;
         sync_keycloak_roles(user_id, &userinfo.roles, state).await;
-        notify_admin_pending(state, &userinfo, false).await;
         make_session(user_id, state, jar).await
     } else {
         notify_admin_pending(state, &userinfo, false).await;
@@ -492,22 +521,33 @@ async fn handle_new_identity(userinfo: UserInfo, state: &AppState, jar: CookieJa
     }
 }
 
-async fn find_unique_username(pool: &crate::db::DbPool, base: &str) -> String {
-    let sql = pool.sql("SELECT COUNT(*) FROM users WHERE username = ?");
-    let mut candidate = base.to_string();
-    let mut suffix = 2u32;
-    loop {
-        let count: (i64,) = sqlx::query_as(&sql)
-            .bind(&candidate)
-            .fetch_one(pool.inner())
-            .await
-            .unwrap_or((0,));
-        if count.0 == 0 {
-            return candidate;
-        }
-        candidate = format!("{}_{}", base, suffix);
-        suffix += 1;
+fn username_candidate(base: &str, attempt: u32) -> String {
+    if attempt <= 1 {
+        base.to_string()
+    } else {
+        format!("{base}_{attempt}")
     }
+}
+
+fn is_unique_violation(err: &sqlx::Error) -> bool {
+    let sqlstate_match = match err {
+        sqlx::Error::Database(db_err) => db_err
+            .code()
+            .map(|code| {
+                code == "23505" || // Postgres unique_violation
+                code == "2067" || // SQLite SQLITE_CONSTRAINT_UNIQUE
+                code == "1555" || // SQLite SQLITE_CONSTRAINT_PRIMARYKEY
+                code == "23000" // MySQL integrity constraint violation class
+            })
+            .unwrap_or(false),
+        _ => false,
+    };
+    if sqlstate_match {
+        return true;
+    }
+
+    let msg = err.to_string().to_lowercase();
+    msg.contains("unique") || msg.contains("duplicate")
 }
 
 async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
@@ -529,7 +569,7 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
 
     match (allow_upload, is_superuser) {
         (Some(u), Some(a)) => {
-            let _ = sqlx::query(
+            if let Err(e) = sqlx::query(
                 &state
                     .db
                     .sql("UPDATE users SET allow_upload = ?, is_superuser = ? WHERE id = ?"),
@@ -538,10 +578,15 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
             .bind(a)
             .bind(user_id)
             .execute(state.db.inner())
-            .await;
+            .await
+            {
+                tracing::warn!(
+                    "Keycloak role sync failed (allow_upload + is_superuser) for user {user_id}: {e}"
+                );
+            }
         }
         (Some(u), None) => {
-            let _ = sqlx::query(
+            if let Err(e) = sqlx::query(
                 &state
                     .db
                     .sql("UPDATE users SET allow_upload = ? WHERE id = ?"),
@@ -549,10 +594,13 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
             .bind(u)
             .bind(user_id)
             .execute(state.db.inner())
-            .await;
+            .await
+            {
+                tracing::warn!("Keycloak role sync failed (allow_upload) for user {user_id}: {e}");
+            }
         }
         (None, Some(a)) => {
-            let _ = sqlx::query(
+            if let Err(e) = sqlx::query(
                 &state
                     .db
                     .sql("UPDATE users SET is_superuser = ? WHERE id = ?"),
@@ -560,7 +608,10 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
             .bind(a)
             .bind(user_id)
             .execute(state.db.inner())
-            .await;
+            .await
+            {
+                tracing::warn!("Keycloak role sync failed (is_superuser) for user {user_id}: {e}");
+            }
         }
         _ => {}
     }
@@ -568,7 +619,7 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
 
 async fn notify_admin_pending(state: &AppState, userinfo: &UserInfo, is_reapply: bool) {
     let cfg = &state.config;
-    if cfg.oauth.notify_admin_email.is_empty() {
+    if !cfg.oauth.notify_admin_email {
         return;
     }
     if !crate::email::is_email_configured(&cfg.smtp) {
@@ -587,12 +638,7 @@ async fn notify_admin_pending(state: &AppState, userinfo: &UserInfo, is_reapply:
         userinfo.email.as_deref().unwrap_or("-"),
         cfg.server.base_url,
     );
-    crate::email::send_async(
-        cfg.smtp.clone(),
-        cfg.oauth.notify_admin_email.clone(),
-        subject,
-        body,
-    );
+    crate::email::send_async(cfg.smtp.clone(), cfg.smtp.send_to.clone(), subject, body);
 }
 
 async fn make_session(user_id: i64, state: &AppState, jar: CookieJar) -> Response {
@@ -648,5 +694,12 @@ mod tests {
     fn test_state_cookie_wrong_secret() {
         let cookie = sign_oauth_state("state", b"secret-a");
         assert!(!verify_oauth_state(&cookie, "state", b"secret-b"));
+    }
+
+    #[test]
+    fn test_username_candidate_sequence() {
+        assert_eq!(username_candidate("user", 1), "user");
+        assert_eq!(username_candidate("user", 2), "user_2");
+        assert_eq!(username_candidate("user", 9), "user_9");
     }
 }

@@ -10,7 +10,7 @@ pub async fn create_identity(
     email: Option<&str>,
     display_name: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let now = chrono::Utc::now().to_rfc3339();
     let sql = pool.sql(
         "INSERT INTO oauth_identities \
          (user_id, provider, provider_uid, email, display_name, status, created_at) \
