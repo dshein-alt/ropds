@@ -39,6 +39,45 @@
           </div>
           <button type="submit" class="btn btn-primary w-100">{{ t.login.submit }}</button>
         </form>
+
+        {% if oauth_google or oauth_yandex or oauth_keycloak %}
+        <div class="text-center my-3 text-muted small">— or sign in with —</div>
+        <div class="d-grid gap-2">
+          {% if oauth_google %}
+          <a href="/web/oauth/login/google" class="btn btn-outline-secondary oauth-login-btn">
+            <span class="oauth-login-content">
+              <span class="oauth-login-icon-wrap">
+                <img src="/static/images/oauth/google.svg" alt="" class="oauth-login-icon">
+              </span>
+              <span class="oauth-login-label">Google</span>
+              <span class="oauth-login-spacer" aria-hidden="true"></span>
+            </span>
+          </a>
+          {% endif %}
+          {% if oauth_yandex %}
+          <a href="/web/oauth/login/yandex" class="btn btn-outline-secondary oauth-login-btn">
+            <span class="oauth-login-content">
+              <span class="oauth-login-icon-wrap">
+                <img src="/static/images/oauth/yandex.svg" alt="" class="oauth-login-icon">
+              </span>
+              <span class="oauth-login-label">Yandex</span>
+              <span class="oauth-login-spacer" aria-hidden="true"></span>
+            </span>
+          </a>
+          {% endif %}
+          {% if oauth_keycloak %}
+          <a href="/web/oauth/login/keycloak" class="btn btn-outline-secondary oauth-login-btn">
+            <span class="oauth-login-content">
+              <span class="oauth-login-icon-wrap">
+                <img src="/static/images/oauth/keycloak.svg" alt="" class="oauth-login-icon">
+              </span>
+              <span class="oauth-login-label">{{ oauth_keycloak_label }}</span>
+              <span class="oauth-login-spacer" aria-hidden="true"></span>
+            </span>
+          </a>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
     </div>
     <div class="text-center mt-3 small text-body-secondary">

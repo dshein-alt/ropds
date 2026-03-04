@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Keycloak placeholder">
+  <defs>
+    <linearGradient id="kcg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#26b0ff"/>
+      <stop offset="100%" stop-color="#1778f2"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="52" height="52" rx="12" fill="url(#kcg)"/>
+  <path d="M20 20h8l4 6 4-6h8l-8 12 8 12h-8l-4-6-4 6h-8l8-12z" fill="#ffffff"/>
+</svg>

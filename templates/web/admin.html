@@ -27,6 +27,9 @@
     <h2 class="accordion-header">
       <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUsers">
         <i class="bi bi-people me-2"></i>{{ t.admin.users }}
+        {% if oauth_pending_count > 0 %}
+        <span class="badge bg-warning text-dark ms-2">{{ oauth_pending_count }}</span>
+        {% endif %}
       </button>
     </h2>
     <div id="collapseUsers" class="accordion-collapse collapse show" data-bs-parent="#adminAccordion">
@@ -54,6 +57,9 @@
               <tr>
                 <td>
                   <i class="bi bi-person me-1"></i>{{ user.username }}
+                  {% if user.is_oauth %}
+                  <span class="badge bg-info ms-2">{{ t.admin.oauth_user }}</span>
+                  {% endif %}
                   {% if user.password_change_required %}
                   <span class="badge bg-warning text-dark ms-2" title="{{ t.admin.password_change_pending }}">
                     <i class="bi bi-key"></i>
@@ -84,11 +90,13 @@
                   {% if user.last_login %}<time class="utc-time" datetime="{{ user.last_login }}Z">{{ user.last_login }}</time>{% else %}{{ t.admin.never }}{% endif %}
                 </td>
                 <td class="text-end">
+                  {% if not user.is_oauth %}
                   <button type="button" class="btn btn-outline-primary btn-sm btn-pw-change"
                           data-user-id="{{ user.id }}" data-username="{{ user.username }}"
                           title="{{ t.admin.change_password }}">
                     <i class="bi bi-key"></i>
                   </button>
+                  {% endif %}
                   {% if user.id != current_user_id %}
                   <button type="button" class="btn btn-outline-danger btn-sm btn-del-user"
                           data-user-id="{{ user.id }}" data-username="{{ user.username }}"
@@ -182,7 +190,15 @@
                 <div class="modal-body">
                   <div class="mb-3">
                     <label for="new-username" class="form-label">{{ t.admin.username }}</label>
-                    <input type="text" class="form-control" id="new-username" name="username" required>
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="new-username"
+                      name="username"
+                      required
+                      pattern="[A-Za-z0-9._-]+"
+                      title="{{ t.admin.error_username_invalid }}"
+                    >
                   </div>
                   <div class="mb-3">
                     <label for="new-display-name" class="form-label">{{ t.admin.display_name }}</label>
@@ -221,6 +237,177 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════ #}
+  {# ── 1b. OAuth Access Requests ──────────────────── #}
+  {# ══════════════════════════════════════════════════ #}
+  {% if pending is defined %}
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOAuth">
+        <i class="bi bi-person-check me-2"></i>Access Requests
+        {% if oauth_pending_count > 0 %}
+        <span class="badge bg-warning text-dark ms-2">{{ oauth_pending_count }}</span>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="collapseOAuth" class="accordion-collapse collapse show" data-bs-parent="#adminAccordion">
+      <div class="accordion-body">
+
+        <h5>Pending ({{ pending | length }})</h5>
+        {% if pending | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Provider</th><th>Display Name</th><th>Email</th><th>Requested</th><th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for item in pending %}
+            <tr>
+              <td><span class="badge bg-secondary">{{ item.provider }}</span></td>
+              <td>{{ item.display_name | default(value="-") }}</td>
+              <td>{{ item.email | default(value="-") }}</td>
+              <td>{{ item.created_at }}</td>
+              <td class="text-end text-nowrap">
+                <form
+                  method="post"
+                  action="/web/admin/oauth-requests/{{ item.id }}/approve"
+                  class="d-inline-flex align-items-center gap-1 oauth-approve-form"
+                  data-source-username="{{ item.source_username }}"
+                >
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="new_username" value="{{ item.source_username }}">
+                  <select name="link_user_id" class="form-select form-select-sm" style="width: 180px;" title="{{ t.admin.oauth_link_user }}">
+                    <option value="">{{ t.admin.oauth_new_user }}</option>
+                    {% for user in users %}
+                    {% if user.id != item.user_id %}
+                    <option value="{{ user.id }}">{{ user.username }}</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn-sm btn-success">Approve</button>
+                </form>
+                <form method="post" action="/web/admin/oauth-requests/{{ item.id }}/reject" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-warning">Reject</button>
+                </form>
+                <form method="post" action="/web/admin/oauth-requests/{{ item.id }}/ban" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-danger">Ban</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}<p class="text-muted">No pending requests.</p>{% endif %}
+
+        <h5 class="mt-4">Rejected ({{ rejected | length }})</h5>
+        {% if rejected | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Provider</th><th>Display Name</th><th>Email</th><th>Rejected At</th><th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for item in rejected %}
+            <tr>
+              <td><span class="badge bg-secondary">{{ item.provider }}</span></td>
+              <td>{{ item.display_name | default(value="-") }}</td>
+              <td>{{ item.email | default(value="-") }}</td>
+              <td>{{ item.rejected_at | default(value="-") }}</td>
+              <td class="text-end text-nowrap">
+                <form method="post" action="/web/admin/oauth-requests/{{ item.id }}/ban" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-danger">Ban</button>
+                </form>
+                <form method="post" action="/web/admin/oauth-requests/{{ item.id }}/reinstate" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-outline-success">Reinstate</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}<p class="text-muted">No rejected users.</p>{% endif %}
+
+        <h5 class="mt-4">Banned ({{ banned | length }})</h5>
+        {% if banned | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Provider</th><th>Display Name</th><th>Email</th><th>Banned At</th><th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for item in banned %}
+            <tr>
+              <td><span class="badge bg-danger">{{ item.provider }}</span></td>
+              <td>{{ item.display_name | default(value="-") }}</td>
+              <td>{{ item.email | default(value="-") }}</td>
+              <td>{{ item.rejected_at | default(value="-") }}</td>
+              <td class="text-end text-nowrap">
+                <form method="post" action="/web/admin/oauth-requests/{{ item.id }}/reinstate" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-outline-success">Reinstate</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}<p class="text-muted">No banned users.</p>{% endif %}
+
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── OAuth New User Approval Modal ── #}
+  <div class="modal fade" id="oauthNewUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" id="oauthNewUserForm">
+          <input type="hidden" name="csrf_token" id="oauthNewUserCsrf">
+          <input type="hidden" name="link_user_id" value="">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ t.admin.oauth_new_user_confirm_title }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-body-secondary mb-3">{{ t.admin.oauth_new_user_confirm_text }}</p>
+            <div class="mb-2">
+              <label for="oauthNewUserUsername" class="form-label">{{ t.admin.username }}</label>
+              <input
+                id="oauthNewUserUsername"
+                name="new_username"
+                type="text"
+                class="form-control"
+                required
+                maxlength="64"
+                pattern="[A-Za-z0-9._-]+"
+                title="{{ t.admin.error_username_invalid }}"
+              >
+              <div class="invalid-feedback">{{ t.admin.error_username_invalid }}</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t.admin.cancel }}</button>
+            <button type="submit" class="btn btn-success">{{ t.admin.oauth_new_user_confirm_btn }}</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -431,11 +618,66 @@ window._flashMessages = {
 window._flashErrors = {
   username_exists: "{{ t.admin.error_username_exists }}",
   username_empty: "{{ t.admin.error_username_empty }}",
+  username_invalid: "{{ t.admin.error_username_invalid }}",
   password_short: "{{ t.admin.error_password_short }}",
   cannot_delete_self: "{{ t.admin.error_cannot_delete_self }}",
   db_error: "{{ t.admin.error_db }}",
   scan_already_running: "{{ t.admin.error_scan_already_running }}"
 };
+
+// OAuth approval: when "New user" is selected, confirm/edit generated username in modal.
+document.addEventListener('DOMContentLoaded', function() {
+  var modalEl = document.getElementById('oauthNewUserModal');
+  var modalForm = document.getElementById('oauthNewUserForm');
+  var usernameInput = document.getElementById('oauthNewUserUsername');
+  var csrfInput = document.getElementById('oauthNewUserCsrf');
+  if (!modalEl || !modalForm || !usernameInput || !csrfInput || typeof bootstrap === 'undefined') {
+    return;
+  }
+
+  var modal = new bootstrap.Modal(modalEl);
+
+  document.querySelectorAll('.oauth-approve-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+      var linkSelect = form.querySelector('select[name="link_user_id"]');
+      if (linkSelect && linkSelect.value) {
+        return;
+      }
+
+      e.preventDefault();
+      modalForm.action = form.action;
+      var csrfField = form.querySelector('input[name="csrf_token"]');
+      csrfInput.value = csrfField ? csrfField.value : '';
+      usernameInput.value = (form.getAttribute('data-source-username') || '').trim();
+      usernameInput.classList.remove('is-invalid');
+      modal.show();
+      setTimeout(function() {
+        usernameInput.focus();
+        usernameInput.select();
+      }, 0);
+    });
+  });
+
+  usernameInput.addEventListener('input', function() {
+    usernameInput.classList.remove('is-invalid');
+  });
+
+  modalForm.addEventListener('submit', function(e) {
+    var value = usernameInput.value.trim();
+    var isValid = /^[A-Za-z0-9._-]+$/.test(value);
+    if (!isValid) {
+      e.preventDefault();
+      usernameInput.classList.add('is-invalid');
+    }
+  });
+
+  modalEl.addEventListener('hidden.bs.modal', function() {
+    modalForm.action = '';
+    csrfInput.value = '';
+    usernameInput.value = '';
+    usernameInput.classList.remove('is-invalid');
+  });
+});
 
 // Capture params NOW (before ropds.js replaceState strips them on DOMContentLoaded)
 var _scanJustStarted = new URLSearchParams(window.location.search).get('msg') === 'scan_started';

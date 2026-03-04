@@ -196,3 +196,50 @@ footer {
   border-color: var(--ropds-accent);
   color: #fff;
 }
+
+/* OAuth buttons on login page */
+.oauth-login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.oauth-login-content {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px 1fr 20px;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.oauth-login-icon-wrap {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.oauth-login-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+}
+
+.oauth-login-fallback-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.oauth-login-label {
+  line-height: 1.2;
+  text-align: center;
+}
+
+.oauth-login-spacer {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+}

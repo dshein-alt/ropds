@@ -28,6 +28,7 @@
         </form>
       </div>
     </div>
+    {% if not is_oauth_user %}
     <div class="card">
       <div class="card-header">
         <h5 class="mb-0">{{ t.profile.change_password }}</h5>
@@ -58,6 +59,57 @@
         </form>
       </div>
     </div>
+    {% endif %}
+    <div class="card mt-3">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-rss me-2"></i>{{ t.profile.opds_access }}</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-2">{{ t.profile.opds_access_desc }}</p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">{{ t.profile.opds_username }}</label>
+          <div class="input-group">
+            <input type="text" class="form-control" value="{{ username }}" readonly id="opds-username-input">
+            <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('opds-username-input').value)" title="Copy">
+              <i class="bi bi-clipboard"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">{{ t.profile.opds_server_url }}</label>
+          <div class="input-group">
+            <input type="text" class="form-control" value="{{ opds_url }}" readonly id="opds-url-input">
+            <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('opds-url-input').value)" title="Copy">
+              <i class="bi bi-clipboard"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">{{ t.profile.opds_v2_server_url }}</label>
+          <div class="input-group">
+            <input type="text" class="form-control" value="{{ opds_v2_url }}" readonly id="opds-v2-url-input">
+            <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('opds-v2-url-input').value)" title="Copy">
+              <i class="bi bi-clipboard"></i>
+            </button>
+          </div>
+        </div>
+        {% if is_oauth_user %}
+        <div id="opds-password-section">
+          <button class="btn btn-outline-primary btn-sm" id="opds-reset-btn">
+            <i class="bi bi-arrow-clockwise me-1"></i>{{ t.profile.opds_regenerate }}
+          </button>
+          <div id="opds-new-password" class="mt-2" style="display:none">
+            <div class="alert alert-warning">
+              <strong>{{ t.profile.opds_password_shown_once }}</strong>
+              <span id="opds-password-value" class="ms-2 font-monospace"></span>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0"><i class="bi bi-info-circle me-1"></i>{{ t.profile.opds_use_existing_password }}</p>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -72,4 +124,23 @@ window._flashErrors = {
   db_error: "{{ t.profile.error_db }}"
 };
 </script>
+{% if is_oauth_user %}
+<script>
+document.getElementById('opds-reset-btn').addEventListener('click', function() {
+  var csrf = '{{ csrf_token }}';
+  fetch('/web/profile/opds-reset', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent(csrf)
+  }).then(function(resp) {
+    if (resp.ok) return resp.json();
+    throw new Error('Request failed');
+  }).then(function(data) {
+    document.getElementById('opds-password-value').textContent = data.password;
+    document.getElementById('opds-new-password').style.display = 'block';
+    document.getElementById('opds-reset-btn').style.display = 'none';
+  }).catch(function() {});
+});
+</script>
+{% endif %}
 {% endblock %}

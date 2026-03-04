@@ -4,6 +4,7 @@ port = 8081
 log_level = "info"
 session_secret = "change-me-to-a-random-string"
 session_ttl_hours = 24
+# base_url = ""   # Required for OAuth redirect_uri, e.g. https://mybooks.example.com
 
 [library]
 root_path = "/path/to/books"
@@ -52,3 +53,27 @@ max_upload_size_mb = 100
 [reader]
 enable = true                  # Enable embedded book reader
 read_history_max = 100         # Max reading positions stored per user
+
+[oauth]
+google_client_id          = ""
+google_client_secret      = ""
+yandex_client_id          = ""
+yandex_client_secret      = ""
+keycloak_url              = ""   # e.g. https://auth.company.com
+keycloak_realm            = ""   # e.g. ropds
+keycloak_client_id        = ""
+keycloak_client_secret    = ""
+keycloak_auto_approve     = false
+keycloak_role_upload      = "ropds_can_upload"
+keycloak_role_admin       = "ropds_admin"
+keycloak_button_label     = "Company SSO"
+rejection_cooldown_hours  = 24
+notify_admin_email        = ""   # empty = no email notifications
+
+[smtp]
+host     = ""
+port     = 587
+username = ""
+password = ""
+from     = ""
+starttls = true
