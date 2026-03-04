@@ -2,12 +2,15 @@ pub mod assets;
 pub mod config;
 pub mod db;
 pub mod djvu;
+pub mod email;
+pub mod oauth;
 pub mod opds;
 pub mod password;
 pub mod pdf;
 pub mod scanner;
 pub mod scheduler;
 pub mod state;
+pub mod util;
 pub mod web;
 
 use axum::Router;

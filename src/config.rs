@@ -16,6 +16,10 @@ pub struct Config {
     pub upload: UploadConfig,
     #[serde(default)]
     pub reader: ReaderConfig,
+    #[serde(default)]
+    pub oauth: OauthConfig,
+    #[serde(default)]
+    pub smtp: SmtpConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,6 +36,8 @@ pub struct ServerConfig {
     /// Session TTL in hours (default 24).
     #[serde(default = "default_session_ttl_hours")]
     pub session_ttl_hours: u64,
+    #[serde(default)]
+    pub base_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -171,7 +177,7 @@ pub struct WebConfig {
     pub theme: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct UploadConfig {
     /// Master switch for upload functionality.
     #[serde(default)]
@@ -182,6 +188,16 @@ pub struct UploadConfig {
     /// Maximum upload file size in megabytes (default 100).
     #[serde(default = "default_max_upload_size_mb")]
     pub max_upload_size_mb: u64,
+}
+
+impl Default for UploadConfig {
+    fn default() -> Self {
+        Self {
+            allow_upload: false,
+            upload_path: PathBuf::new(),
+            max_upload_size_mb: default_max_upload_size_mb(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -208,6 +224,77 @@ impl Default for WebConfig {
         Self {
             language: default_language(),
             theme: default_theme(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(default)]
+pub struct OauthConfig {
+    pub google_client_id: String,
+    pub google_client_secret: String,
+    pub yandex_client_id: String,
+    pub yandex_client_secret: String,
+    pub keycloak_url: String,
+    pub keycloak_realm: String,
+    pub keycloak_client_id: String,
+    pub keycloak_client_secret: String,
+    #[serde(default = "default_false")]
+    pub keycloak_auto_approve: bool,
+    #[serde(default = "default_role_upload")]
+    pub keycloak_role_upload: String,
+    #[serde(default = "default_role_admin")]
+    pub keycloak_role_admin: String,
+    #[serde(default = "default_keycloak_button_label")]
+    pub keycloak_button_label: String,
+    #[serde(default = "default_cooldown")]
+    pub rejection_cooldown_hours: u64,
+    pub notify_admin_email: String,
+}
+
+impl Default for OauthConfig {
+    fn default() -> Self {
+        Self {
+            google_client_id: String::new(),
+            google_client_secret: String::new(),
+            yandex_client_id: String::new(),
+            yandex_client_secret: String::new(),
+            keycloak_url: String::new(),
+            keycloak_realm: String::new(),
+            keycloak_client_id: String::new(),
+            keycloak_client_secret: String::new(),
+            keycloak_auto_approve: default_false(),
+            keycloak_role_upload: default_role_upload(),
+            keycloak_role_admin: default_role_admin(),
+            keycloak_button_label: default_keycloak_button_label(),
+            rejection_cooldown_hours: default_cooldown(),
+            notify_admin_email: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(default)]
+pub struct SmtpConfig {
+    pub host: String,
+    #[serde(default = "default_smtp_port")]
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub from: String,
+    #[serde(default = "default_true")]
+    pub starttls: bool,
+}
+
+impl Default for SmtpConfig {
+    fn default() -> Self {
+        Self {
+            host: String::new(),
+            port: default_smtp_port(),
+            username: String::new(),
+            password: String::new(),
+            from: String::new(),
+            starttls: default_true(),
         }
     }
 }
@@ -364,6 +451,30 @@ fn default_theme() -> String {
     "light".to_string()
 }
 
+fn default_false() -> bool {
+    false
+}
+
+fn default_cooldown() -> u64 {
+    24
+}
+
+fn default_smtp_port() -> u16 {
+    587
+}
+
+fn default_role_upload() -> String {
+    "ropds_can_upload".to_string()
+}
+
+fn default_role_admin() -> String {
+    "ropds_admin".to_string()
+}
+
+fn default_keycloak_button_label() -> String {
+    "Company SSO".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,6 +503,7 @@ root_path = "/books"
         assert_eq!(config.web.language, "en");
         assert!(config.reader.enable);
         assert_eq!(config.reader.read_history_max, 100);
+        assert_eq!(config.oauth.keycloak_button_label, "Company SSO");
     }
 
     #[test]
@@ -467,6 +579,20 @@ read_history_max = 50
         assert_eq!(config.web.theme, "dark");
         assert!(!config.reader.enable);
         assert_eq!(config.reader.read_history_max, 50);
+    }
+
+    #[test]
+    fn test_oauth_config_defaults() {
+        let cfg: OauthConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.rejection_cooldown_hours, 24);
+        assert!(!cfg.keycloak_auto_approve);
+    }
+
+    #[test]
+    fn test_smtp_config_defaults() {
+        let cfg: SmtpConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.port, 587);
+        assert!(cfg.starttls);
     }
 
     #[test]

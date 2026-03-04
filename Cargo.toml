@@ -42,7 +42,7 @@ time = "0.3"
 walkdir = "2"
 zip = "8.2"
 dashmap = "6"
-quick-xml = "0.39"
+quick-xml = "0.39.2"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "pnm"] }
 mobi = "0.8"
@@ -58,8 +58,15 @@ hex = "0.4"
 # Password hashing
 argon2 = "0.5"
 
+# OAuth2 social login
+openidconnect = "4.0.1"
+oauth2         = "5.0"
+reqwest    = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
+lettre     = { version = "0.11", features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"], default-features = false }
+rand       = "0.10.0"
+
 # CLI
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 
 # Testcontainers (opt-in, for Docker-based integration tests)
 testcontainers-modules = { version = "0.15", optional = true, features = ["postgres", "mariadb"] }

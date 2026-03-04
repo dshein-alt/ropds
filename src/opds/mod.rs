@@ -76,6 +76,7 @@ mod tests {
                 log_level: "info".to_string(),
                 session_secret: "test-secret".to_string(),
                 session_ttl_hours: 24,
+                base_url: String::new(),
             },
             library: LibraryConfig {
                 root_path: PathBuf::from("/tmp/books"),
@@ -126,6 +127,8 @@ mod tests {
                 max_upload_size_mb: 10,
             },
             reader: ReaderConfig::default(),
+            oauth: Default::default(),
+            smtp: Default::default(),
         };
 
         let db = create_test_pool().await;

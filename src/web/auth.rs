@@ -65,7 +65,7 @@ pub async fn session_auth_layer(
 
     // Allow login page and set-language without auth
     // Note: paths are relative to the nested /web router (prefix already stripped)
-    if path == "/login" || path.starts_with("/set-language") {
+    if path == "/login" || path.starts_with("/set-language") || path.starts_with("/oauth/") {
         return next.run(request).await;
     }
 
@@ -143,6 +143,24 @@ pub async fn login_page(
     ctx.insert("version", env!("CARGO_PKG_VERSION"));
     ctx.insert("next", &query.next.unwrap_or_default());
     ctx.insert("error", &query.error.unwrap_or_default());
+
+    ctx.insert(
+        "oauth_google",
+        &!state.config.oauth.google_client_id.is_empty(),
+    );
+    ctx.insert(
+        "oauth_yandex",
+        &!state.config.oauth.yandex_client_id.is_empty(),
+    );
+    ctx.insert(
+        "oauth_keycloak",
+        &(!state.config.oauth.keycloak_url.is_empty()
+            && !state.config.oauth.keycloak_client_id.is_empty()),
+    );
+    ctx.insert(
+        "oauth_keycloak_label",
+        &state.config.oauth.keycloak_button_label,
+    );
 
     match state.tera.render("web/login.html", &ctx) {
         Ok(html) => Html(html).into_response(),
@@ -320,5 +338,13 @@ mod tests {
         let uid = get_user_id(&pool, "alice").await;
         assert!(uid.is_some());
         assert_eq!(get_user_id(&pool, "missing-user").await, None);
+    }
+
+    #[test]
+    fn test_oauth_paths_not_in_bypass() {
+        let path = "/oauth/login/google";
+        let is_allowed =
+            path == "/login" || path.starts_with("/set-language") || path.starts_with("/oauth/");
+        assert!(is_allowed, "OAuth paths must be in the bypass list");
     }
 }
