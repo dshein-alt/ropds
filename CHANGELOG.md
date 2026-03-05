@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026.03.05
+
+### Changed
+- Improved startup configuration checks so server base URL setup issues are detected early.
+- Refined English and Russian documentation wording and structure for faster onboarding and clearer guidance.
+- Updated Docker and deployment examples to better match current project configuration.
+
 ## [0.10.0] - 2026.03.04
 
 ### Added
