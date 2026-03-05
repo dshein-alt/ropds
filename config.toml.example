@@ -4,7 +4,7 @@ port = 8081
 log_level = "info"
 session_secret = "change-me-to-a-random-string"
 session_ttl_hours = 24
-# base_url = ""   # Required for OAuth redirect_uri, e.g. https://mybooks.example.com
+base_url = "https://mybooks.example.com"
 
 [library]
 root_path = "/path/to/books"

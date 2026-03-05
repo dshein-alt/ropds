@@ -37,7 +37,7 @@ pub struct ServerConfig {
     /// Session TTL in hours (default 24).
     #[serde(default = "default_session_ttl_hours")]
     pub session_ttl_hours: u64,
-    #[serde(default)]
+    /// Public base URL used for absolute links and OAuth redirect URIs.
     pub base_url: String,
 }
 
@@ -315,6 +315,7 @@ impl Config {
             source: e,
         })?;
         config.apply_legacy_cover_fallbacks();
+        config.server.base_url = config.server.base_url.trim().to_string();
         config.validate()?;
         Ok(config)
     }
@@ -343,41 +344,56 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
-        if !self.oauth.notify_admin_email {
-            return Ok(());
-        }
-
-        if self.smtp.host.trim().is_empty() {
+        let base_url = self.server.base_url.trim();
+        if base_url.is_empty() {
             return Err(ConfigError::Validation(
-                "oauth.notify_admin_email=true requires [smtp].host".to_string(),
+                "server.base_url is required and must be non-empty".to_string(),
             ));
         }
-        if self.smtp.from.trim().is_empty() {
+        let parsed = reqwest::Url::parse(base_url).map_err(|e| {
+            ConfigError::Validation(format!(
+                "invalid server.base_url (must be a valid URL): {e}"
+            ))
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
             return Err(ConfigError::Validation(
-                "oauth.notify_admin_email=true requires [smtp].from".to_string(),
-            ));
-        }
-        if self.smtp.send_to.is_empty() {
-            return Err(ConfigError::Validation(
-                "oauth.notify_admin_email=true requires non-empty [smtp].send_to".to_string(),
+                "invalid server.base_url (must include http/https scheme and host)".to_string(),
             ));
         }
 
-        if lettre::message::Mailbox::from_str(self.smtp.from.trim()).is_err() {
-            return Err(ConfigError::Validation(
-                "invalid [smtp].from email address".to_string(),
-            ));
-        }
-        for recipient in &self.smtp.send_to {
-            if recipient.trim().is_empty() {
+        if self.oauth.notify_admin_email {
+            if self.smtp.host.trim().is_empty() {
                 return Err(ConfigError::Validation(
-                    "empty recipient in [smtp].send_to".to_string(),
+                    "oauth.notify_admin_email=true requires [smtp].host".to_string(),
                 ));
             }
-            if lettre::message::Mailbox::from_str(recipient.trim()).is_err() {
-                return Err(ConfigError::Validation(format!(
-                    "invalid recipient in [smtp].send_to: {recipient}"
-                )));
+            if self.smtp.from.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "oauth.notify_admin_email=true requires [smtp].from".to_string(),
+                ));
+            }
+            if self.smtp.send_to.is_empty() {
+                return Err(ConfigError::Validation(
+                    "oauth.notify_admin_email=true requires non-empty [smtp].send_to".to_string(),
+                ));
+            }
+
+            if lettre::message::Mailbox::from_str(self.smtp.from.trim()).is_err() {
+                return Err(ConfigError::Validation(
+                    "invalid [smtp].from email address".to_string(),
+                ));
+            }
+            for recipient in &self.smtp.send_to {
+                if recipient.trim().is_empty() {
+                    return Err(ConfigError::Validation(
+                        "empty recipient in [smtp].send_to".to_string(),
+                    ));
+                }
+                if lettre::message::Mailbox::from_str(recipient.trim()).is_err() {
+                    return Err(ConfigError::Validation(format!(
+                        "invalid recipient in [smtp].send_to: {recipient}"
+                    )));
+                }
             }
         }
 
@@ -533,6 +549,7 @@ mod tests {
     fn test_parse_minimal_config() {
         let toml_str = r#"
 [server]
+base_url = "http://127.0.0.1:8081"
 [library]
 root_path = "/books"
 [database]
@@ -563,6 +580,7 @@ root_path = "/books"
 host = "127.0.0.1"
 port = 9090
 log_level = "debug"
+base_url = "http://127.0.0.1:9090"
 
 [library]
 root_path = "/media/books"
@@ -610,6 +628,7 @@ read_history_max = 50
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 9090);
+        assert_eq!(config.server.base_url, "http://127.0.0.1:9090");
         assert_eq!(config.covers.covers_path, PathBuf::from("/tmp/covers"));
         assert_eq!(config.covers.cover_max_dimension_px, 512);
         assert_eq!(config.covers.cover_jpeg_quality, 80);
@@ -651,6 +670,7 @@ read_history_max = 50
     fn test_validate_notify_email_requires_smtp_fields() {
         let toml_str = r#"
 [server]
+base_url = "http://127.0.0.1:8081"
 [library]
 root_path = "/books"
 [database]
@@ -668,6 +688,7 @@ notify_admin_email = true
     fn test_validate_notify_email_accepts_valid_smtp() {
         let toml_str = r#"
 [server]
+base_url = "http://127.0.0.1:8081"
 [library]
 root_path = "/books"
 [database]
@@ -688,6 +709,7 @@ send_to = ["admin1@example.com", "Admin Team <admin2@example.com>"]
     fn test_parse_legacy_cover_options_in_library_and_opds() {
         let toml_str = r#"
 [server]
+base_url = "http://127.0.0.1:8081"
 [library]
 root_path = "/books"
 covers_dir = "/books/covers"
@@ -704,5 +726,48 @@ show_covers = false
         assert_eq!(config.covers.cover_max_dimension_px, 500);
         assert_eq!(config.covers.cover_jpeg_quality, 70);
         assert!(!config.covers.show_covers);
+    }
+
+    #[test]
+    fn test_validate_base_url_rejects_empty() {
+        let toml_str = r#"
+[server]
+base_url = "   "
+[library]
+root_path = "/books"
+[database]
+[opds]
+[scanner]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.validate(), Err(ConfigError::Validation(_))));
+    }
+
+    #[test]
+    fn test_parse_requires_base_url() {
+        let toml_str = r#"
+[server]
+[library]
+root_path = "/books"
+[database]
+[opds]
+[scanner]
+"#;
+        assert!(toml::from_str::<Config>(toml_str).is_err());
+    }
+
+    #[test]
+    fn test_validate_base_url_rejects_invalid_url() {
+        let toml_str = r#"
+[server]
+base_url = "not a url"
+[library]
+root_path = "/books"
+[database]
+[opds]
+[scanner]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.validate(), Err(ConfigError::Validation(_))));
     }
 }

@@ -716,6 +716,7 @@ mod tests {
         let cfg: crate::config::Config = toml::from_str(
             r#"
 [server]
+base_url = "http://127.0.0.1:8081"
 [library]
 root_path = "/tmp"
 [database]

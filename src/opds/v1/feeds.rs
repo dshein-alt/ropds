@@ -1356,6 +1356,7 @@ mod tests {
             r#"
 [server]
 session_secret = "s"
+base_url = "http://127.0.0.1:8081"
 [library]
 root_path = "/tmp"
 [database]
