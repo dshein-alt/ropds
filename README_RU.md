@@ -118,9 +118,12 @@ cargo build --release
 cp config.toml.example config.toml
 ```
 
-Отредактируйте `config.toml` — как минимум укажите `library.root_path`:
+Отредактируйте `config.toml` — как минимум укажите `server.base_url` и `library.root_path`:
 
 ```toml
+[server]
+base_url = "http://localhost:8081"
+
 [library]
 root_path = "/path/to/books"
 
@@ -192,7 +195,7 @@ sudo journalctl -u ropds.service -f
 
 | Секция | Основные параметры |
 |---|---|
-| `[server]` | Адрес, порт, уровень логирования, секрет сессии и TTL |
+| `[server]` | Адрес, порт, уровень логирования, секрет сессии, TTL и `base_url` |
 | `[library]` | Путь к книгам, расширения файлов, поддержка ZIP/INPX |
 | `[covers]` | `covers_path`, обработка обложек (`cover_max_dimension_px`, `cover_jpeg_quality`), `show_covers` |
 | `[database]` | URL подключения — `sqlite://`, `postgres://` или `mysql://` |

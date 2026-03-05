@@ -118,9 +118,12 @@ cargo build --release
 cp config.toml.example config.toml
 ```
 
-Edit `config.toml` — at minimum set `library.root_path` to your book collection:
+Edit `config.toml` — at minimum set `server.base_url` and `library.root_path`:
 
 ```toml
+[server]
+base_url = "http://localhost:8081"
+
 [library]
 root_path = "/path/to/books"
 
@@ -192,7 +195,7 @@ All settings live in `config.toml`. See [config.toml.example](config.toml.exampl
 
 | Section | Key highlights |
 |---|---|
-| `[server]` | Bind address, port, log level, session secret & TTL |
+| `[server]` | Bind address, port, log level, session secret, TTL, and `base_url` |
 | `[library]` | Book root path, file extensions, ZIP/INPX support |
 | `[covers]` | `covers_path`, resize/compression (`cover_max_dimension_px`, `cover_jpeg_quality`), `show_covers` |
 | `[database]` | Connection URL — `sqlite://`, `postgres://`, or `mysql://` |
