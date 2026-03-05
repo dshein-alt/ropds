@@ -46,6 +46,7 @@ pub fn test_config(lib_dir: &Path, covers_dir: &Path) -> Config {
         r#"
 [server]
 session_secret = "test-secret-key-for-integration-tests"
+base_url = "http://localhost:8081"
 
 [library]
 root_path = {lib_dir:?}
@@ -71,6 +72,7 @@ pub fn test_config_with_upload(lib_dir: &Path, covers_dir: &Path, upload_dir: &P
         r#"
 [server]
 session_secret = "test-secret-key-for-integration-tests"
+base_url = "http://localhost:8081"
 
 [library]
 root_path = {lib_dir:?}

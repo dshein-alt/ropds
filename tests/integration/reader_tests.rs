@@ -279,6 +279,7 @@ async fn reader_disabled_returns_not_found() {
         r#"
 [server]
 session_secret = "test-secret-key-for-integration-tests"
+base_url = "http://localhost:8081"
 
 [library]
 root_path = {:?}

@@ -219,6 +219,7 @@ async fn bookshelf_requires_auth() {
         r#"
 [server]
 session_secret = "test-secret-key-for-integration-tests"
+base_url = "http://localhost:8081"
 
 [library]
 root_path = {:?}

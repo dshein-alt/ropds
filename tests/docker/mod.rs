@@ -99,6 +99,7 @@ pub fn test_config_with_url(lib_dir: &Path, covers_dir: &Path, db_url: &str) -> 
         r#"
 [server]
 session_secret = "test-secret-key-for-integration-tests"
+base_url = "http://localhost:8081"
 
 [library]
 root_path = {lib_dir:?}
