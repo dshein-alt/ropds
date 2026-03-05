@@ -54,6 +54,9 @@ All app configs are in `docker/config/`:
 
 You can customize credentials/hosts directly in those files.
 
+Important: set `[server].base_url` in the selected config file to the externally reachable URL
+(for local testing, `http://localhost:8081` is fine).
+
 ## Mount model
 
 Each compose file mounts:

@@ -4,6 +4,7 @@ port = 8081
 log_level = "info"
 session_secret = "change-me-to-a-random-string"
 session_ttl_hours = 24
+base_url = "http://localhost:8081"
 
 [library]
 root_path = "/library"

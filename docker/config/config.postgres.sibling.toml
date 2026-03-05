@@ -4,6 +4,7 @@ port = 8081
 log_level = "info"
 session_secret = "change-me-to-a-random-string"
 session_ttl_hours = 24
+base_url = "http://localhost:8081"
 
 [library]
 root_path = "/library"
@@ -49,3 +50,7 @@ theme = "light"
 allow_upload = true
 upload_path = "/library/uploads"
 max_upload_size_mb = 100
+
+[reader]
+enable = true
+read_history_max = 100
