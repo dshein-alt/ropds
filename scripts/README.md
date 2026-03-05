@@ -1,40 +1,39 @@
-# SQLite -> PostgreSQL / MySQL(MariaDB) Migration Guide
+# Migration guide: SQLite -> PostgreSQL / MySQL (MariaDB)
 
-This directory contains `migrate_sqlite.py` for full ROPDS data migration from SQLite to PostgreSQL or MySQL/MariaDB.
+This directory contains `migrate_sqlite.py` — a script that transfers all ROPDS data from SQLite to PostgreSQL or MySQL/MariaDB.
 
-## What The Script Does
+## What the script does
 
-- Reads all SQLite tables (except `_sqlx_migrations` by default).
-- Validates target schema and migration versions.
-- Truncates target tables before import (default behavior).
-- Imports table data with dependency-aware order.
-- Verifies row counts table-by-table after import.
+- Reads every SQLite table (except `_sqlx_migrations` by default)
+- Validates the target schema and migration versions
+- Truncates target tables before import (default behavior)
+- Imports data in dependency-aware order
+- Verifies row counts table by table after import
 
-The script uses Python stdlib only.  
-For target DB access it runs `psql` or `mysql`/`mariadb` CLI.
+The script uses only the Python standard library. For the target database, it shells out to `psql` or `mysql`/`mariadb`.
 
 ## Prerequisites
 
-1. Source SQLite DB file exists (example: `devel/ropds.db`).
-2. Target DB server is reachable.
-3. Target DB schema is already initialized by ROPDS migrations.
+1. You have the source SQLite database file (e.g. `devel/ropds.db`).
+2. The target database server is reachable.
+3. The target schema is already initialized by ROPDS migrations.
 
-To initialize target schema, run ROPDS once with target DB URL:
+To initialize the schema, run ROPDS once with the target DB URL in `config.toml`:
 
 ```bash
 ./target/debug/ropds -c /path/to/config.toml --set-admin your-password
 ```
 
-## 1) PostgreSQL Migration (Host CLI)
+## 1) PostgreSQL (host CLI)
 
-1. Stop running ROPDS instance (recommended during migration).
-2. Make SQLite backup:
+1. Stop the running ROPDS instance (recommended during migration).
+2. Back up the SQLite file:
 
 ```bash
 cp /path/to/ropds.db /path/to/ropds.db.bak.$(date +%F-%H%M%S)
 ```
 
-3. Run migration:
+3. Run the migration:
 
 ```bash
 python3 scripts/migrate_sqlite.py \
@@ -42,13 +41,13 @@ python3 scripts/migrate_sqlite.py \
   --target-url 'postgres://ropds:secret@127.0.0.1:5432/ropds'
 ```
 
-4. Start ROPDS with PostgreSQL URL in config.
+4. Start ROPDS with the PostgreSQL URL in your config.
 
-## 2) MariaDB/MySQL Migration (Host CLI)
+## 2) MySQL / MariaDB (host CLI)
 
-1. Stop running ROPDS instance (recommended).
-2. Make SQLite backup.
-3. Run migration:
+1. Stop the running ROPDS instance.
+2. Back up the SQLite file.
+3. Run the migration:
 
 ```bash
 python3 scripts/migrate_sqlite.py \
@@ -56,11 +55,11 @@ python3 scripts/migrate_sqlite.py \
   --target-url 'mysql://ropds:secret@127.0.0.1:3306/ropds'
 ```
 
-4. Start ROPDS with MySQL URL in config.
+4. Start ROPDS with the MySQL URL in your config.
 
-## 3) If DB Runs In Container (No Host DB CLI Installed)
+## 3) When the database runs in a container (no host CLI)
 
-Use direct container mode:
+If you don't have `psql` or `mysql` installed on the host, point the script at the container directly:
 
 ```bash
 python3 scripts/migrate_sqlite.py \
@@ -86,13 +85,11 @@ For Podman:
 --container-runtime podman
 ```
 
-## Verification Checklist
+## Post-migration checklist
 
-After migration:
-
-1. Start ROPDS with target DB config.
-2. Open `/health` and `/web`.
-3. Verify key counts:
+1. Start ROPDS with the target database config.
+2. Open `/health` and `/web` — make sure both respond.
+3. Spot-check key row counts:
 
 ```sql
 SELECT COUNT(*) FROM books WHERE avail = 2;
@@ -100,20 +97,20 @@ SELECT COUNT(*) FROM users;
 SELECT COUNT(*) FROM reading_positions;
 ```
 
-4. Open reader and confirm:
+4. Open the embedded reader and confirm:
 - `POST /web/api/reading-position` returns `{"ok": true}`
-- `/web/api/reading-history` returns expected entries.
+- `/web/api/reading-history` returns expected entries
 
-## Useful Options
+## Additional options
 
-- `--no-truncate-target` - keep existing target rows (advanced use).
-- `--include-sqlx-migrations` - also migrate `_sqlx_migrations`.
-- `--fetch-batch-size N` - source fetch chunk size (default `500`).
-- `--max-statement-bytes N` - max generated SQL statement size.
-- `--progress-every-rows N` - progress log interval.
+- `--no-truncate-target` — keep existing rows in the target (advanced use)
+- `--include-sqlx-migrations` — also migrate the `_sqlx_migrations` table
+- `--fetch-batch-size N` — source fetch chunk size (default `500`)
+- `--max-statement-bytes N` — maximum generated SQL statement size
+- `--progress-every-rows N` — progress log interval
 - `--log-level DEBUG|INFO|WARNING|ERROR`
 
-Show all options:
+Full list:
 
 ```bash
 python3 scripts/migrate_sqlite.py --help
@@ -121,6 +118,6 @@ python3 scripts/migrate_sqlite.py --help
 
 ## Notes
 
-- Target schema mismatch or missing migrations cause a hard fail by design.
-- Script default is "safe overwrite" of target data (truncate + full import + row-count verification).
-- Keep `library.root_path` in target config consistent with book paths stored in DB.
+- Schema mismatch or missing migrations cause a hard fail — by design.
+- Default mode is "safe overwrite": truncate target tables, full import, then row-count verification.
+- Keep `library.root_path` in the new config consistent with the book paths stored in the database.

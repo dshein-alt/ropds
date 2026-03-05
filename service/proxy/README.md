@@ -1,8 +1,8 @@
-# Reverse Proxy Examples
+# Reverse proxy (Nginx / Traefik)
 
-ROPDS runs behind a reverse proxy without extra app changes.
+ROPDS works behind a reverse proxy without any special application-side configuration.
 
-PWA install support (service worker + manifest) works in browsers only on:
+PWA installation (service worker + manifest) is supported only when the site is served from:
 - `https://...`
 - `http://localhost` (development)
 
@@ -40,7 +40,7 @@ server {
 
 ## Traefik (Docker labels)
 
-Use when ROPDS is started in Docker/Podman and Traefik handles TLS.
+For ROPDS running in Docker/Podman with Traefik handling TLS.
 
 ```yaml
 services:
@@ -57,7 +57,7 @@ services:
 
 ## Traefik (dynamic file provider)
 
-Use when ROPDS runs directly on host (not in Docker labels flow).
+For ROPDS running directly on the host, when Traefik is configured via a dynamic config file.
 
 ```yaml
 http:
@@ -77,8 +77,8 @@ http:
           - url: "http://127.0.0.1:8081"
 ```
 
-## Notes
+## Practical notes
 
-- Keep `session_secret` stable in `config.toml` across restarts.
-- If uploads are enabled, set a proxy/body size limit that matches your `upload.max_upload_size_mb`.
-- Preserve `Host` and `X-Forwarded-*` headers so generated links and logs reflect client-facing URL/scheme.
+- Keep `session_secret` in `config.toml` stable across restarts, otherwise all user sessions are invalidated.
+- If uploads are enabled, set `client_max_body_size` (or equivalent) to match `upload.max_upload_size_mb`.
+- Pass `Host` and `X-Forwarded-*` headers through so that generated links and logs reflect the client-facing URL.

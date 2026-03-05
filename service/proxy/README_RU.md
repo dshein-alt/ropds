@@ -1,10 +1,10 @@
-# Примеры reverse proxy
+# Reverse proxy (Nginx / Traefik)
 
-ROPDS можно запускать за reverse proxy без изменений в приложении.
+ROPDS работает за reverse proxy без дополнительной настройки со стороны приложения.
 
-Установка как PWA (service worker + manifest) в браузерах работает только на:
+Установка как PWA (service worker + manifest) поддерживается, только если сайт доступен по:
 - `https://...`
-- `http://localhost` (локальная разработка)
+- `http://localhost` (только для разработки)
 
 ## Nginx (HTTPS)
 
@@ -40,7 +40,7 @@ server {
 
 ## Traefik (Docker labels)
 
-Вариант для запуска ROPDS в Docker/Podman, когда TLS завершается в Traefik.
+Для случая, когда ROPDS запущен в Docker/Podman, а TLS терминируется на Traefik.
 
 ```yaml
 services:
@@ -57,7 +57,7 @@ services:
 
 ## Traefik (dynamic file provider)
 
-Вариант для запуска ROPDS прямо на хосте (без labels).
+Для случая, когда ROPDS работает прямо на хосте, а Traefik настраивается через динамический конфиг.
 
 ```yaml
 http:
@@ -77,8 +77,8 @@ http:
           - url: "http://127.0.0.1:8081"
 ```
 
-## Примечания
+## На заметку
 
-- `session_secret` в `config.toml` должен быть постоянным между перезапусками.
-- Если включена загрузка книг, задайте лимит body/request у прокси не ниже `upload.max_upload_size_mb`.
-- Передавайте `Host` и `X-Forwarded-*`, чтобы логи и ссылки соответствовали внешнему URL/схеме.
+- Не меняйте `session_secret` в `config.toml` между перезапусками — иначе сбросятся все сессии.
+- Если включена загрузка книг, задайте лимит размера запроса (например `client_max_body_size`) не ниже значения `upload.max_upload_size_mb`.
+- Пробрасывайте заголовки `Host` и `X-Forwarded-*`, чтобы ссылки и логи отражали внешний адрес сервера.
