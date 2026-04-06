@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 use std::net::SocketAddr;
