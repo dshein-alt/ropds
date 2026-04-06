@@ -19,3 +19,4 @@ devel/
 *.swp
 *.jpg
 docs/*
+.codex
