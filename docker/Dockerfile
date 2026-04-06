@@ -7,6 +7,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
 COPY src ./src
 COPY templates ./templates
 COPY locales ./locales
