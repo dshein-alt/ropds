@@ -4,6 +4,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+use hmac::KeyInit;
 use oauth2::TokenResponse;
 use oauth2::basic::BasicClient;
 use openidconnect::{

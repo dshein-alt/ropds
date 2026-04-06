@@ -2,6 +2,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum_extra::extract::cookie::CookieJar;
+use hmac::KeyInit;
 use serde::{Deserialize, Serialize};
 
 use crate::db::models::CatType;
