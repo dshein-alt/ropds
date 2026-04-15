@@ -269,7 +269,11 @@ fn parse_container_rootfile(data: &[u8]) -> Option<String> {
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         if key == "full-path" {
-                            return Some(attr.unescape_value().unwrap_or_default().to_string());
+                            return Some(
+                                attr.decode_and_unescape_value(xml.decoder())
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            );
                         }
                     }
                 }
@@ -312,7 +316,9 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
                     let mut properties = String::new();
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        let val = attr.unescape_value().unwrap_or_default();
+                        let val = attr
+                            .decode_and_unescape_value(xml.decoder())
+                            .unwrap_or_default();
                         match key {
                             "id" => id = val.to_string(),
                             "href" => href = val.to_string(),
@@ -328,7 +334,9 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
                     let mut content_attr = String::new();
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        let val = attr.unescape_value().unwrap_or_default();
+                        let val = attr
+                            .decode_and_unescape_value(xml.decoder())
+                            .unwrap_or_default();
                         match key {
                             "name" => name_attr = val.to_string(),
                             "content" => content_attr = val.to_string(),

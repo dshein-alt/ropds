@@ -1,5 +1,6 @@
 use std::io::{Read, Seek};
 
+use quick_xml::Decoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
@@ -69,7 +70,9 @@ fn parse_container_xml(data: &[u8]) -> Option<String> {
                     let mut is_opf = false;
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        let val = attr.unescape_value().unwrap_or_default();
+                        let val = attr
+                            .decode_and_unescape_value(xml.decoder())
+                            .unwrap_or_default();
                         if key == "full-path" {
                             full_path = Some(val.to_string());
                         }
@@ -117,14 +120,14 @@ fn parse_opf(data: &[u8]) -> Result<BookMeta, EpubError> {
 
             Ok(Event::Start(ref e)) => {
                 let local = local_name(e.name().as_ref());
-                handle_opf_open(&local, e, &mut meta, &mut creator_role);
+                handle_opf_open(&local, e, &mut meta, &mut creator_role, xml.decoder());
                 path.push(local);
                 current_text.clear();
             }
 
             Ok(Event::Empty(ref e)) => {
                 let local = local_name(e.name().as_ref());
-                handle_opf_open(&local, e, &mut meta, &mut creator_role);
+                handle_opf_open(&local, e, &mut meta, &mut creator_role, xml.decoder());
                 // Self-closing: don't push to path
             }
 
@@ -267,7 +270,9 @@ fn parse_opf_manifest(data: &[u8]) -> (Vec<ManifestItem>, Option<String>) {
                     let mut properties = String::new();
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        let val = attr.unescape_value().unwrap_or_default();
+                        let val = attr
+                            .decode_and_unescape_value(xml.decoder())
+                            .unwrap_or_default();
                         match key {
                             "id" => id = val.to_string(),
                             "href" => href = val.to_string(),
@@ -288,7 +293,9 @@ fn parse_opf_manifest(data: &[u8]) -> (Vec<ManifestItem>, Option<String>) {
                     let mut content_attr = String::new();
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        let val = attr.unescape_value().unwrap_or_default();
+                        let val = attr
+                            .decode_and_unescape_value(xml.decoder())
+                            .unwrap_or_default();
                         match key {
                             "name" => name_attr = val.to_string(),
                             "content" => content_attr = val.to_string(),
@@ -314,13 +321,14 @@ fn handle_opf_open(
     e: &quick_xml::events::BytesStart<'_>,
     meta: &mut BookMeta,
     creator_role: &mut Option<String>,
+    decoder: Decoder,
 ) {
     if local == "meta" {
         let mut name_attr = String::new();
         let mut content_attr = String::new();
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-            let val = attr.unescape_value().unwrap_or_default();
+            let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
             match key {
                 "name" => name_attr = val.to_string(),
                 "content" => content_attr = val.to_string(),
@@ -342,7 +350,7 @@ fn handle_opf_open(
         *creator_role = None;
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-            let val = attr.unescape_value().unwrap_or_default();
+            let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
             if key == "role" || key.ends_with(":role") {
                 *creator_role = Some(val.to_string());
             }

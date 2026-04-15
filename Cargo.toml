@@ -42,7 +42,7 @@ time = "0.3"
 walkdir = "2"
 zip = "8.5.1"
 dashmap = "6"
-quick-xml = "0.39.2"
+quick-xml = { version = "0.39.2", features = ["encoding"] }
 base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "pnm"] }
 mobi = "0.8"
