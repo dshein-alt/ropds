@@ -1,6 +1,7 @@
 use std::io::BufRead;
 
 use base64::Engine;
+use quick_xml::Decoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
@@ -43,7 +44,7 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
 
             Ok(Event::Start(ref e)) => {
                 let local = local_name(e.name().as_ref());
-                handle_open_tag(&local, e, &path, &mut cover_ref, &mut meta);
+                handle_open_tag(&local, e, &path, &mut cover_ref, &mut meta, xml.decoder());
                 path.push(local);
 
                 if matches_path(&path, &["description", "title-info", "annotation"]) {
@@ -54,7 +55,7 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
             Ok(Event::Empty(ref e)) => {
                 let local = local_name(e.name().as_ref());
                 // Handle attributes but don't push to path (self-closing)
-                handle_open_tag(&local, e, &path, &mut cover_ref, &mut meta);
+                handle_open_tag(&local, e, &path, &mut cover_ref, &mut meta, xml.decoder());
             }
 
             Ok(Event::End(ref e)) => {
@@ -228,6 +229,7 @@ fn handle_open_tag(
     path: &[String],
     cover_ref: &mut Option<String>,
     meta: &mut BookMeta,
+    decoder: Decoder,
 ) {
     // <sequence name="..." number="..."/>
     if local == "sequence"
@@ -235,7 +237,7 @@ fn handle_open_tag(
     {
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-            let val = attr.unescape_value().unwrap_or_default();
+            let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
             match key {
                 "name" => meta.series_title = Some(strip_meta(&val)),
                 "number" => {
@@ -255,7 +257,7 @@ fn handle_open_tag(
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
             if key.ends_with("href") {
-                let val = attr.unescape_value().unwrap_or_default();
+                let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
                 let id = val.trim_start_matches('#').to_lowercase();
                 if !id.is_empty() {
                     *cover_ref = Some(id);
@@ -358,6 +360,34 @@ mod tests {
         assert_eq!(meta.docdate, "1951");
         assert_eq!(meta.cover_type, "image/png");
         assert_eq!(meta.cover_data.unwrap(), cover_bytes);
+    }
+
+    #[test]
+    fn test_parse_fb2_windows_1251_encoding() {
+        // FB2 with windows-1251 declared encoding, Cyrillic title/author.
+        // Title: "Война" (War), Author: first="Лев" last="Толстой" (Leo Tolstoy).
+        // Bytes below are pre-encoded as windows-1251.
+        let mut fb2: Vec<u8> = Vec::new();
+        fb2.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n");
+        fb2.extend_from_slice(b"<FictionBook><description><title-info>");
+        fb2.extend_from_slice(b"<author><first-name>");
+        // "Лев" = 0xCB 0xE5 0xE2
+        fb2.extend_from_slice(&[0xCB, 0xE5, 0xE2]);
+        fb2.extend_from_slice(b"</first-name><last-name>");
+        // "Толстой" = 0xD2 0xEE 0xEB 0xF1 0xF2 0xEE 0xE9
+        fb2.extend_from_slice(&[0xD2, 0xEE, 0xEB, 0xF1, 0xF2, 0xEE, 0xE9]);
+        fb2.extend_from_slice(b"</last-name></author>");
+        fb2.extend_from_slice(b"<book-title>");
+        // "Война" = 0xC2 0xEE 0xE9 0xED 0xE0
+        fb2.extend_from_slice(&[0xC2, 0xEE, 0xE9, 0xED, 0xE0]);
+        fb2.extend_from_slice(b"</book-title>");
+        fb2.extend_from_slice(b"<lang>ru</lang>");
+        fb2.extend_from_slice(b"</title-info></description></FictionBook>");
+
+        let meta = parse(Cursor::new(&fb2)).unwrap();
+        assert_eq!(meta.title, "Война");
+        assert_eq!(meta.authors, vec!["Лев Толстой".to_string()]);
+        assert_eq!(meta.lang, "ru");
     }
 
     #[test]
