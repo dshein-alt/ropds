@@ -1,6 +1,6 @@
 use super::*;
 use ropds::db::models::CatType;
-use ropds::db::queries::{authors, books, bookshelf, catalogs, genres};
+use ropds::db::queries::{authors, books, bookshelf, catalogs, genres, series};
 use ropds::scanner;
 
 // ---------------------------------------------------------------------------
@@ -281,6 +281,56 @@ async fn pg_book_title_search() {
         .await
         .unwrap();
     assert_eq!(all.len(), 2);
+}
+
+/// Prefix-group drill-down works on PostgreSQL for books, authors, and series.
+#[tokio::test]
+async fn pg_prefix_group_queries_work() {
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/prefix", "prefix", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let book_id = books::insert(
+        &pool,
+        cat_id,
+        "alpha.fb2",
+        "/prefix",
+        "fb2",
+        "Alpha Book",
+        "ALPHA BOOK",
+        "",
+        "",
+        "en",
+        2,
+        100,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+
+    let author_id = authors::insert(&pool, "Alice Author", "ALICE AUTHOR", 2)
+        .await
+        .unwrap();
+    authors::link_book(&pool, book_id, author_id).await.unwrap();
+
+    let series_id = series::insert(&pool, "Alpha Series", "ALPHA SERIES", 2)
+        .await
+        .unwrap();
+    series::link_book(&pool, book_id, series_id, 1)
+        .await
+        .unwrap();
+
+    let book_groups = books::get_title_prefix_groups(&pool, 0, "").await.unwrap();
+    assert_eq!(book_groups, vec![("A".to_string(), 1)]);
+
+    let author_groups = authors::get_name_prefix_groups(&pool, 0, "").await.unwrap();
+    assert_eq!(author_groups, vec![("A".to_string(), 1)]);
+
+    let series_groups = series::get_name_prefix_groups(&pool, 0, "").await.unwrap();
+    assert_eq!(series_groups, vec![("A".to_string(), 1)]);
 }
 
 // ---------------------------------------------------------------------------

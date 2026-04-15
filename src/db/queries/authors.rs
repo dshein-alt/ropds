@@ -208,7 +208,7 @@ pub async fn get_name_prefix_groups(
         "SELECT SUBSTR(search_full_name, 1, ?) as prefix, COUNT(*) as cnt \
          FROM authors \
          WHERE (? = 0 OR lang_code = ?) AND search_full_name LIKE ? \
-         GROUP BY SUBSTR(search_full_name, 1, ?) \
+         GROUP BY 1 \
          ORDER BY prefix",
     );
     let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
@@ -216,7 +216,6 @@ pub async fn get_name_prefix_groups(
         .bind(lang_code)
         .bind(lang_code)
         .bind(&like_pattern)
-        .bind(prefix_len)
         .fetch_all(pool.inner())
         .await?;
     Ok(rows)
