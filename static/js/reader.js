@@ -28,6 +28,26 @@ const csrfToken = body.dataset.csrfToken || '';
 const container = document.getElementById('reader-container');
 const progressBadge = document.getElementById('reader-progress');
 
+function showLoading() {
+    const el = document.createElement('div');
+    el.id = 'reader-loading';
+    el.className = 'd-flex flex-column align-items-center justify-content-center h-100 text-body-secondary';
+    el.innerHTML = '<div class="spinner-border mb-2" role="status"></div><small>Loading…</small>';
+    container.appendChild(el);
+}
+
+function hideLoading() {
+    document.getElementById('reader-loading')?.remove();
+}
+
+function showError(message) {
+    hideLoading();
+    const el = document.createElement('div');
+    el.className = 'd-flex flex-column align-items-center justify-content-center h-100 text-danger-emphasis';
+    el.innerHTML = `<i class="bi bi-exclamation-triangle fs-1 mb-2"></i><span>${message}</span>`;
+    container.appendChild(el);
+}
+
 let currentPosition = savedPos;
 let currentProgress = savedProg;
 let saveTimer = null;
@@ -53,7 +73,7 @@ function savePosition() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
-    }).then(() => refreshHistorySidebar()).catch(() => {});
+    }).then(() => refreshHistorySidebar()).catch(err => console.error('Failed to save position:', err));
 }
 
 function refreshHistorySidebar() {
@@ -79,7 +99,7 @@ function refreshHistorySidebar() {
                 </a>`;
             }).join('');
         })
-        .catch(() => {});
+        .catch(err => console.error('Failed to refresh history sidebar:', err));
 }
 
 // Refresh sidebar with live progress when the offcanvas is opened
@@ -163,12 +183,15 @@ function initPdfReader() {
     // Native embed doesn't expose page info to JS, so set a placeholder
     // position to ensure save handlers don't bail on empty currentPosition.
     if (!currentPosition) currentPosition = '1';
+    showLoading();
     const embed = document.createElement('embed');
     embed.src = bookUrl;
     embed.type = 'application/pdf';
     embed.style.width = '100%';
     embed.style.height = '100%';
     embed.style.border = 'none';
+    embed.addEventListener('load', hideLoading);
+    embed.addEventListener('error', () => showError('Failed to load PDF'));
     container.appendChild(embed);
     savePosition();
 }
@@ -176,6 +199,8 @@ function initPdfReader() {
 // ── DJVU: djvu.js viewer ───────────────────────────────────────
 
 async function initDjvuReader() {
+    showLoading();
+    try {
     // Load djvu.js library on demand
     await loadScript('/static/lib/djvu/djvu.js');
     await loadScript('/static/lib/djvu/djvu_viewer.js');
@@ -195,10 +220,12 @@ async function initDjvuReader() {
     viewer.render(viewerDiv);
     viewer.configure({ theme: isDark ? 'dark' : 'light' });
 
-    // Fetch book data and load (must await — returns a Promise)
+    // Fetch book data and load
     const resp = await fetch(bookUrl);
+    if (!resp.ok) throw new Error(`Failed to fetch book: ${resp.status}`);
     const buf = await resp.arrayBuffer();
     await viewer.loadDocument(buf);
+    hideLoading();
 
     // Restore saved page position via configure()
     if (savedPos) {
@@ -233,6 +260,10 @@ async function initDjvuReader() {
         attributes: true,
         attributeFilter: ['data-bs-theme'],
     });
+    } catch (err) {
+        console.error('Failed to initialize DJVU reader:', err);
+        showError('Failed to open book');
+    }
 }
 
 function loadScript(src) {
@@ -248,6 +279,8 @@ function loadScript(src) {
 // ── Foliate: epub, fb2, mobi ───────────────────────────────────
 
 async function initFoliateReader() {
+    showLoading();
+
     const { View } = await import('/static/lib/foliate/view.js');
 
     if (!customElements.get('foliate-view')) {
@@ -263,6 +296,7 @@ async function initFoliateReader() {
     // foliate's makeBook() format detector.  The server URL /web/read/{id}
     // has no file extension, and foliate's fetchFile() would create a File
     // with no extension/type — causing FB2 detection to fail.
+    try {
     const res = await fetch(bookUrl);
     if (!res.ok) throw new Error(`Failed to fetch book: ${res.status}`);
     const blob = await res.blob();
@@ -270,6 +304,11 @@ async function initFoliateReader() {
         type: res.headers.get('content-type')?.split(';')[0]?.trim() || '',
     });
     await view.open(file);
+    } catch (err) {
+        console.error('Failed to load book:', err);
+        showError('Failed to open book');
+        return;
+    }
 
     // ── Table of contents sidebar ──────────────────────────────
     const tocList = document.getElementById('reader-toc-list');
@@ -507,11 +546,16 @@ async function initFoliateReader() {
     });
 
     // ── Init: restore position or go to start ──────────────────
-    if (savedPos) {
-        await view.init({ lastLocation: savedPos });
-    } else {
-        view.renderer.next();
+    try {
+        if (savedPos) {
+            await view.init({ lastLocation: savedPos });
+        } else {
+            view.renderer.next();
+        }
+    } catch (err) {
+        console.error('Failed to initialize reader position:', err);
     }
+    hideLoading();
     applyTheme();
 
     // ── Navigation: buttons ────────────────────────────────────
