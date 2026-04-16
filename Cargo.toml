@@ -6,8 +6,8 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Async runtime & web framework
-tokio = { version = "1.51", features = ["full"] }
-axum = { version = "0.8", features = ["macros", "multipart"] }
+tokio = { version = "1.52", features = ["full"] }
+axum = { version = "0.8.9", features = ["macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "compression-br"] }
 
@@ -17,7 +17,7 @@ include_dir = "0.7"
 mime_guess = "2"
 
 # Cookies (for language preference)
-axum-extra = { version = "0.12.5", features = ["cookie"] }
+axum-extra = { version = "0.12.6", features = ["cookie"] }
 
 # Serialization & config
 serde = { version = "1", features = ["derive"] }
@@ -40,11 +40,11 @@ time = "0.3"
 
 # Scanner: filesystem, archives, XML parsing, images, parallelism
 walkdir = "2"
-zip = "8.5"
+zip = "8.5.1"
 dashmap = "6"
 quick-xml = "0.39.2"
 base64 = "0.22"
-image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "pnm"] }
+image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "pnm"] }
 mobi = "0.8"
 
 # URL encoding
@@ -63,10 +63,10 @@ openidconnect = "4.0.1"
 oauth2         = "5.0"
 reqwest    = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 lettre     = { version = "0.11.21", features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"], default-features = false }
-rand       = "0.10.0"
+rand       = "0.10.1"
 
 # CLI
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 
 # Testcontainers (opt-in, for Docker-based integration tests)
 testcontainers-modules = { version = "0.15", optional = true, features = ["postgres", "mariadb"] }
@@ -82,11 +82,11 @@ http-body-util = "0.1"
 
 [build-dependencies]
 walkdir = "2"
-oxc_allocator = "0.123.0"
-oxc_codegen = "0.123.0"
-oxc_minifier = "0.123.0"
-oxc_parser = "0.123.0"
-oxc_span = "0.123.0"
+oxc_allocator = "0.126.0"
+oxc_codegen = "0.126.0"
+oxc_minifier = "0.126.0"
+oxc_parser = "0.126.0"
+oxc_span = "0.126.0"
 sha2 = "0.11"
 hex = "0.4"
 
