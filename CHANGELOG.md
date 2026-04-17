@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2026.04.17
+
+This release closes [issue #4](https://github.com/dshein-alt/ropds/issues/4).
+
+### Added
+- Added a dedicated `--init-db` migration-preparation mode for PostgreSQL, MySQL, and MariaDB targets.
+
+### Changed
+- Reworked the SQLite-to-PostgreSQL/MySQL/MariaDB migration workflow to use a safer target preparation and import flow.
+- Updated English and Russian migration documentation for the new database migration process.
+
+### Fixed
+- Redacted database credentials from startup log messages.
+- Improved MariaDB URL handling across startup and container database wait helpers.
+- Fixed PostgreSQL prefix-based grouping queries.
+
 ## [0.10.2] - 2026.04.06
 
 ### Changed

@@ -1,12 +1,12 @@
 [package]
 name = "ropds"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Async runtime & web framework
-tokio = { version = "1.52", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 axum = { version = "0.8.9", features = ["macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "compression-br"] }
