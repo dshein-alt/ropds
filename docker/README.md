@@ -42,38 +42,48 @@ docker compose -f docker-compose.$FLAVOR.yml up -d
 
 **Using Docker Hub instead of GHCR:** set `ROPDS_IMAGE=docker.io/dsheinalt/ropds` in `.env` before `up`.
 
-**Pinning a specific version:** set `ROPDS_VERSION=0.10.4` in `.env` before `up`.
+**Pinning a specific version:** set `ROPDS_VERSION=0.10.5` in `.env` before `up`.
 
 ## Quick start from source (developers)
 
-1. Create an environment file:
+For contributors who want to build ROPDS from the local source tree instead of pulling a published image:
+
+1. Build a local image from the repository root:
+
+```bash
+docker build -f docker/Dockerfile -t ropds:local .
+```
+
+2. Copy the env file and set the image reference + config path inside it:
 
 ```bash
 cp docker/.env.example docker/.env
+# Then edit docker/.env to set:
+#   ROPDS_IMAGE=ropds
+#   ROPDS_VERSION=local
+#   ROPDS_CONFIG_FILE=./config/config.sqlite.toml
 ```
 
-2. Start the stack:
+3. Start the stack from inside `docker/` (so the relative paths in the compose file resolve):
 
 ```bash
-docker compose -f docker/docker-compose.sqlite.yml up -d --build
+cd docker
+docker compose -f docker-compose.sqlite.yml up -d
 ```
 
-3. Open:
-
-- Web UI: `http://localhost:8081/web`
-- OPDS: `http://localhost:8081/opds`
+4. Open `http://localhost:8081/web` or `http://localhost:8081/opds`.
 
 ## Compose scenarios (developer checkout)
 
-Each scenario has its own self-contained compose file — pick the one that matches your setup.
+Each scenario has its own self-contained compose file. After building `ropds:local` (see the step above), set `ROPDS_IMAGE=ropds` and `ROPDS_VERSION=local` in `docker/.env`, pick the matching `ROPDS_CONFIG_FILE`, then run from inside `docker/`:
 
 | Scenario | Command |
 |---|---|
-| SQLite (volume-backed DB) | `docker compose -f docker/docker-compose.sqlite.yml up -d --build` |
-| PostgreSQL (bundled) | `docker compose -f docker/docker-compose.postgres.sibling.yml up -d --build` |
-| PostgreSQL (external DB) | `docker compose -f docker/docker-compose.postgres.external.yml up -d --build` |
-| MySQL/MariaDB (bundled) | `docker compose -f docker/docker-compose.mysql.sibling.yml up -d --build` |
-| MySQL/MariaDB (external DB) | `docker compose -f docker/docker-compose.mysql.external.yml up -d --build` |
+| SQLite (volume-backed DB) | `docker compose -f docker-compose.sqlite.yml up -d` |
+| PostgreSQL (bundled) | `docker compose -f docker-compose.postgres.sibling.yml up -d` |
+| PostgreSQL (external DB) | `docker compose -f docker-compose.postgres.external.yml up -d` |
+| MySQL/MariaDB (bundled) | `docker compose -f docker-compose.mysql.sibling.yml up -d` |
+| MySQL/MariaDB (external DB) | `docker compose -f docker-compose.mysql.external.yml up -d` |
 
 **Bundled** scenarios include both ROPDS and the database in a single compose file — one `docker compose up` starts everything.
 
@@ -100,8 +110,8 @@ For local testing, `server.base_url = "http://localhost:8081"` is fine.
 
 Each compose file mounts:
 
-- `./config/*.toml -> /app/config/config.toml` (read-only)
-- `${ROPDS_LIBRARY_ROOT} -> /library` (read-write)
+- `${ROPDS_CONFIG_FILE:-./config.toml} -> /app/config/config.toml` (read-only) — defaults to `./config.toml` for the standalone deploy flow, or set to `./config/config.<flavor>.toml` when working from a source checkout
+- `${ROPDS_LIBRARY_ROOT} -> /library` (read-write) — defaults to `./library`
 
 Web templates, static assets, and locales are baked into the release binary at build time.
 
@@ -117,9 +127,12 @@ See `docker/.env.example` for the full list. The most important ones:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `ROPDS_IMAGE` | `ghcr.io/dshein-alt/ropds` | Container image repository (no tag) |
+| `ROPDS_VERSION` | `latest` | Image tag to pull |
+| `ROPDS_CONFIG_FILE` | `./config.toml` | Host path to the config file, relative to the compose file |
 | `TZ` | (none) | Container timezone (e.g. `Europe/Moscow`) |
 | `ROPDS_PORT` | `8081` | Published HTTP port on the host |
-| `ROPDS_LIBRARY_ROOT` | `../library` | Host path mounted as `/library` |
+| `ROPDS_LIBRARY_ROOT` | `./library` | Host path mounted as `/library` |
 | `ROPDS_ADMIN_PASSWORD` | (none) | Admin bootstrap password |
 | `ROPDS_ADMIN_INIT_ONCE` | `true` | One-time admin init via marker file |
 | `ROPDS_DB_WAIT_TIMEOUT` | `60` | Seconds to wait for DB readiness |

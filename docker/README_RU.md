@@ -42,38 +42,48 @@ docker compose -f docker-compose.$FLAVOR.yml up -d
 
 **Чтобы использовать Docker Hub вместо GHCR:** перед `up` задайте в `.env` значение `ROPDS_IMAGE=docker.io/dsheinalt/ropds`.
 
-**Чтобы зафиксировать конкретную версию:** перед `up` задайте в `.env` значение `ROPDS_VERSION=0.10.4`.
+**Чтобы зафиксировать конкретную версию:** перед `up` задайте в `.env` значение `ROPDS_VERSION=0.10.5`.
 
 ## Быстрый старт из исходников (для разработчиков)
 
-1. Создайте файл переменных окружения:
+Для тех, кто хочет собрать ROPDS из локального дерева исходников вместо загрузки опубликованного образа:
+
+1. Соберите локальный образ из корня репозитория:
+
+```bash
+docker build -f docker/Dockerfile -t ropds:local .
+```
+
+2. Скопируйте файл окружения и задайте в нём ссылку на образ и путь к конфигу:
 
 ```bash
 cp docker/.env.example docker/.env
+# Затем отредактируйте docker/.env, задав:
+#   ROPDS_IMAGE=ropds
+#   ROPDS_VERSION=local
+#   ROPDS_CONFIG_FILE=./config/config.sqlite.toml
 ```
 
-2. Запустите стек:
+3. Запустите стек из директории `docker/` (чтобы относительные пути в compose-файле разрешались корректно):
 
 ```bash
-docker compose -f docker/docker-compose.sqlite.yml up -d --build
+cd docker
+docker compose -f docker-compose.sqlite.yml up -d
 ```
 
-3. Откройте:
-
-- Веб-интерфейс: `http://localhost:8081/web`
-- OPDS-каталог: `http://localhost:8081/opds`
+4. Откройте `http://localhost:8081/web` или `http://localhost:8081/opds`.
 
 ## Сценарии compose (для разработчиков)
 
-Каждый вариант — отдельный самодостаточный compose-файл. Выберите подходящий.
+Каждый вариант — отдельный самодостаточный compose-файл. После сборки `ropds:local` (см. шаг выше) задайте в `docker/.env` значения `ROPDS_IMAGE=ropds` и `ROPDS_VERSION=local`, укажите нужный `ROPDS_CONFIG_FILE`, затем запустите из директории `docker/`:
 
 | Вариант | Команда |
 |---|---|
-| SQLite (БД на томе) | `docker compose -f docker/docker-compose.sqlite.yml up -d --build` |
-| PostgreSQL (в комплекте) | `docker compose -f docker/docker-compose.postgres.sibling.yml up -d --build` |
-| PostgreSQL (внешний сервер) | `docker compose -f docker/docker-compose.postgres.external.yml up -d --build` |
-| MySQL/MariaDB (в комплекте) | `docker compose -f docker/docker-compose.mysql.sibling.yml up -d --build` |
-| MySQL/MariaDB (внешний сервер) | `docker compose -f docker/docker-compose.mysql.external.yml up -d --build` |
+| SQLite (БД на томе) | `docker compose -f docker-compose.sqlite.yml up -d` |
+| PostgreSQL (в комплекте) | `docker compose -f docker-compose.postgres.sibling.yml up -d` |
+| PostgreSQL (внешний сервер) | `docker compose -f docker-compose.postgres.external.yml up -d` |
+| MySQL/MariaDB (в комплекте) | `docker compose -f docker-compose.mysql.sibling.yml up -d` |
+| MySQL/MariaDB (внешний сервер) | `docker compose -f docker-compose.mysql.external.yml up -d` |
 
 Варианты **«в комплекте»** включают и ROPDS, и базу данных в одном compose-файле — всё запускается одной командой.
 
@@ -100,8 +110,8 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 
 Каждый compose-файл монтирует:
 
-- `./config/*.toml -> /app/config/config.toml` (только для чтения)
-- `${ROPDS_LIBRARY_ROOT} -> /library` (чтение и запись)
+- `${ROPDS_CONFIG_FILE:-./config.toml} -> /app/config/config.toml` (только для чтения) — по умолчанию `./config.toml` для автономного развёртывания, или укажите `./config/config.<flavor>.toml` при работе из исходников
+- `${ROPDS_LIBRARY_ROOT} -> /library` (чтение и запись) — по умолчанию `./library`
 
 Веб-шаблоны, статика и файлы локализации встроены в исполняемый файл при сборке.
 
@@ -117,9 +127,12 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
+| `ROPDS_IMAGE` | `ghcr.io/dshein-alt/ropds` | Репозиторий образа (без тега) |
+| `ROPDS_VERSION` | `latest` | Тег образа для загрузки |
+| `ROPDS_CONFIG_FILE` | `./config.toml` | Путь к файлу конфигурации на хосте относительно compose-файла |
 | `TZ` | (нет) | Часовой пояс контейнера (напр. `Europe/Moscow`) |
 | `ROPDS_PORT` | `8081` | HTTP-порт на хосте |
-| `ROPDS_LIBRARY_ROOT` | `../library` | Путь к библиотеке на хосте |
+| `ROPDS_LIBRARY_ROOT` | `./library` | Путь к библиотеке на хосте |
 | `ROPDS_ADMIN_PASSWORD` | (нет) | Пароль администратора при первом запуске |
 | `ROPDS_ADMIN_INIT_ONCE` | `true` | Однократная инициализация администратора |
 | `ROPDS_DB_WAIT_TIMEOUT` | `60` | Тайм-аут ожидания базы данных (секунды) |
