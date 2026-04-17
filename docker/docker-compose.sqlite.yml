@@ -1,9 +1,6 @@
 services:
   ropds:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: ropds:local
+    image: ${ROPDS_IMAGE:-ghcr.io/dshein-alt/ropds}:${ROPDS_VERSION:-latest}
     restart: unless-stopped
     env_file:
       - .env
@@ -24,8 +21,8 @@ services:
       retries: 3
       start_period: 15s
     volumes:
-      - ${ROPDS_LIBRARY_ROOT:-../library}:/library:rw
-      - ./config/config.sqlite.toml:/app/config/config.toml:ro
+      - ${ROPDS_LIBRARY_ROOT:-./library}:/library:rw
+      - ${ROPDS_CONFIG_FILE:-./config.toml}:/app/config/config.toml:ro
       - ropds_sqlite_data:/var/lib/ropds/sqlite
 
 volumes:
