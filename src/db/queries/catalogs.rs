@@ -98,11 +98,18 @@ pub async fn update_archive_meta(
 /// Delete catalogs that have no live books and no child catalogs.
 /// Repeats until no more empty catalogs are found (prunes leaf-up).
 pub async fn delete_empty(pool: &DbPool) -> Result<u64, sqlx::Error> {
+    // MySQL 8 rejects a DELETE whose IN subquery's FROM references the target
+    // table ("You can't specify target table 'catalogs' for update in FROM
+    // clause"). Wrapping the inner SELECT in a second SELECT forces MySQL to
+    // materialize the result into a derived table first, sidestepping the
+    // restriction. MariaDB/PostgreSQL/SQLite accept either shape.
     let sql = pool.sql(
         "DELETE FROM catalogs WHERE id NOT IN \
          (SELECT DISTINCT catalog_id FROM books WHERE avail > 0) \
          AND id NOT IN \
-         (SELECT DISTINCT parent_id FROM catalogs WHERE parent_id IS NOT NULL)",
+         (SELECT parent_id FROM \
+             (SELECT DISTINCT parent_id FROM catalogs WHERE parent_id IS NOT NULL) \
+             AS parents)",
     );
     let mut total = 0u64;
     loop {

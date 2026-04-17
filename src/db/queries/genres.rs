@@ -150,6 +150,12 @@ pub async fn get_sections_with_counts(
     pool: &DbPool,
     lang: &str,
 ) -> Result<Vec<(String, String, i64)>, sqlx::Error> {
+    // PostgreSQL (and MySQL in ONLY_FULL_GROUP_BY mode) requires every
+    // non-aggregate SELECT column to appear in GROUP BY; the functional-
+    // dependency relaxation only covers same-table PK → same-table columns,
+    // so the JOINed translation columns must be grouped explicitly. Each
+    // (section_id, lang) pair is UNIQUE in genre_section_translations, so
+    // adding gst.name / gst_en.name to GROUP BY does not change the grouping.
     let sql = pool.sql(
         "SELECT gs.code, \
                COALESCE(gst.name, gst_en.name, gs.code) AS name, \
@@ -160,7 +166,7 @@ pub async fn get_sections_with_counts(
          JOIN books b ON b.id = bg.book_id AND b.avail > 0 \
          LEFT JOIN genre_section_translations gst ON gst.section_id = gs.id AND gst.lang = ? \
          LEFT JOIN genre_section_translations gst_en ON gst_en.section_id = gs.id AND gst_en.lang = 'en' \
-         GROUP BY gs.code \
+         GROUP BY gs.code, gst.name, gst_en.name \
          ORDER BY name",
     );
     let rows: Vec<(String, String, i64)> = sqlx::query_as(&sql)
@@ -176,6 +182,11 @@ pub async fn get_by_section_with_counts(
     section_code: &str,
     lang: &str,
 ) -> Result<Vec<(Genre, i64)>, sqlx::Error> {
+    // Same rule as in `get_sections_with_counts`: JOINed translation columns
+    // referenced in SELECT must appear in GROUP BY under strict SQL modes
+    // (PostgreSQL, MySQL ONLY_FULL_GROUP_BY). Each (genre_id, lang) and
+    // (section_id, lang) pair is UNIQUE in its translation table, so adding
+    // the translation columns to GROUP BY does not affect the grouping.
     let sql = pool.sql(
         "SELECT g.id, g.code, \
                COALESCE(gst.name, gst_en.name, g.section) AS section, \
@@ -191,7 +202,8 @@ pub async fn get_by_section_with_counts(
          LEFT JOIN genre_translations gt ON gt.genre_id = g.id AND gt.lang = ? \
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          WHERE gs.code = ? \
-         GROUP BY g.id, g.code \
+         GROUP BY g.id, g.code, g.section, g.subsection, g.section_id, \
+                  gst.name, gst_en.name, gt.name, gt_en.name \
          ORDER BY subsection",
     );
     let rows: Vec<(i64, String, String, String, i64, i64)> = sqlx::query_as(&sql)
@@ -459,12 +471,15 @@ pub async fn delete_genre_translation(
 
 /// Languages that have at least one genre or section translation.
 pub async fn get_available_languages(pool: &DbPool) -> Result<Vec<String>, sqlx::Error> {
+    // MySQL/MariaDB require a subquery in FROM to carry an alias
+    // ("Every derived table must have its own alias"). PostgreSQL 17 is
+    // lenient, but the alias is portable and costs nothing.
     let sql = pool.sql(
         "SELECT DISTINCT lang FROM ( \
              SELECT lang FROM genre_section_translations \
              UNION \
              SELECT lang FROM genre_translations \
-         ) ORDER BY lang",
+         ) AS langs ORDER BY lang",
     );
     let rows: Vec<(String,)> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
