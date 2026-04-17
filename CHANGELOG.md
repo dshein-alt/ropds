@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] - 2026.04.17
+
+### Changed
+- Documented supported database versions for SQLite, PostgreSQL, MySQL, and MariaDB in the main, Docker, and migration guides.
+
+### Fixed
+- Improved SQL compatibility for catalog and genre queries across PostgreSQL, MySQL, and MariaDB.
+
+### Added
+- Added regression coverage for cross-database query compatibility in PostgreSQL and MySQL/MariaDB test runs.
+
 ## [0.10.3] - 2026.04.17
 
 This release closes [issue #4](https://github.com/dshein-alt/ropds/issues/4).
