@@ -46,44 +46,40 @@ docker compose -f docker-compose.$FLAVOR.yml up -d
 
 ## Quick start from source (developers)
 
-For contributors who want to build ROPDS from the local source tree instead of pulling a published image:
+For contributors who want to build ROPDS from the local source tree instead of pulling a published image, use the `docker-compose.build.override.yml` override file:
 
-1. Build a local image from the repository root:
-
-```bash
-docker build -f docker/Dockerfile -t ropds:local .
-```
-
-2. Copy the env file and set the image reference + config path inside it:
+1. Copy the env file and set `ROPDS_CONFIG_FILE` to the chosen flavor's config:
 
 ```bash
 cp docker/.env.example docker/.env
-# Then edit docker/.env to set:
-#   ROPDS_IMAGE=ropds
-#   ROPDS_VERSION=local
-#   ROPDS_CONFIG_FILE=./config/config.sqlite.toml
+# Edit docker/.env to set ROPDS_CONFIG_FILE=./config/config.sqlite.toml
 ```
 
-3. Start the stack from inside `docker/` (so the relative paths in the compose file resolve):
+2. Build and start from inside `docker/`:
 
 ```bash
 cd docker
-docker compose -f docker-compose.sqlite.yml up -d
+docker compose \
+  -f docker-compose.sqlite.yml \
+  -f docker-compose.build.override.yml \
+  up -d --build
 ```
 
-4. Open `http://localhost:8081/web` or `http://localhost:8081/opds`.
+The override's `image: ropds:local` wins the merge, so `ROPDS_IMAGE` / `ROPDS_VERSION` from `.env` are ignored in this mode.
+
+3. Open `http://localhost:8081/web` or `http://localhost:8081/opds`.
 
 ## Compose scenarios (developer checkout)
 
-Each scenario has its own self-contained compose file. After building `ropds:local` (see the step above), set `ROPDS_IMAGE=ropds` and `ROPDS_VERSION=local` in `docker/.env`, pick the matching `ROPDS_CONFIG_FILE`, then run from inside `docker/`:
+Each scenario has its own self-contained compose file. After setting `ROPDS_CONFIG_FILE` in `docker/.env`, run from inside `docker/` with the build override:
 
 | Scenario | Command |
 |---|---|
-| SQLite (volume-backed DB) | `docker compose -f docker-compose.sqlite.yml up -d` |
-| PostgreSQL (bundled) | `docker compose -f docker-compose.postgres.sibling.yml up -d` |
-| PostgreSQL (external DB) | `docker compose -f docker-compose.postgres.external.yml up -d` |
-| MySQL/MariaDB (bundled) | `docker compose -f docker-compose.mysql.sibling.yml up -d` |
-| MySQL/MariaDB (external DB) | `docker compose -f docker-compose.mysql.external.yml up -d` |
+| SQLite (volume-backed DB) | `docker compose -f docker-compose.sqlite.yml -f docker-compose.build.override.yml up -d --build` |
+| PostgreSQL (bundled) | `docker compose -f docker-compose.postgres.sibling.yml -f docker-compose.build.override.yml up -d --build` |
+| PostgreSQL (external DB) | `docker compose -f docker-compose.postgres.external.yml -f docker-compose.build.override.yml up -d --build` |
+| MySQL/MariaDB (bundled) | `docker compose -f docker-compose.mysql.sibling.yml -f docker-compose.build.override.yml up -d --build` |
+| MySQL/MariaDB (external DB) | `docker compose -f docker-compose.mysql.external.yml -f docker-compose.build.override.yml up -d --build` |
 
 **Bundled** scenarios include both ROPDS and the database in a single compose file — one `docker compose up` starts everything.
 

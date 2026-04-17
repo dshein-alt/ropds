@@ -1,0 +1,10 @@
+# Compose override for local development: rebuild ropds from the checked-out source.
+# Use alongside any flavor file, for example:
+#   docker compose -f docker-compose.sqlite.yml -f docker-compose.build.override.yml up -d --build
+
+services:
+  ropds:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ropds:local

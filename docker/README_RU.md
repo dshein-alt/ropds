@@ -46,44 +46,40 @@ docker compose -f docker-compose.$FLAVOR.yml up -d
 
 ## Быстрый старт из исходников (для разработчиков)
 
-Для тех, кто хочет собрать ROPDS из локального дерева исходников вместо загрузки опубликованного образа:
+Для тех, кто хочет собрать ROPDS из локального дерева исходников вместо загрузки опубликованного образа, используйте файл переопределения `docker-compose.build.override.yml`:
 
-1. Соберите локальный образ из корня репозитория:
-
-```bash
-docker build -f docker/Dockerfile -t ropds:local .
-```
-
-2. Скопируйте файл окружения и задайте в нём ссылку на образ и путь к конфигу:
+1. Скопируйте файл окружения и задайте `ROPDS_CONFIG_FILE` для выбранного варианта БД:
 
 ```bash
 cp docker/.env.example docker/.env
-# Затем отредактируйте docker/.env, задав:
-#   ROPDS_IMAGE=ropds
-#   ROPDS_VERSION=local
-#   ROPDS_CONFIG_FILE=./config/config.sqlite.toml
+# Отредактируйте docker/.env: задайте ROPDS_CONFIG_FILE=./config/config.sqlite.toml
 ```
 
-3. Запустите стек из директории `docker/` (чтобы относительные пути в compose-файле разрешались корректно):
+2. Соберите и запустите из директории `docker/`:
 
 ```bash
 cd docker
-docker compose -f docker-compose.sqlite.yml up -d
+docker compose \
+  -f docker-compose.sqlite.yml \
+  -f docker-compose.build.override.yml \
+  up -d --build
 ```
 
-4. Откройте `http://localhost:8081/web` или `http://localhost:8081/opds`.
+Параметр `image: ropds:local` из файла переопределения имеет приоритет при слиянии, поэтому значения `ROPDS_IMAGE` и `ROPDS_VERSION` из `.env` в этом режиме игнорируются.
+
+3. Откройте `http://localhost:8081/web` или `http://localhost:8081/opds`.
 
 ## Сценарии compose (для разработчиков)
 
-Каждый вариант — отдельный самодостаточный compose-файл. После сборки `ropds:local` (см. шаг выше) задайте в `docker/.env` значения `ROPDS_IMAGE=ropds` и `ROPDS_VERSION=local`, укажите нужный `ROPDS_CONFIG_FILE`, затем запустите из директории `docker/`:
+Каждый вариант — отдельный самодостаточный compose-файл. После указания `ROPDS_CONFIG_FILE` в `docker/.env` запустите из директории `docker/` с файлом переопределения сборки:
 
 | Вариант | Команда |
 |---|---|
-| SQLite (БД на томе) | `docker compose -f docker-compose.sqlite.yml up -d` |
-| PostgreSQL (в комплекте) | `docker compose -f docker-compose.postgres.sibling.yml up -d` |
-| PostgreSQL (внешний сервер) | `docker compose -f docker-compose.postgres.external.yml up -d` |
-| MySQL/MariaDB (в комплекте) | `docker compose -f docker-compose.mysql.sibling.yml up -d` |
-| MySQL/MariaDB (внешний сервер) | `docker compose -f docker-compose.mysql.external.yml up -d` |
+| SQLite (БД на томе) | `docker compose -f docker-compose.sqlite.yml -f docker-compose.build.override.yml up -d --build` |
+| PostgreSQL (в комплекте) | `docker compose -f docker-compose.postgres.sibling.yml -f docker-compose.build.override.yml up -d --build` |
+| PostgreSQL (внешний сервер) | `docker compose -f docker-compose.postgres.external.yml -f docker-compose.build.override.yml up -d --build` |
+| MySQL/MariaDB (в комплекте) | `docker compose -f docker-compose.mysql.sibling.yml -f docker-compose.build.override.yml up -d --build` |
+| MySQL/MariaDB (внешний сервер) | `docker compose -f docker-compose.mysql.external.yml -f docker-compose.build.override.yml up -d --build` |
 
 Варианты **«в комплекте»** включают и ROPDS, и базу данных в одном compose-файле — всё запускается одной командой.
 
