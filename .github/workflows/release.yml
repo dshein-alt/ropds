@@ -78,6 +78,69 @@ jobs:
       - name: Run docker-backed integration tests (${{ matrix.feature }})
         run: cargo test --test docker_tests --features ${{ matrix.feature }} -- --nocapture
 
+  docker-publish:
+    needs: [test, db-integration-tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: dsheinalt
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/ropds
+            docker.io/dsheinalt/ropds
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          # flavor defaults to latest=auto — stable releases get :latest, pre-releases do not.
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sync README to Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: dsheinalt
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: dsheinalt/ropds
+          readme-filepath: ./README.md
+          short-description: "Self-hosted OPDS server for personal book libraries (Rust)."
+
   create-release:
     needs: [test, db-integration-tests]
     runs-on: ubuntu-latest
