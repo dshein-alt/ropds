@@ -90,6 +90,15 @@ Scan the library once without starting the server:
 ./target/release/ropds --scan
 ```
 
+## Running with Docker
+
+Pre-built multi-architecture images (linux/amd64, linux/arm64) are published on every release:
+
+- GitHub Container Registry: `ghcr.io/dshein-alt/ropds`
+- Docker Hub: `docker.io/dsheinalt/ropds`
+
+See [docker/README.md](docker/README.md) for the full deployment guide, including a no-source-checkout quick start.
+
 ## Features
 
 ### Library management

@@ -90,6 +90,15 @@ url = "sqlite://ropds.db?mode=rwc"
 ./target/release/ropds --scan
 ```
 
+## Запуск в Docker
+
+Готовые мультиархитектурные образы (linux/amd64, linux/arm64) публикуются с каждым релизом:
+
+- GitHub Container Registry: `ghcr.io/dshein-alt/ropds`
+- Docker Hub: `docker.io/dsheinalt/ropds`
+
+Подробное руководство по развёртыванию, включая быстрый старт без клонирования репозитория, — в [docker/README_RU.md](docker/README_RU.md).
+
 ## Возможности
 
 ### Управление библиотекой
