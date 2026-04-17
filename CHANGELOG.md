@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.5] - 2026.04.17
+
+### Added
+- Official multi-architecture Docker images (linux/amd64, linux/arm64) are now published to GitHub Container Registry and Docker Hub on every release.
+- Release pages now include ready-to-use compose files, config examples, and a sample `.env` so users can deploy ROPDS without cloning the repository. See [docker/README.md](docker/README.md) for the standalone deployment flow.
+
+### Changed
+- The `docker-compose.*.yml` files now default to pulling the published image instead of building from source; the library-mount default is now `./library` relative to the compose file.
+
 ## [0.10.4] - 2026.04.17
 
 ### Changed
