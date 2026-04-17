@@ -279,7 +279,16 @@ Books inside **ZIP archives** are scanned transparently. **INPX** index files ar
 
 ## Database
 
-SQLite is the default and simplest option — no setup needed. PostgreSQL and MySQL are also supported via `[database].url`.
+SQLite is the default and simplest option — no setup needed. PostgreSQL and MySQL/MariaDB are also supported via `[database].url`.
+
+**Supported versions** (tested in CI and verified end-to-end):
+
+| Backend      | Minimum | Notes                                                                     |
+|--------------|---------|---------------------------------------------------------------------------|
+| SQLite       | 3.35+   | Bundled via `sqlx`; no install needed.                                    |
+| PostgreSQL   | 16+     | Tested on 16 and 17. Earlier PG versions may work but are not exercised.  |
+| MariaDB      | 11+     | Tested on 11.x and 12.x.                                                  |
+| MySQL        | 8+      | Tested on 8.4. Requires default `ONLY_FULL_GROUP_BY` SQL mode to work.    |
 
 For SQLite, a scanner parallelism setting of `workers_num = 2..4` is usually the sweet spot. Higher values can increase write-lock contention during large rescans.
 

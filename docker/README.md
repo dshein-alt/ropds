@@ -3,8 +3,9 @@
 Ready-to-use Docker Compose scenarios for running ROPDS with:
 
 - SQLite (recommended default for most self-hosted setups)
-- PostgreSQL (bundled or external)
-- MySQL/MariaDB (bundled or external)
+- PostgreSQL 16+ (bundled or external)
+- MariaDB 11+ (bundled or external)
+- MySQL 8+ (external)
 
 ## Prerequisites
 

@@ -1,5 +1,13 @@
 # Migration guide: SQLite -> PostgreSQL or MySQL/MariaDB
 
+**Supported target versions** (tested end-to-end):
+
+| Backend    | Minimum | Notes                                                          |
+|------------|---------|----------------------------------------------------------------|
+| PostgreSQL | 16+     | Tested on 16 and 17.                                           |
+| MariaDB    | 11+     | Tested on 11.x and 12.x.                                       |
+| MySQL      | 8+      | Tested on 8.4. Default `ONLY_FULL_GROUP_BY` SQL mode is fine.  |
+
 Migrating an existing SQLite ROPDS database to PostgreSQL, MySQL, or MariaDB is a four-step flow:
 
 1. **Create the role and database** on the target server (one-time).
