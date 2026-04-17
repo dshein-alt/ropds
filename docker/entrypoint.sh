@@ -95,7 +95,7 @@ if bool_is_true "${allow_upload:-false}"; then
 fi
 
 case "$db_url" in
-    postgres://*|postgresql://*|mysql://*)
+    postgres://*|postgresql://*|mysql://*|mariadb://*)
         /usr/local/bin/wait-for-db.sh "$db_url" "$ROPDS_DB_WAIT_TIMEOUT"
         ;;
     *)

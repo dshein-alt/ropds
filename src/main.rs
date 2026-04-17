@@ -24,6 +24,14 @@ struct Cli {
     /// Create or update the admin user password and exit
     #[arg(long)]
     set_admin: Option<String>,
+
+    /// Prepare the target database for migration and exit: create the DB if
+    /// missing, apply every migration, then clear every user table so it is
+    /// ready for `scripts/migrate_sqlite.py`. Fresh installs that do NOT
+    /// migrate from a SQLite dump should start the server normally instead.
+    /// Refuses if user data exists without matching sqlx migration metadata.
+    #[arg(long)]
+    init_db: bool,
 }
 
 #[tokio::main]
@@ -82,6 +90,23 @@ async fn main() {
         );
     }
 
+    // One-shot DB init mode: create DB if missing, apply migrations, exit
+    if cli.init_db {
+        match ropds::db::init_db(&config.database).await {
+            Ok(()) => {
+                tracing::info!(
+                    "Database initialized: {}",
+                    ropds::db::redact_database_url(&config.database.url)
+                );
+                return;
+            }
+            Err(e) => {
+                tracing::error!("Database initialization failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Initialize database
     let pool = ropds::db::create_pool(&config.database)
         .await
@@ -89,7 +114,10 @@ async fn main() {
             tracing::error!("Failed to initialize database: {e}");
             std::process::exit(1);
         });
-    tracing::info!("Database initialized: {}", config.database.url);
+    tracing::info!(
+        "Database initialized: {}",
+        ropds::db::redact_database_url(&config.database.url)
+    );
 
     // Ensure covers directory exists
     if let Err(e) = std::fs::create_dir_all(&config.covers.covers_path) {

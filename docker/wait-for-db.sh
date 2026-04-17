@@ -19,7 +19,7 @@ case "$DB_URL" in
     postgres://*|postgresql://*)
         DEFAULT_PORT=5432
         ;;
-    mysql://*)
+    mysql://*|mariadb://*)
         DEFAULT_PORT=3306
         ;;
     *)
@@ -46,7 +46,7 @@ else
         exit 0
     fi
     if [ -z "$DEFAULT_PORT" ]; then
-        log "INFO: DB URL is not postgres/mysql, skipping wait: $DB_URL"
+        log "INFO: DB URL is not postgres/mysql/mariadb, skipping wait: $DB_URL"
         exit 0
     fi
 
