@@ -285,11 +285,16 @@ For SQLite, a scanner parallelism setting of `workers_num = 2..4` is usually the
 
 Migrations run automatically on startup. Backend-specific migration sets are embedded at build time and selected by the database URL prefix (`sqlite://`, `postgres://`, `mysql://`).
 
-### Migrating between backends (SQLite -> PostgreSQL / MySQL)
+### Migrating between backends (SQLite -> PostgreSQL or MySQL/MariaDB)
 
-Use `scripts/migrate_sqlite.py` for full data migration.
+Four-step flow:
 
-- English step-by-step guide: [`scripts/README.md`](scripts/README.md)
+1. **Create the role and database** on the target (one-time). The role only needs to own the DB — no superuser or `root` required.
+2. **Prepare the target schema with `ropds --init-db`** — creates the database if missing, applies every migration, clears every user table so the target is truly empty, and exits. Refuses if the target already has rows (so it is safe to invoke accidentally against a live or already-migrated DB — you'll be told to reset it manually).
+3. **Copy the data with `scripts/migrate_sqlite.py`** — minimal helper that only does truncate + copy + verify in a single CLI session. Precheck: every target data table must have 0 rows (the state `--init-db` leaves behind); otherwise the script lists the offenders and refuses. Requires interactive confirmation; depends only on `psql` or `mysql`/`mariadb`. Supports running those clients inside a container via `--db-container NAME --container-runtime {docker,podman}`.
+4. **Start ROPDS** against the new URL.
+
+- English step-by-step guide (with SQL examples for PG and MySQL/MariaDB): [`scripts/README.md`](scripts/README.md)
 - Russian step-by-step guide: [`scripts/README_RU.md`](scripts/README_RU.md)
 
 ## Tech stack
