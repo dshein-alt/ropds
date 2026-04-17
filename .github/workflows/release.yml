@@ -163,3 +163,41 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: ${{ steps.changelog.outputs.notes }}
+
+      - name: Upload release assets
+        run: |
+          set -euo pipefail
+          STAGING="$(mktemp -d)"
+
+          cp docker/docker-compose.sqlite.yml            "$STAGING/"
+          cp docker/docker-compose.postgres.sibling.yml  "$STAGING/"
+          cp docker/docker-compose.postgres.external.yml "$STAGING/"
+          cp docker/docker-compose.mysql.sibling.yml     "$STAGING/"
+          cp docker/docker-compose.mysql.external.yml    "$STAGING/"
+
+          cp docker/config/config.sqlite.toml            "$STAGING/"
+          cp docker/config/config.postgres.sibling.toml  "$STAGING/"
+          cp docker/config/config.postgres.external.toml "$STAGING/"
+          cp docker/config/config.mysql.sibling.toml     "$STAGING/"
+          cp docker/config/config.mysql.external.toml    "$STAGING/"
+
+          cp docker/.env.example                         "$STAGING/"
+
+          ls -la "$STAGING"
+
+          # Enumerate files explicitly — a bare `*` glob would skip .env.example
+          # (the dotfile starts with `.`). We list every asset by name.
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            "$STAGING/docker-compose.sqlite.yml" \
+            "$STAGING/docker-compose.postgres.sibling.yml" \
+            "$STAGING/docker-compose.postgres.external.yml" \
+            "$STAGING/docker-compose.mysql.sibling.yml" \
+            "$STAGING/docker-compose.mysql.external.yml" \
+            "$STAGING/config.sqlite.toml" \
+            "$STAGING/config.postgres.sibling.toml" \
+            "$STAGING/config.postgres.external.toml" \
+            "$STAGING/config.mysql.sibling.toml" \
+            "$STAGING/config.mysql.external.toml" \
+            "$STAGING/.env.example"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
