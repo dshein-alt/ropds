@@ -273,7 +273,6 @@ Nginx and Traefik snippets:
 | MOBI | Full (title, author, description, language, date) | Embedded |
 | PDF | Limited (title, author via `pdfinfo`) | First page (via `pdftoppm`) |
 | DjVu | Filename only | First page (via `ddjvu`) |
-| DOC, DOCX | Filename only | — |
 
 Books inside **ZIP archives** are scanned transparently. **INPX** index files are supported as an alternative to scanning individual archives.
 
