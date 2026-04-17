@@ -12,7 +12,39 @@
 - Docker Engine + Docker Compose v2
 - Директория на хост-машине для библиотеки (книги, обложки, загрузки)
 
-## Быстрый старт (SQLite)
+## Быстрый старт без клонирования репозитория
+
+Чтобы развернуть последний релиз ROPDS на своём сервере без клонирования репозитория:
+
+1. Выберите тип базы данных: `sqlite`, `postgres.sibling`, `postgres.external`, `mysql.sibling` или `mysql.external`.
+
+2. Со страницы [последнего релиза](https://github.com/dshein-alt/ropds/releases/latest) скачайте три файла в пустой каталог (подставьте выбранный тип вместо `<flavor>`):
+
+```bash
+FLAVOR=sqlite   # либо postgres.sibling / postgres.external / mysql.sibling / mysql.external
+BASE=https://github.com/dshein-alt/ropds/releases/latest/download
+
+mkdir ropds && cd ropds
+curl -LO "$BASE/docker-compose.$FLAVOR.yml"
+curl -Lo config.toml "$BASE/config.$FLAVOR.toml"
+curl -Lo .env        "$BASE/.env.example"
+```
+
+3. Отредактируйте `.env` (как минимум задайте `ROPDS_ADMIN_PASSWORD`) и `config.toml` (секрет сессии, базовый URL, учётные данные БД для postgres/mysql).
+
+4. Запустите сервис:
+
+```bash
+docker compose -f docker-compose.$FLAVOR.yml up -d
+```
+
+5. Откройте `http://localhost:8081/web` для веб-интерфейса или `http://localhost:8081/opds` для OPDS-ленты.
+
+**Чтобы использовать Docker Hub вместо GHCR:** перед `up` задайте в `.env` значение `ROPDS_IMAGE=docker.io/dsheinalt/ropds`.
+
+**Чтобы зафиксировать конкретную версию:** перед `up` задайте в `.env` значение `ROPDS_VERSION=0.10.4`.
+
+## Быстрый старт из исходников (для разработчиков)
 
 1. Создайте файл переменных окружения:
 
@@ -31,7 +63,7 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 - Веб-интерфейс: `http://localhost:8081/web`
 - OPDS-каталог: `http://localhost:8081/opds`
 
-## Варианты развёртывания
+## Сценарии compose (для разработчиков)
 
 Каждый вариант — отдельный самодостаточный compose-файл. Выберите подходящий.
 
