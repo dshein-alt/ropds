@@ -12,7 +12,39 @@ Ready-to-use Docker Compose scenarios for running ROPDS with:
 - Docker Engine + Docker Compose v2
 - A host directory for your library (books, covers, uploads)
 
-## Quick start (SQLite)
+## Quick start without source checkout
+
+To deploy the latest released ROPDS on your machine without cloning the repository:
+
+1. Pick a database flavor: `sqlite`, `postgres.sibling`, `postgres.external`, `mysql.sibling`, or `mysql.external`.
+
+2. From the [latest release](https://github.com/dshein-alt/ropds/releases/latest), download three files into an empty directory (replace `<flavor>` with your choice):
+
+```bash
+FLAVOR=sqlite   # or postgres.sibling / postgres.external / mysql.sibling / mysql.external
+BASE=https://github.com/dshein-alt/ropds/releases/latest/download
+
+mkdir ropds && cd ropds
+curl -LO "$BASE/docker-compose.$FLAVOR.yml"
+curl -Lo config.toml "$BASE/config.$FLAVOR.toml"
+curl -Lo .env        "$BASE/.env.example"
+```
+
+3. Edit `.env` (at minimum, set `ROPDS_ADMIN_PASSWORD`) and `config.toml` (session secret, base URL, database credentials if using postgres/mysql).
+
+4. Start the stack:
+
+```bash
+docker compose -f docker-compose.$FLAVOR.yml up -d
+```
+
+5. Open `http://localhost:8081/web` for the web UI or `http://localhost:8081/opds` for OPDS.
+
+**Using Docker Hub instead of GHCR:** set `ROPDS_IMAGE=docker.io/dsheinalt/ropds` in `.env` before `up`.
+
+**Pinning a specific version:** set `ROPDS_VERSION=0.10.4` in `.env` before `up`.
+
+## Quick start from source (developers)
 
 1. Create an environment file:
 
@@ -31,7 +63,7 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 - Web UI: `http://localhost:8081/web`
 - OPDS: `http://localhost:8081/opds`
 
-## Compose scenarios
+## Compose scenarios (developer checkout)
 
 Each scenario has its own self-contained compose file — pick the one that matches your setup.
 
