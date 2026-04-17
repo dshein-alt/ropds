@@ -283,6 +283,103 @@ async fn pg_book_title_search() {
     assert_eq!(all.len(), 2);
 }
 
+/// Available-languages query uses a UNION-ed subquery in FROM; PostgreSQL
+/// (≤ 15) and MySQL/MariaDB require that derived table to have an alias.
+#[tokio::test]
+async fn pg_get_available_languages_works() {
+    let (_container, pool) = start_postgres().await;
+    let section_id = genres::create_section(&pool, "s").await.unwrap();
+    genres::upsert_section_translation(&pool, section_id, "en", "S")
+        .await
+        .unwrap();
+    genres::upsert_section_translation(&pool, section_id, "ru", "С")
+        .await
+        .unwrap();
+    let genre_id = genres::create_genre(&pool, "g", section_id).await.unwrap();
+    genres::upsert_genre_translation(&pool, genre_id, "de", "G")
+        .await
+        .unwrap();
+
+    let langs = genres::get_available_languages(&pool).await.unwrap();
+    assert!(langs.contains(&"en".to_string()));
+    assert!(langs.contains(&"ru".to_string()));
+    assert!(langs.contains(&"de".to_string()));
+}
+
+/// Genre section/subsection count queries work on PostgreSQL — they SELECT
+/// translation columns from LEFT JOINs and must include them in GROUP BY
+/// under strict SQL mode. Regression test for the "Genres" menu button.
+#[tokio::test]
+async fn pg_genre_count_queries_work() {
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/g", "g", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let section_id = genres::create_section(&pool, "test_section").await.unwrap();
+    genres::upsert_section_translation(&pool, section_id, "en", "Test Section")
+        .await
+        .unwrap();
+    genres::upsert_section_translation(&pool, section_id, "ru", "Тестовая секция")
+        .await
+        .unwrap();
+
+    let genre_id = genres::create_genre(&pool, "test_genre", section_id)
+        .await
+        .unwrap();
+    genres::upsert_genre_translation(&pool, genre_id, "en", "Test Genre")
+        .await
+        .unwrap();
+    genres::upsert_genre_translation(&pool, genre_id, "ru", "Тестовый жанр")
+        .await
+        .unwrap();
+
+    let book_id = books::insert(
+        &pool,
+        cat_id,
+        "b.fb2",
+        "/g",
+        "fb2",
+        "B",
+        "B",
+        "",
+        "",
+        "en",
+        2,
+        100,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+    genres::link_book(&pool, book_id, genre_id).await.unwrap();
+
+    let sections = genres::get_sections_with_counts(&pool, "en").await.unwrap();
+    let test_section = sections
+        .iter()
+        .find(|s| s.0 == "test_section")
+        .expect("test section in result");
+    assert_eq!(test_section.1, "Test Section");
+    assert_eq!(test_section.2, 1);
+
+    let sections_ru = genres::get_sections_with_counts(&pool, "ru").await.unwrap();
+    let test_section_ru = sections_ru
+        .iter()
+        .find(|s| s.0 == "test_section")
+        .expect("test section in ru result");
+    assert_eq!(test_section_ru.1, "Тестовая секция");
+    assert_eq!(test_section_ru.2, 1);
+
+    let subs = genres::get_by_section_with_counts(&pool, "test_section", "en")
+        .await
+        .unwrap();
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].0.code, "test_genre");
+    assert_eq!(subs[0].0.subsection, "Test Genre");
+    assert_eq!(subs[0].1, 1);
+}
+
 /// Prefix-group drill-down works on PostgreSQL for books, authors, and series.
 #[tokio::test]
 async fn pg_prefix_group_queries_work() {

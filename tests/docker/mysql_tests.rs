@@ -140,6 +140,88 @@ async fn mysql_bookshelf_upsert_dedup() {
 // Genre translation upsert
 // ---------------------------------------------------------------------------
 
+/// Available-languages query uses a UNION-ed subquery in FROM; MariaDB
+/// requires every derived table to have an alias or the statement fails
+/// to parse.
+#[tokio::test]
+async fn mysql_get_available_languages_works() {
+    let (_container, pool) = start_mysql().await;
+    let section_id = genres::create_section(&pool, "s").await.unwrap();
+    genres::upsert_section_translation(&pool, section_id, "en", "S")
+        .await
+        .unwrap();
+    genres::upsert_section_translation(&pool, section_id, "ru", "С")
+        .await
+        .unwrap();
+    let genre_id = genres::create_genre(&pool, "g", section_id).await.unwrap();
+    genres::upsert_genre_translation(&pool, genre_id, "de", "G")
+        .await
+        .unwrap();
+
+    let langs = genres::get_available_languages(&pool).await.unwrap();
+    assert!(langs.contains(&"en".to_string()));
+    assert!(langs.contains(&"ru".to_string()));
+    assert!(langs.contains(&"de".to_string()));
+}
+
+/// Genre section/subsection count queries work on MariaDB in the default
+/// strict mode (ONLY_FULL_GROUP_BY). Regression for "Genres" menu button.
+#[tokio::test]
+async fn mysql_genre_count_queries_work() {
+    let (_container, pool) = start_mysql().await;
+    let cat_id = catalogs::insert(&pool, None, "/g", "g", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let section_id = genres::create_section(&pool, "test_section").await.unwrap();
+    genres::upsert_section_translation(&pool, section_id, "en", "Test Section")
+        .await
+        .unwrap();
+    let genre_id = genres::create_genre(&pool, "test_genre", section_id)
+        .await
+        .unwrap();
+    genres::upsert_genre_translation(&pool, genre_id, "en", "Test Genre")
+        .await
+        .unwrap();
+
+    let book_id = books::insert(
+        &pool,
+        cat_id,
+        "b.fb2",
+        "/g",
+        "fb2",
+        "B",
+        "B",
+        "",
+        "",
+        "en",
+        2,
+        100,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+    genres::link_book(&pool, book_id, genre_id).await.unwrap();
+
+    let sections = genres::get_sections_with_counts(&pool, "en").await.unwrap();
+    let test_section = sections
+        .iter()
+        .find(|s| s.0 == "test_section")
+        .expect("test section in result");
+    assert_eq!(test_section.1, "Test Section");
+    assert_eq!(test_section.2, 1);
+
+    let subs = genres::get_by_section_with_counts(&pool, "test_section", "en")
+        .await
+        .unwrap();
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].0.code, "test_genre");
+    assert_eq!(subs[0].0.subsection, "Test Genre");
+    assert_eq!(subs[0].1, 1);
+}
+
 /// Upserting a section translation twice with the same (section, lang) key
 /// replaces the name rather than creating a duplicate.
 #[tokio::test]

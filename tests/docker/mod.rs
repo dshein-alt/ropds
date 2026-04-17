@@ -73,13 +73,17 @@ pub async fn start_mysql() -> (
         .await
         .expect("Failed to start MariaDB container");
 
-    let port = container
-        .get_host_port_ipv4(3306u16)
-        .await
-        .expect("Failed to get MySQL port");
-
-    // MariaDB default: root user with no password, "test" database
-    let url = format!("mysql://root@127.0.0.1:{port}/test");
+    // AD-HOC: if ROPDS_TEST_MYSQL_URL is set, point at that DB instead of the
+    // testcontainers MariaDB (lets us verify against MySQL 8).
+    let url = if let Ok(override_url) = std::env::var("ROPDS_TEST_MYSQL_URL") {
+        override_url
+    } else {
+        let port = container
+            .get_host_port_ipv4(3306u16)
+            .await
+            .expect("Failed to get MySQL port");
+        format!("mysql://root@127.0.0.1:{port}/test")
+    };
     let pool = ropds::db::create_test_pool_for(&url).await;
     (container, pool)
 }
