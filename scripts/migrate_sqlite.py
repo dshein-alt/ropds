@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
 """
-Migrate full ROPDS data from SQLite to PostgreSQL or MySQL/MariaDB.
+Copy ROPDS data from a SQLite database to a PostgreSQL or MySQL/MariaDB database.
 
-The script intentionally uses only Python stdlib. For the target database it
-uses command-line clients:
-  - PostgreSQL: psql
-  - MySQL/MariaDB: mysql
+The target schema must already be initialized (e.g. via `ropds --init-db`).
+This script does not create tables, apply migrations, or alter schema — it only
+copies rows. `_sqlx_migrations` is never touched.
 
-Usage examples:
-  python3 scripts/migrate_sqlite.py \
-      --sqlite-db /path/to/ropds.db \
-      --target-url 'postgres://ropds:secret@127.0.0.1:5432/ropds'
+Usage:
+    migrate_sqlite.py [--db-container NAME] [--container-runtime {docker,podman}] \\
+        SQLITE_DB TARGET_URL
 
-  python3 scripts/migrate_sqlite.py \
-      --sqlite-db /path/to/ropds.db \
-      --target-url 'mysql://ropds:secret@127.0.0.1:3306/ropds'
+Examples:
+    # PostgreSQL
+    migrate_sqlite.py ./devel/ropds.db \\
+        'postgres://ropds:PASSWORD@db.example.com:5432/ropds'
 
-  # Use psql/mysql from running DB container (no host DB client install):
-  python3 scripts/migrate_sqlite.py \
-      --sqlite-db /path/to/ropds.db \
-      --target-url 'postgres://ropds:secret@127.0.0.1:5432/ropds' \
-      --db-container ropds-postgres
+    # MySQL / MariaDB
+    migrate_sqlite.py ./devel/ropds.db \\
+        'mysql://ropds:PASSWORD@db.example.com:3306/ropds'
+
+    # Target DB runs in a container (no host psql/mysql):
+    migrate_sqlite.py --db-container ropds-postgres --container-runtime podman \\
+        ./devel/ropds.db 'postgres://ropds:PASSWORD@127.0.0.1:5432/ropds'
+
+Requires:
+    - SQLite source DB (read-only).
+    - Either `psql` / `mysql` CLI on PATH, or a running container
+      (`--db-container`) that has the client binary.
+    - Interactive stdin for the confirmation prompt; the script is destructive
+      (TRUNCATEs every target data table before loading) and will refuse to
+      proceed without explicit confirmation.
 """
 
 from __future__ import annotations
@@ -41,8 +50,10 @@ from typing import Iterable, TextIO
 from urllib.parse import unquote, urlparse
 
 
-LOG = logging.getLogger("sqlite_migrate")
-DEFAULT_EXCLUDED_TABLES = {"_sqlx_migrations"}
+LOG = logging.getLogger("migrate_sqlite")
+EXCLUDED_TABLES = {"_sqlx_migrations"}
+MAX_STATEMENT_BYTES = 4 * 1024 * 1024
+FETCH_BATCH_SIZE = 500
 
 
 class MigrationError(RuntimeError):
@@ -61,38 +72,28 @@ class TargetDsn:
 
 @dataclass(frozen=True)
 class ContainerExec:
-    runtime: str
+    runtime: str  # "docker" or "podman"
     container: str
-
-
-def setup_logging(level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
 
 
 def parse_target_dsn(url: str) -> TargetDsn:
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
     if scheme in ("postgres", "postgresql"):
-        backend = "postgres"
-        default_port = 5432
+        backend, default_port = "postgres", 5432
     elif scheme in ("mysql", "mariadb"):
-        backend = "mysql"
-        default_port = 3306
+        backend, default_port = "mysql", 3306
     else:
         raise MigrationError(
-            f"Unsupported target URL scheme '{scheme}'. Use postgres:// or mysql://"
+            f"Unsupported target URL scheme '{scheme}'. "
+            "Use postgres:// or mysql://"
         )
-
     if not parsed.hostname:
         raise MigrationError("Target URL must include hostname")
     if not parsed.path or parsed.path == "/":
         raise MigrationError("Target URL must include database name in path")
     if parsed.username is None:
         raise MigrationError("Target URL must include username")
-
     return TargetDsn(
         backend=backend,
         host=parsed.hostname,
@@ -103,22 +104,73 @@ def parse_target_dsn(url: str) -> TargetDsn:
     )
 
 
-def sqlite_quote_ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
+# ---------------------------------------------------------------------------
+# Target clients
+# ---------------------------------------------------------------------------
 
 
-class TargetClientBase:
+class TargetClient:
+    """Shared subprocess plumbing; backend-specific SQL lives in subclasses."""
+
+    cli_bin: str = ""  # set by subclass; may be replaced at runtime for mariadb
+
     def __init__(
-        self,
-        dsn: TargetDsn,
-        max_statement_bytes: int,
-        container_exec: ContainerExec | None = None,
-    ):
+        self, dsn: TargetDsn, container_exec: ContainerExec | None = None
+    ) -> None:
         self.dsn = dsn
-        self.max_statement_bytes = max_statement_bytes
         self.container_exec = container_exec
+        self._cli_args: list[str] = []  # populated by subclass
+        self.env: dict[str, str] | None = None  # populated by subclass
 
-    def check_client_binary(self) -> None:
+    # ---- subprocess plumbing ----
+
+    @property
+    def base_args(self) -> list[str]:
+        """Command prefix for invoking the DB CLI (optionally inside a container)."""
+        if self.container_exec:
+            env_args: list[str] = []
+            for k, v in (self.env or {}).items():
+                if k.startswith(("PG", "MYSQL")):
+                    env_args += ["-e", f"{k}={v}"]
+            return [
+                self.container_exec.runtime,
+                "exec",
+                "-i",
+                *env_args,
+                self.container_exec.container,
+                *self._cli_args,
+            ]
+        return list(self._cli_args)
+
+    def _subprocess_env(self) -> dict[str, str] | None:
+        if self.container_exec:
+            return None
+        merged = os.environ.copy()
+        for k, v in (self.env or {}).items():
+            merged[k] = v
+        return merged
+
+    def _run(self, args: list[str], stdin_path: Path | None = None) -> str:
+        kwargs: dict = dict(
+            env=self._subprocess_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            text=True,
+        )
+        if stdin_path is not None:
+            with stdin_path.open("r", encoding="utf-8") as f:
+                proc = subprocess.run(args, stdin=f, **kwargs)
+        else:
+            proc = subprocess.run(args, **kwargs)
+        if proc.returncode != 0:
+            err = proc.stderr.strip() or proc.stdout.strip() or "unknown error"
+            raise MigrationError(f"{self.cli_bin} failed: {err}")
+        return proc.stdout
+
+    # ---- methods common in behaviour but dialect-specific in SQL ----
+
+    def check_binary(self) -> None:
         raise NotImplementedError
 
     def execute(self, sql: str) -> None:
@@ -130,86 +182,63 @@ class TargetClientBase:
     def run_sql_file(self, path: Path) -> None:
         raise NotImplementedError
 
-    def quote_ident(self, ident: str) -> str:
-        raise NotImplementedError
-
-    def format_literal(self, value: object) -> str:
-        raise NotImplementedError
-
     def list_tables(self) -> list[str]:
         raise NotImplementedError
 
-    def table_columns(self, table: str) -> list[str]:
+    def table_column_types(self, table: str) -> dict[str, str]:
         raise NotImplementedError
 
     def table_row_count(self, table: str) -> int:
-        q_table = self.quote_ident(table)
-        rows = self.query(f"SELECT COUNT(*) FROM {q_table}")
+        q = self.quote_ident(table)
+        rows = self.query(f"SELECT COUNT(*) FROM {q}")
         if not rows:
-            raise MigrationError(f"Failed to get row count for target table {table}")
+            raise MigrationError(f"Failed to count rows in {table}")
         return int(rows[0][0])
 
-    def migration_versions(self) -> list[int]:
-        if "_sqlx_migrations" not in self.list_tables():
-            return []
-        rows = self.query("SELECT version FROM _sqlx_migrations ORDER BY version")
-        return [int(r[0]) for r in rows]
-
-    def start_bulk_mode(self) -> None:
+    def auto_increment_columns(self, table: str) -> list[str]:
+        """Return column names that carry an auto-assigned identity
+        (PG: nextval default; MySQL: AUTO_INCREMENT)."""
         raise NotImplementedError
 
-    def finish_bulk_mode(self) -> None:
+    # ---- script-building primitives ----
+
+    def quote_ident(self, ident: str) -> str:
         raise NotImplementedError
 
-    def truncate_tables(self, tables: list[str]) -> None:
+    def format_literal(self, value: object, col_type: str | None) -> str:
         raise NotImplementedError
 
-    def reset_sequences(self, tables: list[str]) -> None:
-        # Most backends don't need explicit reset.
-        return
+    def render_load_header(self) -> str:
+        """SQL to emit before TRUNCATE + INSERTs."""
+        raise NotImplementedError
 
-    def write_insert_statements(
-        self,
-        out: TextIO,
-        table: str,
-        columns: list[str],
-        rows: Iterable[tuple[object, ...]],
-    ) -> int:
-        q_table = self.quote_ident(table)
-        q_cols = ", ".join(self.quote_ident(c) for c in columns)
-        prefix = f"INSERT INTO {q_table} ({q_cols}) VALUES "
-        rows_written = 0
-        current_rows: list[str] = []
-        current_size = len(prefix) + 1
-        for row in rows:
-            row_sql = "(" + ", ".join(self.format_literal(v) for v in row) + ")"
-            row_size = len(row_sql) + 2
-            if current_rows and (current_size + row_size > self.max_statement_bytes):
-                out.write(prefix)
-                out.write(", ".join(current_rows))
-                out.write(";\n")
-                current_rows = [row_sql]
-                current_size = len(prefix) + len(row_sql) + 1
-            else:
-                current_rows.append(row_sql)
-                current_size += row_size
-            rows_written += 1
-        if current_rows:
-            out.write(prefix)
-            out.write(", ".join(current_rows))
-            out.write(";\n")
-        return rows_written
+    def render_load_footer(self) -> str:
+        """SQL to emit after TRUNCATE + INSERTs."""
+        raise NotImplementedError
+
+    def render_truncate(self, tables: list[str]) -> str:
+        raise NotImplementedError
+
+    def render_sequence_resets(
+        self, conn: sqlite3.Connection, table: str, cols: list[str]
+    ) -> str:
+        """SQL to reset the table's auto-increment to MAX(col) + 1."""
+        raise NotImplementedError
 
 
-class PostgresClient(TargetClientBase):
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
+
+
+class PsqlClient(TargetClient):
+    cli_bin = "psql"
+
     def __init__(
-        self,
-        dsn: TargetDsn,
-        max_statement_bytes: int,
-        container_exec: ContainerExec | None = None,
-    ):
-        super().__init__(dsn, max_statement_bytes, container_exec)
-        psql_args = [
+        self, dsn: TargetDsn, container_exec: ContainerExec | None = None
+    ) -> None:
+        super().__init__(dsn, container_exec)
+        self._cli_args = [
             "psql",
             "-X",
             "-v",
@@ -223,23 +252,9 @@ class PostgresClient(TargetClientBase):
             "-d",
             dsn.database,
         ]
-        if self.container_exec:
-            self.base_args = [
-                self.container_exec.runtime,
-                "exec",
-                "-i",
-                "-e",
-                f"PGPASSWORD={dsn.password}",
-                self.container_exec.container,
-                *psql_args,
-            ]
-            self.env = None
-        else:
-            self.base_args = psql_args
-            self.env = os.environ.copy()
-            self.env["PGPASSWORD"] = dsn.password
+        self.env = {"PGPASSWORD": dsn.password}
 
-    def check_client_binary(self) -> None:
+    def check_binary(self) -> None:
         if self.container_exec:
             if shutil.which(self.container_exec.runtime) is None:
                 raise MigrationError(
@@ -263,27 +278,12 @@ class PostgresClient(TargetClientBase):
             if proc.returncode != 0:
                 err = proc.stderr.strip() or proc.stdout.strip() or "unknown error"
                 raise MigrationError(
-                    "Unable to execute psql inside container "
+                    f"psql not available in container "
                     f"'{self.container_exec.container}': {err}"
                 )
             return
         if shutil.which("psql") is None:
             raise MigrationError("psql not found in PATH")
-
-    def _run(self, args: list[str], input_text: str | None = None) -> str:
-        proc = subprocess.run(
-            args,
-            input=input_text,
-            text=True,
-            env=self.env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        if proc.returncode != 0:
-            err = proc.stderr.strip() or proc.stdout.strip() or "unknown error"
-            raise MigrationError(f"psql failed: {err}")
-        return proc.stdout
 
     def execute(self, sql: str) -> None:
         self._run(self.base_args + ["-q", "-c", sql])
@@ -300,28 +300,55 @@ class PostgresClient(TargetClientBase):
 
     def run_sql_file(self, path: Path) -> None:
         if self.container_exec:
-            with path.open("r", encoding="utf-8") as f:
-                proc = subprocess.run(
-                    self.base_args + ["-q"],
-                    stdin=f,
-                    text=True,
-                    env=self.env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
-            if proc.returncode != 0:
-                err = proc.stderr.strip() or proc.stdout.strip() or "unknown error"
-                raise MigrationError(f"psql failed: {err}")
-            return
-        self._run(self.base_args + ["-q", "-f", str(path)])
+            self._run(self.base_args + ["-q"], stdin_path=path)
+        else:
+            self._run(self.base_args + ["-q", "-f", str(path)])
+
+    def list_tables(self) -> list[str]:
+        rows = self.query(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+            "ORDER BY table_name"
+        )
+        return [r[0] for r in rows]
+
+    def table_column_types(self, table: str) -> dict[str, str]:
+        safe = table.replace("'", "''")
+        rows = self.query(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            f"WHERE table_schema = 'public' AND table_name = '{safe}' "
+            "ORDER BY ordinal_position"
+        )
+        return {r[0]: r[1] for r in rows}
+
+    def auto_increment_columns(self, table: str) -> list[str]:
+        safe = table.replace("'", "''")
+        rows = self.query(
+            "SELECT column_name FROM information_schema.columns "
+            f"WHERE table_schema = 'public' AND table_name = '{safe}' "
+            "AND column_default LIKE 'nextval%' "
+            "ORDER BY ordinal_position"
+        )
+        return [r[0] for r in rows]
 
     def quote_ident(self, ident: str) -> str:
         return '"' + ident.replace('"', '""') + '"'
 
-    def format_literal(self, value: object) -> str:
+    def format_literal(self, value: object, col_type: str | None) -> str:
         if value is None:
             return "NULL"
+        if col_type == "boolean":
+            if isinstance(value, bool):
+                return "TRUE" if value else "FALSE"
+            if isinstance(value, int):
+                return "TRUE" if value != 0 else "FALSE"
+            if isinstance(value, str):
+                v = value.strip().lower()
+                if v in ("1", "t", "true", "yes", "y"):
+                    return "TRUE"
+                if v in ("0", "f", "false", "no", "n", ""):
+                    return "FALSE"
+                raise MigrationError(f"Cannot convert string {value!r} to boolean")
         if isinstance(value, bool):
             return "TRUE" if value else "FALSE"
         if isinstance(value, int):
@@ -338,150 +365,104 @@ class PostgresClient(TargetClientBase):
             return "'" + value.replace("'", "''") + "'"
         raise MigrationError(f"Unsupported value type: {type(value)!r}")
 
-    def list_tables(self) -> list[str]:
-        rows = self.query(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-            "ORDER BY table_name"
-        )
-        return [r[0] for r in rows]
+    def render_load_header(self) -> str:
+        return "BEGIN;\n"
 
-    def table_columns(self, table: str) -> list[str]:
-        safe_table = table.replace("'", "''")
-        rows = self.query(
-            "SELECT column_name FROM information_schema.columns "
-            f"WHERE table_schema = 'public' AND table_name = '{safe_table}' "
-            "ORDER BY ordinal_position"
-        )
-        return [r[0] for r in rows]
+    def render_load_footer(self) -> str:
+        return "COMMIT;\n"
 
-    def start_bulk_mode(self) -> None:
-        self.execute("SET session_replication_role = replica")
-
-    def finish_bulk_mode(self) -> None:
-        self.execute("SET session_replication_role = origin")
-
-    def truncate_tables(self, tables: list[str]) -> None:
+    def render_truncate(self, tables: list[str]) -> str:
         if not tables:
-            return
+            return ""
         quoted = ", ".join(self.quote_ident(t) for t in tables)
-        self.execute(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE")
+        return f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE;\n"
 
-    def reset_sequences(self, tables: list[str]) -> None:
-        for table in tables:
-            safe_table = table.replace("'", "''")
-            cols = self.query(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = 'public' "
-                f"AND table_name = '{safe_table}' "
-                "AND column_default LIKE 'nextval%'"
+    def render_sequence_resets(
+        self, conn: sqlite3.Connection, table: str, cols: list[str]
+    ) -> str:
+        if not cols:
+            return ""
+        out: list[str] = []
+        safe_t = table.replace("'", "''")
+        for col in cols:
+            safe_c = col.replace("'", "''")
+            q_col = self.quote_ident(col)
+            q_tab = self.quote_ident(table)
+            out.append(
+                f"SELECT setval(pg_get_serial_sequence('{safe_t}', '{safe_c}'), "
+                f"COALESCE((SELECT MAX({q_col}) FROM {q_tab}), 0) + 1, false);\n"
             )
-            for (col,) in cols:
-                q_table = self.quote_ident(table)
-                q_col = self.quote_ident(col)
-                safe_col = col.replace("'", "''")
-                self.execute(
-                    "SELECT setval("
-                    f"pg_get_serial_sequence('{safe_table}', '{safe_col}'), "
-                    f"COALESCE((SELECT MAX({q_col}) FROM {q_table}), 0) + 1, "
-                    "false)"
-                )
+        return "".join(out)
 
 
-class MysqlClient(TargetClientBase):
+# ---------------------------------------------------------------------------
+# MySQL / MariaDB
+# ---------------------------------------------------------------------------
+
+
+class MysqlClient(TargetClient):
+    cli_bin = "mysql"
+
     def __init__(
-        self,
-        dsn: TargetDsn,
-        max_statement_bytes: int,
-        container_exec: ContainerExec | None = None,
-    ):
-        super().__init__(dsn, max_statement_bytes, container_exec)
-        self.cli_bin = "mysql"
-        mysql_args = [
+        self, dsn: TargetDsn, container_exec: ContainerExec | None = None
+    ) -> None:
+        super().__init__(dsn, container_exec)
+        self._rebuild_cli_args()
+        self.env = {"MYSQL_PWD": dsn.password} if dsn.password else {}
+
+    def _rebuild_cli_args(self) -> None:
+        self._cli_args = [
             self.cli_bin,
             "--batch",
             "--raw",
             "--skip-column-names",
             "-h",
-            dsn.host,
+            self.dsn.host,
             "-P",
-            str(dsn.port),
+            str(self.dsn.port),
             "-u",
-            dsn.user,
-            dsn.database,
+            self.dsn.user,
+            self.dsn.database,
         ]
-        if dsn.password:
-            mysql_args.insert(-1, f"-p{dsn.password}")
-        if self.container_exec:
-            self.base_args = [
-                self.container_exec.runtime,
-                "exec",
-                "-i",
-                self.container_exec.container,
-                *mysql_args,
-            ]
-        else:
-            self.base_args = mysql_args
 
-    def _select_container_cli_bin(self) -> str:
-        assert self.container_exec is not None
-        for candidate in ("mysql", "mariadb"):
-            probe = [
-                self.container_exec.runtime,
-                "exec",
-                "-i",
-                self.container_exec.container,
-                candidate,
-                "--version",
-            ]
-            proc = subprocess.run(
-                probe,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-            if proc.returncode == 0:
-                return candidate
-        return ""
-
-    def check_client_binary(self) -> None:
+    def check_binary(self) -> None:
         if self.container_exec:
             if shutil.which(self.container_exec.runtime) is None:
                 raise MigrationError(
                     f"{self.container_exec.runtime} not found in PATH"
                 )
-            selected = self._select_container_cli_bin()
-            if not selected:
-                raise MigrationError(
-                    "Unable to execute mysql/mariadb client inside container "
-                    f"'{self.container_exec.container}'"
+            for candidate in ("mysql", "mariadb"):
+                probe = [
+                    self.container_exec.runtime,
+                    "exec",
+                    "-i",
+                    self.container_exec.container,
+                    candidate,
+                    "--version",
+                ]
+                proc = subprocess.run(
+                    probe,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
                 )
-            if selected != self.cli_bin:
-                self.cli_bin = selected
-                self.base_args = [selected if a == "mysql" else a for a in self.base_args]
-            return
-        if shutil.which("mysql") is not None:
-            return
-        if shutil.which("mariadb") is not None:
-            self.cli_bin = "mariadb"
-            self.base_args = [self.cli_bin if a == "mysql" else a for a in self.base_args]
-            return
-        raise MigrationError("mysql/mariadb client not found in PATH")
-
-    def _run(self, args: list[str], input_text: str | None = None) -> str:
-        proc = subprocess.run(
-            args,
-            input=input_text,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        if proc.returncode != 0:
-            err = proc.stderr.strip() or proc.stdout.strip() or "unknown error"
-            raise MigrationError(f"mysql failed: {err}")
-        return proc.stdout
+                if proc.returncode == 0:
+                    if candidate != self.cli_bin:
+                        self.cli_bin = candidate
+                        self._rebuild_cli_args()
+                    return
+            raise MigrationError(
+                "neither mysql nor mariadb client available in container "
+                f"'{self.container_exec.container}'"
+            )
+        for candidate in ("mysql", "mariadb"):
+            if shutil.which(candidate) is not None:
+                if candidate != self.cli_bin:
+                    self.cli_bin = candidate
+                    self._rebuild_cli_args()
+                return
+        raise MigrationError("neither mysql nor mariadb client found in PATH")
 
     def execute(self, sql: str) -> None:
         self._run(self.base_args + ["-e", sql])
@@ -497,23 +478,39 @@ class MysqlClient(TargetClientBase):
         return rows
 
     def run_sql_file(self, path: Path) -> None:
-        with path.open("r", encoding="utf-8") as f:
-            proc = subprocess.run(
-                self.base_args,
-                stdin=f,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-        if proc.returncode != 0:
-            err = proc.stderr.strip() or proc.stdout.strip() or "unknown error"
-            raise MigrationError(f"mysql failed: {err}")
+        self._run(self.base_args, stdin_path=path)
+
+    def list_tables(self) -> list[str]:
+        rows = self.query(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
+            "ORDER BY table_name"
+        )
+        return [r[0] for r in rows]
+
+    def table_column_types(self, table: str) -> dict[str, str]:
+        safe = table.replace("'", "''")
+        rows = self.query(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            f"WHERE table_schema = DATABASE() AND table_name = '{safe}' "
+            "ORDER BY ordinal_position"
+        )
+        return {r[0]: r[1] for r in rows}
+
+    def auto_increment_columns(self, table: str) -> list[str]:
+        safe = table.replace("'", "''")
+        rows = self.query(
+            "SELECT column_name FROM information_schema.columns "
+            f"WHERE table_schema = DATABASE() AND table_name = '{safe}' "
+            "AND extra LIKE '%auto_increment%' "
+            "ORDER BY ordinal_position"
+        )
+        return [r[0] for r in rows]
 
     def quote_ident(self, ident: str) -> str:
         return "`" + ident.replace("`", "``") + "`"
 
-    def format_literal(self, value: object) -> str:
+    def format_literal(self, value: object, col_type: str | None) -> str:
         if value is None:
             return "NULL"
         if isinstance(value, bool):
@@ -531,50 +528,48 @@ class MysqlClient(TargetClientBase):
             return f"CONVERT(X'{hexval}' USING utf8mb4)"
         raise MigrationError(f"Unsupported value type: {type(value)!r}")
 
-    def list_tables(self) -> list[str]:
-        rows = self.query(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
-            "ORDER BY table_name"
+    def render_load_header(self) -> str:
+        # TRUNCATE auto-commits in MySQL, so we cannot wrap the whole sequence
+        # in a transaction. SET FOREIGN_KEY_CHECKS=0 is session-local and
+        # requires no special privilege; it persists until we re-enable below.
+        return "SET FOREIGN_KEY_CHECKS = 0;\n"
+
+    def render_load_footer(self) -> str:
+        return "SET FOREIGN_KEY_CHECKS = 1;\n"
+
+    def render_truncate(self, tables: list[str]) -> str:
+        # MySQL TRUNCATE only takes a single table per statement.
+        return "".join(
+            f"TRUNCATE TABLE {self.quote_ident(t)};\n" for t in tables
         )
-        return [r[0] for r in rows]
 
-    def table_columns(self, table: str) -> list[str]:
-        safe_table = table.replace("'", "''")
-        rows = self.query(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema = DATABASE() "
-            f"AND table_name = '{safe_table}' "
-            "ORDER BY ordinal_position"
-        )
-        return [r[0] for r in rows]
+    def render_sequence_resets(
+        self, conn: sqlite3.Connection, table: str, cols: list[str]
+    ) -> str:
+        if not cols:
+            return ""
+        out: list[str] = []
+        q_tab = self.quote_ident(table)
+        for col in cols:
+            # Preload the next auto-increment value from the SQLite source.
+            row = conn.execute(f'SELECT MAX("{col}") FROM "{table}"').fetchone()
+            next_val = int(row[0]) + 1 if row and row[0] is not None else 1
+            out.append(f"ALTER TABLE {q_tab} AUTO_INCREMENT = {next_val};\n")
+        return "".join(out)
 
-    def start_bulk_mode(self) -> None:
-        # mysql client calls are session-scoped; this hook is intentionally no-op.
-        return
 
-    def finish_bulk_mode(self) -> None:
-        # mysql client calls are session-scoped; this hook is intentionally no-op.
-        return
-
-    def truncate_tables(self, tables: list[str]) -> None:
-        if not tables:
-            return
-        parts = ["SET FOREIGN_KEY_CHECKS = 0"]
-        parts.extend(f"TRUNCATE TABLE {self.quote_ident(table)}" for table in tables)
-        parts.append("SET FOREIGN_KEY_CHECKS = 1")
-        self.execute("; ".join(parts))
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 
 def make_target_client(
-    dsn: TargetDsn,
-    max_statement_bytes: int,
-    container_exec: ContainerExec | None = None,
-) -> TargetClientBase:
+    dsn: TargetDsn, container_exec: ContainerExec | None
+) -> TargetClient:
     if dsn.backend == "postgres":
-        return PostgresClient(dsn, max_statement_bytes, container_exec)
+        return PsqlClient(dsn, container_exec)
     if dsn.backend == "mysql":
-        return MysqlClient(dsn, max_statement_bytes, container_exec)
+        return MysqlClient(dsn, container_exec)
     raise MigrationError(f"Unsupported backend: {dsn.backend}")
 
 
@@ -588,40 +583,36 @@ def sqlite_tables(conn: sqlite3.Connection) -> list[str]:
 
 
 def sqlite_columns(conn: sqlite3.Connection, table: str) -> list[str]:
-    q_table = sqlite_quote_ident(table)
-    rows = conn.execute(f"PRAGMA table_info({q_table})").fetchall()
+    rows = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
     return [r[1] for r in rows]
 
 
-def sqlite_migration_versions(conn: sqlite3.Connection) -> list[int]:
-    if "_sqlx_migrations" not in sqlite_tables(conn):
-        return []
-    rows = conn.execute("SELECT version FROM _sqlx_migrations ORDER BY version").fetchall()
-    return [int(r[0]) for r in rows]
-
-
 def sqlite_foreign_keys(conn: sqlite3.Connection, table: str) -> list[str]:
-    q_table = sqlite_quote_ident(table)
-    rows = conn.execute(f"PRAGMA foreign_key_list({q_table})").fetchall()
-    # PRAGMA foreign_key_list columns: id, seq, table, from, to, ...
+    rows = conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
     return [r[2] for r in rows]
+
+
+def sqlite_self_ref_columns(
+    conn: sqlite3.Connection, table: str
+) -> list[tuple[str, str]]:
+    """Return (from_col, to_col) pairs for FK constraints that reference the
+    same table."""
+    rows = conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
+    return [(r[3], r[4]) for r in rows if r[2] == table]
 
 
 def topological_order(conn: sqlite3.Connection, tables: list[str]) -> list[str]:
     table_set = set(tables)
     deps: dict[str, set[str]] = {t: set() for t in tables}
     reverse: dict[str, set[str]] = {t: set() for t in tables}
-
     for t in tables:
         for dep in sqlite_foreign_keys(conn, t):
             if dep in table_set and dep != t:
                 deps[t].add(dep)
                 reverse[dep].add(t)
-
     incoming = {t: len(deps[t]) for t in tables}
     ready = sorted(t for t, cnt in incoming.items() if cnt == 0)
     ordered: list[str] = []
-
     while ready:
         cur = ready.pop(0)
         ordered.append(cur)
@@ -630,198 +621,323 @@ def topological_order(conn: sqlite3.Connection, tables: list[str]) -> list[str]:
             if incoming[nxt] == 0:
                 ready.append(nxt)
                 ready.sort()
-
     remaining = sorted(t for t, cnt in incoming.items() if cnt > 0)
     if remaining:
         LOG.warning(
-            "Detected dependency cycles (likely self-references); appending in name order: %s",
+            "Dependency cycles (likely self-references); appending in name order: %s",
             ", ".join(remaining),
         )
         ordered.extend(remaining)
     return ordered
 
 
+def topologically_sort_rows(
+    rows: list[tuple[object, ...]],
+    columns: list[str],
+    self_refs: list[tuple[str, str]],
+) -> list[tuple[object, ...]]:
+    """Order rows so every self-FK target appears earlier.
+
+    Handles nullable and NOT NULL self-FKs. Raises MigrationError on cycles
+    or dangling references (neither should occur in a consistent source)."""
+    col_idx = {c: i for i, c in enumerate(columns)}
+    for from_c, to_c in self_refs:
+        if from_c not in col_idx or to_c not in col_idx:
+            raise MigrationError(
+                f"Self-ref ({from_c} -> {to_c}) references unknown column"
+            )
+
+    inserted: set[tuple[str, object]] = set()
+    ordered: list[tuple[object, ...]] = []
+    remaining = list(rows)
+
+    while remaining:
+        progressed: list[tuple[object, ...]] = []
+        for row in remaining:
+            ready = True
+            for from_c, to_c in self_refs:
+                val = row[col_idx[from_c]]
+                if val is None:
+                    continue
+                if (to_c, val) not in inserted:
+                    ready = False
+                    break
+            if ready:
+                ordered.append(row)
+                for _, to_c in self_refs:
+                    inserted.add((to_c, row[col_idx[to_c]]))
+                progressed.append(row)
+        if not progressed:
+            raise MigrationError(
+                "Cannot topologically sort rows for self-referential table: "
+                "cycle or dangling reference detected"
+            )
+        for r in progressed:
+            remaining.remove(r)
+
+    return ordered
+
+
 def count_rows(conn: sqlite3.Connection, table: str) -> int:
-    q_table = sqlite_quote_ident(table)
-    row = conn.execute(f"SELECT COUNT(*) FROM {q_table}").fetchone()
+    row = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()
     return int(row[0]) if row else 0
 
 
 def iter_rows(
-    conn: sqlite3.Connection,
-    table: str,
-    columns: list[str],
-    batch_size: int,
+    conn: sqlite3.Connection, table: str, columns: list[str]
 ) -> Iterable[list[tuple[object, ...]]]:
-    q_table = sqlite_quote_ident(table)
-    q_cols = ", ".join(sqlite_quote_ident(c) for c in columns)
-    cur = conn.execute(f"SELECT {q_cols} FROM {q_table}")
+    q_cols = ", ".join(f'"{c}"' for c in columns)
+    cur = conn.execute(f'SELECT {q_cols} FROM "{table}"')
     while True:
-        chunk = cur.fetchmany(batch_size)
+        chunk = cur.fetchmany(FETCH_BATCH_SIZE)
         if not chunk:
             break
         yield chunk
 
 
-def migrate(args: argparse.Namespace) -> None:
-    sqlite_path = Path(args.sqlite_db).expanduser()
+def write_insert_statements(
+    client: TargetClient,
+    out: TextIO,
+    table: str,
+    columns: list[str],
+    col_types: list[str | None],
+    rows: Iterable[tuple[object, ...]],
+) -> int:
+    q_table = client.quote_ident(table)
+    q_cols = ", ".join(client.quote_ident(c) for c in columns)
+    prefix = f"INSERT INTO {q_table} ({q_cols}) VALUES "
+    written = 0
+    current: list[str] = []
+    size = len(prefix) + 1
+    for row in rows:
+        row_sql = (
+            "("
+            + ", ".join(
+                client.format_literal(v, t) for v, t in zip(row, col_types)
+            )
+            + ")"
+        )
+        row_size = len(row_sql) + 2
+        if current and (size + row_size > MAX_STATEMENT_BYTES):
+            out.write(prefix)
+            out.write(", ".join(current))
+            out.write(";\n")
+            current = [row_sql]
+            size = len(prefix) + len(row_sql) + 1
+        else:
+            current.append(row_sql)
+            size += row_size
+        written += 1
+    if current:
+        out.write(prefix)
+        out.write(", ".join(current))
+        out.write(";\n")
+    return written
+
+
+def confirm(dsn: TargetDsn, container_exec: ContainerExec | None) -> None:
+    if container_exec:
+        target = (
+            f"  {dsn.backend}://{dsn.user}@{dsn.host}:{dsn.port}/{dsn.database}\n"
+            f"  (via {container_exec.runtime} exec -i {container_exec.container})\n"
+        )
+    else:
+        target = f"  {dsn.backend}://{dsn.user}@{dsn.host}:{dsn.port}/{dsn.database}\n"
+    if dsn.backend == "postgres":
+        txn_note = (
+            "All steps run inside one BEGIN/COMMIT; a failure rolls back and\n"
+            "leaves the target unchanged.\n"
+        )
+    else:
+        txn_note = (
+            "MySQL TRUNCATE auto-commits — steps 1–3 are NOT atomic. If an\n"
+            "error occurs mid-load, the target will be in a partial state;\n"
+            "re-run to complete the migration.\n"
+        )
+    msg = (
+        "This will modify the target database destructively:\n"
+        f"{target}"
+        "Actions:\n"
+        "  1. TRUNCATE every data table in the target (except _sqlx_migrations).\n"
+        "  2. Copy all rows from the SQLite source.\n"
+        "  3. Reset auto-increment sequences to MAX(id) + 1.\n"
+        f"{txn_note}"
+    )
+    if not sys.stdin.isatty():
+        raise MigrationError(
+            "Non-interactive stdin; refusing to proceed without confirmation."
+        )
+    print(msg, file=sys.stderr, end="")
+    try:
+        resp = input("Proceed? [y/N]: ").strip().lower()
+    except EOFError:
+        resp = ""
+    if resp not in ("y", "yes"):
+        raise MigrationError("Aborted by user")
+
+
+def build_load_script(
+    client: TargetClient,
+    conn: sqlite3.Connection,
+    ordered_tables: list[str],
+    columns_map: dict[str, list[str]],
+    col_types_map: dict[str, list[str | None]],
+    auto_inc_map: dict[str, list[str]],
+    self_ref_map: dict[str, list[tuple[str, str]]],
+    out: TextIO,
+) -> int:
+    """Write the complete load script to `out` and return rows emitted."""
+    out.write(client.render_load_header())
+    out.write(client.render_truncate(ordered_tables))
+
+    total = 0
+    for idx, table in enumerate(ordered_tables, start=1):
+        cols = columns_map[table]
+        types = col_types_map[table]
+        self_refs = self_ref_map[table]
+        table_total = count_rows(conn, table)
+        LOG.info("[%d/%d] %s: %d rows", idx, len(ordered_tables), table, table_total)
+        if table_total == 0:
+            continue
+
+        if self_refs:
+            LOG.info("%s has self-reference(s); sorting rows by dependency", table)
+            q_cols = ", ".join(f'"{c}"' for c in cols)
+            all_rows = conn.execute(f'SELECT {q_cols} FROM "{table}"').fetchall()
+            sorted_rows = topologically_sort_rows(all_rows, cols, self_refs)
+            total += write_insert_statements(
+                client, out, table, cols, types, sorted_rows
+            )
+        else:
+            for batch in iter_rows(conn, table, cols):
+                total += write_insert_statements(
+                    client, out, table, cols, types, batch
+                )
+
+    for table in ordered_tables:
+        out.write(
+            client.render_sequence_resets(conn, table, auto_inc_map.get(table, []))
+        )
+
+    out.write(client.render_load_footer())
+    return total
+
+
+def migrate(
+    sqlite_path: Path, dsn: TargetDsn, container_exec: ContainerExec | None
+) -> None:
     if not sqlite_path.exists():
         raise MigrationError(f"SQLite DB not found: {sqlite_path}")
 
-    dsn = parse_target_dsn(args.target_url)
-    container_exec = None
-    if args.db_container:
-        container_exec = ContainerExec(
-            runtime=args.container_runtime,
-            container=args.db_container,
-        )
-        LOG.info(
-            "Target DB client mode: %s exec in container '%s'",
-            container_exec.runtime,
-            container_exec.container,
-        )
-
-    client = make_target_client(
-        dsn,
-        max_statement_bytes=args.max_statement_bytes,
-        container_exec=container_exec,
-    )
-    client.check_client_binary()
+    client = make_target_client(dsn, container_exec)
+    client.check_binary()
+    confirm(dsn, container_exec)
 
     LOG.info("Opening SQLite DB: %s", sqlite_path)
     conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
     conn.row_factory = None
 
     try:
-        source_tables = sqlite_tables(conn)
-        excluded = set(DEFAULT_EXCLUDED_TABLES)
-        if args.include_sqlx_migrations:
-            excluded.discard("_sqlx_migrations")
-        source_tables = [t for t in source_tables if t not in excluded]
+        source_tables = [t for t in sqlite_tables(conn) if t not in EXCLUDED_TABLES]
         if not source_tables:
             raise MigrationError("No source tables found in SQLite database")
 
         target_tables = set(client.list_tables())
-        source_versions = sqlite_migration_versions(conn)
-        target_versions = client.migration_versions()
-        if source_versions and not target_versions and not args.include_sqlx_migrations:
-            raise MigrationError(
-                "Target DB has no _sqlx_migrations entries. "
-                "Run ROPDS once against target DB to apply migrations first."
-            )
-        if source_versions and target_versions and not args.include_sqlx_migrations:
-            src_set = set(source_versions)
-            dst_set = set(target_versions)
-            missing_versions = sorted(v for v in src_set if v not in dst_set)
-            if missing_versions:
-                raise MigrationError(
-                    "Target DB is missing migration versions present in source: "
-                    + ", ".join(str(v) for v in missing_versions)
-                    + ". Update target schema before migration."
-                )
-        missing = [t for t in source_tables if t not in target_tables]
-        if missing:
+        missing_tables = [t for t in source_tables if t not in target_tables]
+        if missing_tables:
             raise MigrationError(
                 "Target DB is missing required tables: "
-                + ", ".join(sorted(missing))
-                + ". Run ROPDS once against target DB to apply migrations."
+                + ", ".join(sorted(missing_tables))
+                + ". Run 'ropds --init-db' against the target first."
+            )
+        if "_sqlx_migrations" not in target_tables:
+            raise MigrationError(
+                "Target DB has no _sqlx_migrations table. "
+                "Run 'ropds --init-db' against the target first."
             )
 
-        ordered_tables = topological_order(conn, source_tables)
-        LOG.info("Will migrate %d tables", len(ordered_tables))
-
-        table_columns_map: dict[str, list[str]] = {}
-        for table in ordered_tables:
+        columns_map: dict[str, list[str]] = {}
+        col_types_map: dict[str, list[str | None]] = {}
+        auto_inc_map: dict[str, list[str]] = {}
+        self_ref_map: dict[str, list[tuple[str, str]]] = {}
+        for table in source_tables:
             src_cols = sqlite_columns(conn, table)
-            dst_cols = client.table_columns(table)
-            src_set = set(src_cols)
-            dst_set = set(dst_cols)
-            missing = [c for c in src_cols if c not in dst_set]
-            if missing:
+            dst_types = client.table_column_types(table)
+            missing_cols = [c for c in src_cols if c not in dst_types]
+            if missing_cols:
                 raise MigrationError(
                     f"Table '{table}' schema mismatch; target is missing columns: "
-                    + ", ".join(missing)
+                    + ", ".join(missing_cols)
                 )
-            extra = [c for c in dst_cols if c not in src_set]
-            if extra:
-                LOG.info(
-                    "Table %s: target has additional columns (defaults will apply): %s",
-                    table,
-                    ", ".join(extra),
-                )
-            cols = src_cols
-            table_columns_map[table] = cols
+            columns_map[table] = src_cols
+            col_types_map[table] = [dst_types.get(c) for c in src_cols]
+            auto_inc_map[table] = client.auto_increment_columns(table)
+            self_ref_map[table] = sqlite_self_ref_columns(conn, table)
 
-        if args.truncate_target:
-            LOG.info("Truncating target tables before load")
-            client.start_bulk_mode()
-            try:
-                client.truncate_tables(ordered_tables)
-            finally:
-                client.finish_bulk_mode()
+        ordered = topological_order(conn, source_tables)
+        LOG.info("Will migrate %d tables", len(ordered))
 
-        total_rows = 0
+        LOG.info("Precheck: verifying every target data table is empty")
+        populated: list[str] = []
+        for table in ordered:
+            dst_count = client.table_row_count(table)
+            if dst_count != 0:
+                populated.append(f"{table}: {dst_count} rows")
+        if populated:
+            raise MigrationError(
+                "Target database is not empty — the following data tables "
+                "already contain rows:\n  "
+                + "\n  ".join(populated)
+                + "\nExpected state after 'ropds --init-db': every data table "
+                "has 0 rows (init-db clears seed data as part of migration prep). "
+                "Refusing to proceed."
+            )
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=f".{dsn.backend}.sql",
+            prefix="ropds_migrate_",
+            delete=False,
+        ) as tmp:
+            script_path = Path(tmp.name)
+
         started = time.monotonic()
-
-        client.start_bulk_mode()
         try:
-            for idx, table in enumerate(ordered_tables, start=1):
-                cols = table_columns_map[table]
-                table_total = count_rows(conn, table)
-                LOG.info("[%d/%d] %s: %d rows", idx, len(ordered_tables), table, table_total)
-                if table_total == 0:
-                    continue
-
-                migrated = 0
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    suffix=f".{dsn.backend}.sql",
-                    prefix=f"ropds_migrate_{table}_",
-                    delete=False,
-                ) as tmp:
-                    script_path = Path(tmp.name)
-
-                try:
-                    with script_path.open("w", encoding="utf-8") as out:
-                        for batch in iter_rows(conn, table, cols, args.fetch_batch_size):
-                            written = client.write_insert_statements(out, table, cols, batch)
-                            migrated += written
-                            if migrated % args.progress_every_rows == 0:
-                                LOG.info(
-                                    "%s: migrated %d/%d rows",
-                                    table,
-                                    migrated,
-                                    table_total,
-                                )
-
-                    client.run_sql_file(script_path)
-                finally:
-                    script_path.unlink(missing_ok=True)
-
-                total_rows += migrated
-                LOG.info("%s: done (%d rows)", table, migrated)
+            with script_path.open("w", encoding="utf-8") as out:
+                total_rows = build_load_script(
+                    client,
+                    conn,
+                    ordered,
+                    columns_map,
+                    col_types_map,
+                    auto_inc_map,
+                    self_ref_map,
+                    out,
+                )
+            LOG.info(
+                "Built load script (%d bytes); executing in a single %s session",
+                script_path.stat().st_size,
+                client.cli_bin,
+            )
+            client.run_sql_file(script_path)
         finally:
-            client.finish_bulk_mode()
+            script_path.unlink(missing_ok=True)
 
-        if dsn.backend == "postgres":
-            LOG.info("Resetting PostgreSQL sequences")
-            client.reset_sequences(ordered_tables)
-
-        LOG.info("Verifying row counts in target")
-        for table in ordered_tables:
+        LOG.info("Verifying row counts")
+        for table in ordered:
             src_count = count_rows(conn, table)
             dst_count = client.table_row_count(table)
             if src_count != dst_count:
                 raise MigrationError(
-                    f"Row count mismatch for table '{table}': source={src_count}, target={dst_count}"
+                    f"Row count mismatch for '{table}': source={src_count}, target={dst_count}"
                 )
             LOG.info("Verified %s: %d rows", table, dst_count)
 
         elapsed = time.monotonic() - started
         LOG.info(
             "Migration completed: %d tables, %d rows, %.1f seconds",
-            len(ordered_tables),
+            len(ordered),
             total_rows,
             elapsed,
         )
@@ -829,100 +945,57 @@ def migrate(args: argparse.Namespace) -> None:
         conn.close()
 
 
-def parse_args(argv: list[str]) -> argparse.Namespace:
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Migrate ROPDS data from SQLite to PostgreSQL or MySQL/MariaDB"
+        description="Copy ROPDS data from SQLite to PostgreSQL or MySQL/MariaDB.",
+        epilog="The target schema must already exist. "
+        "Run 'ropds --init-db' against the target before using this script.",
     )
+    parser.add_argument("sqlite_db", help="Path to source SQLite database file")
     parser.add_argument(
-        "--sqlite-db",
-        required=True,
-        help="Path to source SQLite database file",
-    )
-    parser.add_argument(
-        "--target-url",
-        required=True,
+        "target_url",
         help=(
-            "Target DB URL: postgres://user:pass@host:port/db or "
-            "mysql://user:pass@host:port/db"
+            "Target DB URL: postgres://user:pass@host:port/db "
+            "or mysql://user:pass@host:port/db"
         ),
     )
     parser.add_argument(
         "--db-container",
         help=(
-            "Run target DB CLI inside this container using '<container-runtime> exec -i'. "
-            "Useful when host doesn't have psql/mysql installed."
+            "Run the target DB CLI (psql/mysql) inside this running container "
+            "using '<runtime> exec -i'. Useful when the host has no client installed."
         ),
     )
     parser.add_argument(
         "--container-runtime",
         default="docker",
-        help="Container runtime binary for --db-container mode (default: docker)",
-    )
-    parser.add_argument(
-        "--truncate-target",
-        action="store_true",
-        default=True,
-        help="Truncate target tables before importing data (default: enabled)",
-    )
-    parser.add_argument(
-        "--no-truncate-target",
-        action="store_false",
-        dest="truncate_target",
-        help="Do not truncate target tables before import",
-    )
-    parser.add_argument(
-        "--include-sqlx-migrations",
-        action="store_true",
-        help="Also migrate _sqlx_migrations table (off by default)",
-    )
-    parser.add_argument(
-        "--fetch-batch-size",
-        type=int,
-        default=500,
-        help="Rows fetched from SQLite per batch (default: 500)",
-    )
-    parser.add_argument(
-        "--max-statement-bytes",
-        type=int,
-        default=4 * 1024 * 1024,
-        help="Max generated INSERT statement size in bytes (default: 4 MiB)",
-    )
-    parser.add_argument(
-        "--progress-every-rows",
-        type=int,
-        default=50000,
-        help="Progress log interval in rows per table (default: 50000)",
-    )
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Log level (default: INFO)",
+        choices=["docker", "podman"],
+        help="Container runtime for --db-container (default: docker)",
     )
     args = parser.parse_args(argv)
-    if args.fetch_batch_size < 1:
-        parser.error("--fetch-batch-size must be > 0")
-    if args.max_statement_bytes < 1024:
-        parser.error("--max-statement-bytes must be >= 1024")
-    if args.progress_every_rows < 1:
-        parser.error("--progress-every-rows must be > 0")
-    return args
 
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
-def main(argv: list[str]) -> int:
-    args = parse_args(argv)
-    setup_logging(args.log_level)
     try:
-        migrate(args)
+        sqlite_path = Path(args.sqlite_db).expanduser()
+        dsn = parse_target_dsn(args.target_url)
+        container_exec: ContainerExec | None = None
+        if args.db_container:
+            container_exec = ContainerExec(
+                runtime=args.container_runtime, container=args.db_container
+            )
+        migrate(sqlite_path, dsn, container_exec)
         return 0
     except KeyboardInterrupt:
-        LOG.error("Migration interrupted by user")
+        LOG.error("Interrupted by user")
         return 130
     except MigrationError as e:
         LOG.error("Migration failed: %s", e)
         return 1
-    except Exception:  # pragma: no cover - top-level safety net
-        LOG.exception("Unexpected migration failure")
+    except Exception:  # pragma: no cover
+        LOG.exception("Unexpected failure")
         return 2
 
 
