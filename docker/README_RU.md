@@ -51,7 +51,7 @@ docker compose -f docker/docker-compose.sqlite.yml up -d --build
 
 Конфиги приложения лежат в `docker/config/`:
 
-- `config.toml.example` — готовая конфигурация для Docker (SQLite), используется в варианте с SQLite
+- `config.sqlite.toml` — готовая конфигурация для Docker (SQLite), используется в варианте с SQLite
 - `config.postgres.sibling.toml`
 - `config.postgres.external.toml`
 - `config.mysql.sibling.toml`

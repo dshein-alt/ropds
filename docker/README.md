@@ -51,7 +51,7 @@ Each scenario has its own self-contained compose file — pick the one that matc
 
 Application configs live in `docker/config/`:
 
-- `config.toml.example` — Docker-ready default (SQLite), also used by the SQLite compose file
+- `config.sqlite.toml` — Docker-ready default (SQLite), also used by the SQLite compose file
 - `config.postgres.sibling.toml`
 - `config.postgres.external.toml`
 - `config.mysql.sibling.toml`

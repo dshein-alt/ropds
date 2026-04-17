@@ -25,7 +25,7 @@ services:
       start_period: 15s
     volumes:
       - ${ROPDS_LIBRARY_ROOT:-../library}:/library:rw
-      - ./config/config.toml.example:/app/config/config.toml:ro
+      - ./config/config.sqlite.toml:/app/config/config.toml:ro
       - ropds_sqlite_data:/var/lib/ropds/sqlite
 
 volumes:
