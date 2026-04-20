@@ -65,6 +65,8 @@ pub struct LibraryConfig {
 pub struct DatabaseConfig {
     #[serde(default = "default_db_url")]
     pub url: String,
+    #[serde(default = "default_db_max_connections")]
+    pub max_connections: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -361,6 +363,12 @@ impl Config {
             ));
         }
 
+        if self.database.max_connections == 0 {
+            return Err(ConfigError::Validation(
+                "database.max_connections must be greater than 0".to_string(),
+            ));
+        }
+
         if self.oauth.notify_admin_email {
             if self.smtp.host.trim().is_empty() {
                 return Err(ConfigError::Validation(
@@ -448,6 +456,10 @@ fn default_zip_codepage() -> String {
 
 fn default_db_url() -> String {
     "sqlite://ropds.db".to_string()
+}
+
+fn default_db_max_connections() -> u32 {
+    5
 }
 
 fn default_opds_title() -> String {
@@ -565,6 +577,7 @@ root_path = "/books"
         assert!(config.covers.show_covers);
         assert_eq!(config.library.root_path, PathBuf::from("/books"));
         assert_eq!(config.database.url, "sqlite://ropds.db");
+        assert_eq!(config.database.max_connections, 5);
         assert_eq!(config.opds.max_items, 30);
         assert!(config.opds.auth_required);
         assert_eq!(config.web.language, "en");
@@ -591,6 +604,7 @@ inpx_enable = true
 
 [database]
 url = "sqlite://my.db"
+max_connections = 8
 
 [opds]
 title = "My Library"
@@ -634,6 +648,7 @@ read_history_max = 50
         assert_eq!(config.covers.cover_jpeg_quality, 80);
         assert!(!config.covers.show_covers);
         assert_eq!(config.library.root_path, PathBuf::from("/media/books"));
+        assert_eq!(config.database.max_connections, 8);
         assert!(!config.library.scan_zip);
         assert!(config.library.inpx_enable);
         assert_eq!(config.opds.title, "My Library");
@@ -764,6 +779,22 @@ base_url = "not a url"
 [library]
 root_path = "/books"
 [database]
+[opds]
+[scanner]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.validate(), Err(ConfigError::Validation(_))));
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_db_max_connections() {
+        let toml_str = r#"
+[server]
+base_url = "http://127.0.0.1:8081"
+[library]
+root_path = "/books"
+[database]
+max_connections = 0
 [opds]
 [scanner]
 "#;

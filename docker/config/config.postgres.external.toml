@@ -21,6 +21,7 @@ show_covers = true
 
 [database]
 url = "postgres://ropds:change-me@postgres.example.com:5432/ropds"
+max_connections = 5
 
 [opds]
 title = "Rust OPDS Server"

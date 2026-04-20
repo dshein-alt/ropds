@@ -21,6 +21,7 @@ show_covers = true
 
 [database]
 url = "mysql://ropds:change-me@mysql.example.com:3306/ropds"
+max_connections = 5
 
 [opds]
 title = "Rust OPDS Server"

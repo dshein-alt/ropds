@@ -136,7 +136,7 @@ pub async fn create_pool(config: &DatabaseConfig) -> Result<DbPool, sqlx::Error>
 
     let backend = DbBackend::from_url(&config.url);
     let pool = AnyPoolOptions::new()
-        .max_connections(5)
+        .max_connections(config.max_connections)
         .connect(&config.url)
         .await?;
 

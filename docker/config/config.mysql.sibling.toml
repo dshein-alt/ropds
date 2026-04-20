@@ -22,6 +22,7 @@ show_covers = true
 [database]
 # Credentials must match DB_NAME, DB_USER, DB_PASSWORD in docker/.env
 url = "mysql://ropds:ropds_change_me@mysql:3306/ropds"
+max_connections = 5
 
 [opds]
 title = "Rust OPDS Server"

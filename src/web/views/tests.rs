@@ -42,6 +42,7 @@ mod tests {
             },
             database: DatabaseConfig {
                 url: "sqlite::memory:".to_string(),
+                max_connections: 5,
             },
             opds: OpdsConfig {
                 title: "ROPDS".to_string(),

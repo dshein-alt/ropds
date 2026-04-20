@@ -21,6 +21,7 @@ show_covers = true
 
 [database]
 url = "sqlite://ropds.db?mode=rwc"
+max_connections = 5
 
 [opds]
 title = "Rust OPDS Server"
