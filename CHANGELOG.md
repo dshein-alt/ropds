@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.6] - 2026.04.20
+
+This release closes [issue #3](https://github.com/dshein-alt/ropds/issues/3).
+
+### Added
+- Added configurable database connection pool sizing, with updated example configs for SQLite, PostgreSQL, and MySQL deployments.
+
+### Fixed
+- Improved EPUB and FB2 metadata and cover parsing for books that use non-UTF XML encodings.
+
 ## [0.10.5] - 2026.04.17
 
 ### Added
