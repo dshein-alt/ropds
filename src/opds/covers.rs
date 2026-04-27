@@ -174,6 +174,7 @@ fn extract_book_cover(
             let opf_data = read_zip_vec(&mut archive, &opf_path).ok()?;
             extract_epub_cover(&opf_data, &opf_path, &mut archive)
         }
+        "mobi" => crate::scanner::parsers::mobi::extract_cover_from_bytes(&data),
         "pdf" => match crate::pdf::render_first_page_jpeg_from_bytes(&data, cover_cfg) {
             Ok(jpg) => Some((jpg, "image/jpeg".to_string())),
             Err(e) => {

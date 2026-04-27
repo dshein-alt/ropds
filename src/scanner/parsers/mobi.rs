@@ -14,6 +14,14 @@ pub fn parse_bytes(data: &[u8]) -> Result<BookMeta, mobi::MobiError> {
     Ok(extract_meta(&mobi))
 }
 
+/// Extract cover image from in-memory MOBI bytes.
+/// Returns `(image_data, mime_type)` when a cover record is found.
+pub fn extract_cover_from_bytes(data: &[u8]) -> Option<(Vec<u8>, String)> {
+    let mobi = mobi::Mobi::new(data.to_vec()).ok()?;
+    let (cover_data, cover_type) = extract_cover(&mobi);
+    cover_data.map(|d| (d, cover_type))
+}
+
 fn extract_meta(mobi: &mobi::Mobi) -> BookMeta {
     let title = strip_meta(&mobi.title());
 
@@ -209,6 +217,16 @@ mod tests {
         let meta = parse_bytes(TEST_MOBI).expect("should parse test MOBI");
         assert!(meta.cover_data.is_some(), "should have cover data");
         assert_eq!(meta.cover_type, "image/jpeg");
+    }
+
+    #[test]
+    fn test_extract_cover_from_bytes() {
+        let (data, mime) =
+            extract_cover_from_bytes(TEST_MOBI).expect("should extract cover from test MOBI");
+        assert!(!data.is_empty());
+        assert_eq!(mime, "image/jpeg");
+
+        assert!(extract_cover_from_bytes(b"not a mobi file").is_none());
     }
 
     #[test]
