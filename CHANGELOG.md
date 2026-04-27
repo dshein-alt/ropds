@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] - 2026.04.27
+
+### Fixed
+- Restored cover image delivery for MOBI books when a cached cover file is not yet available.
+
 ## [0.10.6] - 2026.04.20
 
 This release closes [issue #3](https://github.com/dshein-alt/ropds/issues/3).
