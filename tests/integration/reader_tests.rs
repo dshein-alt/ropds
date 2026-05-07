@@ -267,6 +267,86 @@ async fn reading_history_api() {
     assert!((items[0]["progress"].as_f64().unwrap() - 0.25).abs() < 0.001);
 }
 
+/// New offline-related body data attributes appear on the reader page.
+#[tokio::test]
+async fn reader_renders_offline_data_attributes() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let (pool, config, _user_id, session, _lib, _cov) = setup_with_user().await;
+
+    let book = ropds::db::queries::books::find_by_path_and_filename(&pool, "", "test_book.epub")
+        .await
+        .unwrap()
+        .unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+    let resp = get_with_session(app, &format!("/web/reader/{}", book.id), &session).await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+
+    // Default cached_books_max is 5 (config.reader.offline.cached_books_max).
+    assert!(
+        html.contains(r#"data-offline-max="5""#),
+        "missing data-offline-max in: {html}"
+    );
+    assert!(
+        html.contains(r#"data-saved-position-ts="0""#),
+        "expected ts=0 for no saved position"
+    );
+    assert!(
+        html.contains("data-app-version="),
+        "missing data-app-version"
+    );
+    assert!(html.contains("data-book-title="), "missing data-book-title");
+    assert!(
+        html.contains("data-book-authors="),
+        "missing data-book-authors"
+    );
+}
+
+/// After saving a position, `data-saved-position-ts` is non-zero and recent.
+#[tokio::test]
+async fn reader_renders_nonzero_saved_position_ts_after_save() {
+    let _lock = SCAN_MUTEX.lock().await;
+    let (pool, config, user_id, session, _lib, _cov) = setup_with_user().await;
+
+    let book = ropds::db::queries::books::find_by_path_and_filename(&pool, "", "test_book.epub")
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Pre-seed a reading position so the reader template gets a non-zero ts.
+    reading_positions::save_position(&pool, user_id, book.id, "epubcfi(/6/4!)", 0.42, 100)
+        .await
+        .unwrap();
+
+    let state = test_app_state(pool, config);
+    let app = test_router(state);
+    let resp = get_with_session(app, &format!("/web/reader/{}", book.id), &session).await;
+    assert_eq!(resp.status(), 200);
+    let html = body_string(resp).await;
+
+    let needle = r#"data-saved-position-ts=""#;
+    let start = html
+        .find(needle)
+        .unwrap_or_else(|| panic!("data-saved-position-ts attribute missing"))
+        + needle.len();
+    let end = start
+        + html[start..]
+            .find('"')
+            .expect("missing closing quote on data-saved-position-ts");
+    let ts: i64 = html[start..end]
+        .parse()
+        .unwrap_or_else(|e| panic!("ts not an integer: {} ({})", &html[start..end], e));
+    assert!(ts > 0, "expected non-zero ts after seeded save, got {ts}");
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    assert!(
+        (now_ms - ts).abs() < 3_600_000,
+        "ts {ts} too far from now {now_ms}"
+    );
+}
+
 /// Reader page is disabled when config.reader.enable = false.
 #[tokio::test]
 async fn reader_disabled_returns_not_found() {

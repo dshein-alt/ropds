@@ -192,6 +192,11 @@
       data-book-url="/web/read/{{ book_id }}"
       data-saved-position="{{ saved_position }}"
       data-saved-progress="{{ saved_progress }}"
+      data-saved-position-ts="{{ saved_position_ts }}"
+      data-offline-max="{{ offline_max }}"
+      data-app-version="{{ version }}"
+      data-book-title="{{ book_title }}"
+      data-book-authors="{{ book_authors }}"
       data-csrf-token="{{ csrf_token | default(value='') }}">
 
   {# ── Reader Toolbar ──────────────────────────────────────── #}
@@ -322,7 +327,10 @@
   {% endif %}
 
   <script src="/static/js/bootstrap.bundle.min.js"></script>
+  <script>window.ROpdsAppVersion = {{ version | json_encode | safe }};</script>
   <script src="/static/js/ropds.js?v={{ version }}"></script>
+  <script src="/static/js/idb-schema.js?v={{ version }}"></script>
+  <script src="/static/js/reader-offline.js?v={{ version }}"></script>
   <script type="module" src="/static/js/reader.js?v={{ version }}"></script>
 </body>
 </html>

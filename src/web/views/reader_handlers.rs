@@ -64,6 +64,24 @@ fn is_reader_format(format: &str) -> bool {
     matches!(format, "epub" | "fb2" | "mobi" | "djvu" | "pdf")
 }
 
+/// Convert SQL `CURRENT_TIMESTAMP` strings (UTC) to milliseconds since epoch.
+/// Returns 0 when the input is empty or unparseable.
+fn parse_sql_ts_to_millis(s: &str) -> i64 {
+    use chrono::NaiveDateTime;
+    let candidates = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%.f",
+    ];
+    for fmt in candidates {
+        if let Ok(ndt) = NaiveDateTime::parse_from_str(s, fmt) {
+            return ndt.and_utc().timestamp_millis();
+        }
+    }
+    0
+}
+
 /// GET /web/reader/:book_id — reader page
 pub async fn web_reader(
     State(state): State<AppState>,
@@ -86,17 +104,19 @@ pub async fn web_reader(
     }
 
     let secret = state.config.server.session_secret.as_bytes();
+    let user_id_opt = jar
+        .get("session")
+        .and_then(|c| crate::web::auth::verify_session(c.value(), secret));
+    let mut saved_position_ts: i64 = 0;
     let mut saved_position = String::new();
     let mut saved_progress: f64 = 0.0;
     let mut recent_books = Vec::new();
 
-    if let Some(user_id) = jar
-        .get("session")
-        .and_then(|c| crate::web::auth::verify_session(c.value(), secret))
-    {
+    if let Some(user_id) = user_id_opt {
         if let Ok(Some(pos)) = reading_positions::get_position(&state.db, user_id, book_id).await {
             saved_position = pos.position.clone();
             saved_progress = pos.progress;
+            saved_position_ts = parse_sql_ts_to_millis(&pos.updated_at);
         }
         // Touch/create the reading position so the book appears in "last read"
         // immediately, even before the JS client sends its first position update.
@@ -142,6 +162,8 @@ pub async fn web_reader(
     ctx.insert("book_authors", &authors_str);
     ctx.insert("saved_position", &saved_position);
     ctx.insert("saved_progress", &saved_progress);
+    ctx.insert("saved_position_ts", &saved_position_ts);
+    ctx.insert("offline_max", &state.config.reader.offline.cached_books_max);
     ctx.insert("recent_books", &recent_books);
     let back_url = sanitize_internal_redirect(params.return_to.as_deref());
     ctx.insert("back_url", &back_url);
