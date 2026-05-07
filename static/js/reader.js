@@ -52,6 +52,21 @@ let currentPosition = savedPos;
 let currentProgress = savedProg;
 let saveTimer = null;
 
+async function resolveOfflineInitialPosition() {
+    if (!window.ROpdsOffline) return;
+    try {
+        const resolved = await window.ROpdsOffline.resolveInitialPosition({
+            serverPosition: savedPos,
+            serverProgress: savedProg,
+            serverTs: parseInt(body.dataset.savedPositionTs || "0", 10) || 0,
+        });
+        currentPosition = resolved.position;
+        currentProgress = resolved.progress;
+    } catch (e) {
+        console.warn("offline initial-position resolve failed:", e);
+    }
+}
+
 // ── Position Persistence ────────────────────────────────────────
 
 function updateProgress(fraction) {
@@ -63,6 +78,9 @@ function updateProgress(fraction) {
 
 function savePosition() {
     if (!csrfToken || !currentPosition) return;
+    if (window.ROpdsOffline) {
+        window.ROpdsOffline.recordPositionLocal({ position: currentPosition, progress: currentProgress });
+    }
     const payload = JSON.stringify({
         book_id: bookId,
         position: currentPosition,
@@ -73,7 +91,16 @@ function savePosition() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
-    }).then(() => refreshHistorySidebar()).catch(err => console.error('Failed to save position:', err));
+    }).then(function (resp) {
+        if (resp && resp.ok && window.ROpdsOffline) {
+            // markPositionSynced() reconciles the localStorage queue against the IDB mirror:
+            // it clears the queue entry only if the mirror was updated (book is cached) or if
+            // the book is unreachable (PDF/unknown format/aged-out). For a deferred entry, the
+            // queue stays so primeAndCacheBook can promote it. Fire-and-forget; do not await.
+            window.ROpdsOffline.markPositionSynced();
+        }
+        refreshHistorySidebar();
+    }).catch(err => console.error('Failed to save position:', err));
 }
 
 function refreshHistorySidebar() {
@@ -110,6 +137,9 @@ if (historyOffcanvas) {
 
 function savePositionBeacon() {
     if (!csrfToken || !currentPosition) return;
+    if (window.ROpdsOffline) {
+        window.ROpdsOffline.recordPositionLocal({ position: currentPosition, progress: currentProgress });
+    }
     const payload = JSON.stringify({
         book_id: bookId,
         position: currentPosition,
@@ -223,13 +253,20 @@ async function initDjvuReader() {
     // Fetch book data and load
     const resp = await fetch(bookUrl);
     if (!resp.ok) throw new Error(`Failed to fetch book: ${resp.status}`);
+    if (window.ROpdsOffline) {
+        window.ROpdsOffline.primeAndCacheBook({ response: resp.clone() }).catch(function (e) {
+            console.warn("offline cache failed:", e);
+        });
+    }
     const buf = await resp.arrayBuffer();
     await viewer.loadDocument(buf);
     hideLoading();
 
     // Restore saved page position via configure()
-    if (savedPos) {
-        const page = parseInt(savedPos, 10);
+    await resolveOfflineInitialPosition();
+    updateProgress(currentProgress);
+    if (currentPosition) {
+        const page = parseInt(currentPosition, 10);
         if (page > 0) {
             viewer.configure({ pageNumber: page });
         }
@@ -299,6 +336,12 @@ async function initFoliateReader() {
     try {
     const res = await fetch(bookUrl);
     if (!res.ok) throw new Error(`Failed to fetch book: ${res.status}`);
+    // Trigger offline caching. Pass the response so reader-offline.js can clone bytes.
+    if (window.ROpdsOffline) {
+        window.ROpdsOffline.primeAndCacheBook({ response: res.clone() }).catch(function (e) {
+            console.warn("offline cache failed:", e);
+        });
+    }
     const blob = await res.blob();
     const file = new File([blob], `book.${format}`, {
         type: res.headers.get('content-type')?.split(';')[0]?.trim() || '',
@@ -546,9 +589,11 @@ async function initFoliateReader() {
     });
 
     // ── Init: restore position or go to start ──────────────────
+    await resolveOfflineInitialPosition();
+    updateProgress(currentProgress);
     try {
-        if (savedPos) {
-            await view.init({ lastLocation: savedPos });
+        if (currentPosition) {
+            await view.init({ lastLocation: currentPosition });
         } else {
             view.renderer.next();
         }
@@ -623,3 +668,9 @@ window.loadBook = function(newBookId, newFormat) {
     }
     window.location.href = next.toString();
 };
+
+window.addEventListener("online", function () {
+    if (window.ROpdsOffline) {
+        window.ROpdsOffline.replayQueuedPositions(csrfToken);
+    }
+});
