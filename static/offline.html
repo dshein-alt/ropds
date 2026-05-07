@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline — ROPDS</title>
+  <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/css/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/static/css/ropds.css" rel="stylesheet">
+  <style>
+    body { padding: 2rem 1rem; }
+    .book-row { display: flex; gap: 1rem; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid var(--bs-border-color-translucent); text-decoration: none; color: inherit; }
+    .book-row:hover { background: var(--bs-body-secondary-bg); }
+    .book-row .info { flex: 1; min-width: 0; }
+    .book-row .title { font-weight: 600; }
+    .book-row .meta { font-size: 0.85rem; color: var(--bs-secondary-color); }
+    .progress { height: 4px; margin-top: 0.25rem; }
+  </style>
+</head>
+<body>
+  <div class="container" style="max-width: 720px;">
+    <h1 class="mb-3"><i class="bi bi-cloud-slash me-2"></i>Offline library</h1>
+    <p class="text-secondary mb-4">You're offline. Books you've opened recently are listed below.</p>
+    <div id="book-list"></div>
+    <div id="empty-state" class="text-center text-secondary py-5" style="display: none;">
+      <i class="bi bi-book fs-1 mb-3 d-block"></i>
+      Nothing cached yet. Open a book while online to make it available offline.
+    </div>
+  </div>
+  <script src="/static/js/idb-schema.js"></script>
+  <script>
+    (async function () {
+      const list = document.getElementById("book-list");
+      const empty = document.getElementById("empty-state");
+      let rows = [];
+      try {
+        const db = await openOfflineDb();
+        rows = await new Promise(function (resolve) {
+          const tx = db.transaction(OFFLINE_DB_STORE, "readonly");
+          const req = tx.objectStore(OFFLINE_DB_STORE).getAll();
+          req.onsuccess = function () { resolve(req.result || []); };
+          req.onerror = function () { resolve([]); };
+        });
+        db.close();
+      } catch (_e) { rows = []; }
+
+      rows.sort(function (a, b) { return (b.last_opened || 0) - (a.last_opened || 0); });
+
+      if (rows.length === 0) {
+        empty.style.display = "block";
+        return;
+      }
+
+      const fmt = function (s) {
+        const div = document.createElement("div");
+        div.textContent = s || "";
+        return div.innerHTML;
+      };
+      const rel = function (ts) {
+        if (!ts) return "";
+        const diff = (Date.now() - ts) / 1000;
+        if (diff < 60) return "just now";
+        if (diff < 3600) return Math.floor(diff / 60) + " min ago";
+        if (diff < 86400) return Math.floor(diff / 3600) + " h ago";
+        return Math.floor(diff / 86400) + " d ago";
+      };
+
+      list.innerHTML = rows.map(function (r) {
+        const pct = Math.round((r.progress || 0) * 100);
+        return '<a class="book-row" href="/web/reader/' + r.book_id + '">' +
+          '<div class="info">' +
+            '<div class="title">' + fmt(r.title) + '</div>' +
+            '<div class="meta">' + fmt(r.authors) + ' · ' + fmt(r.format) + ' · ' + rel(r.last_opened) + '</div>' +
+            '<div class="progress"><div class="progress-bar" style="width: ' + pct + '%"></div></div>' +
+          '</div>' +
+          '<i class="bi bi-chevron-right text-secondary"></i>' +
+        '</a>';
+      }).join("");
+    })();
+  </script>
+</body>
+</html>
