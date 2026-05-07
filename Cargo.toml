@@ -1,15 +1,15 @@
 [package]
 name = "ropds"
-version = "0.10.7"
+version = "0.11.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Async runtime & web framework
-tokio = { version = "1.52.1", features = ["full"] }
+tokio = { version = "1.52.2", features = ["full"] }
 axum = { version = "0.8.9", features = ["macros", "multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "compression-br"] }
+tower-http = { version = "0.6.10", features = ["trace", "cors", "compression-gzip", "compression-br"] }
 
 # Templates
 tera = "1"
@@ -42,7 +42,7 @@ time = "0.3"
 walkdir = "2"
 zip = "8.6.0"
 dashmap = "6"
-quick-xml = { version = "0.39.2", features = ["encoding"] }
+quick-xml = { version = "0.39.3", features = ["encoding"] }
 base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "pnm"] }
 mobi = "0.8"
@@ -82,11 +82,11 @@ http-body-util = "0.1"
 
 [build-dependencies]
 walkdir = "2"
-oxc_allocator = "0.128.0"
-oxc_codegen = "0.128.0"
-oxc_minifier = "0.128.0"
-oxc_parser = "0.128.0"
-oxc_span = "0.128.0"
+oxc_allocator = "0.129.0"
+oxc_codegen = "0.129.0"
+oxc_minifier = "0.129.0"
+oxc_parser = "0.129.0"
+oxc_span = "0.129.0"
 sha2 = "0.11"
 hex = "0.4"
 

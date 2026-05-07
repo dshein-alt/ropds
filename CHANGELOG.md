@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026.05.07
+
+### Added
+- Added offline reading support for recently opened books in the PWA.
+- Added an offline library page and offline-tolerant reading progress sync.
+
+### Changed
+- Updated project dependencies.
+
 ## [0.10.7] - 2026.04.27
 
 ### Fixed
