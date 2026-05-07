@@ -203,6 +203,26 @@ impl Default for UploadConfig {
     }
 }
 
+fn default_cached_books_max() -> i64 {
+    5
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OfflineReaderConfig {
+    /// Maximum number of books cached in the browser for offline reading.
+    /// 0 disables offline.
+    #[serde(default = "default_cached_books_max")]
+    pub cached_books_max: i64,
+}
+
+impl Default for OfflineReaderConfig {
+    fn default() -> Self {
+        Self {
+            cached_books_max: default_cached_books_max(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReaderConfig {
     /// Master switch for the embedded reader feature.
@@ -211,6 +231,8 @@ pub struct ReaderConfig {
     /// Maximum number of reading positions stored per user (default 100).
     #[serde(default = "default_read_history_max")]
     pub read_history_max: i64,
+    #[serde(default)]
+    pub offline: OfflineReaderConfig,
 }
 
 impl Default for ReaderConfig {
@@ -218,6 +240,7 @@ impl Default for ReaderConfig {
         Self {
             enable: true,
             read_history_max: default_read_history_max(),
+            offline: OfflineReaderConfig::default(),
         }
     }
 }
@@ -800,5 +823,37 @@ max_connections = 0
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert!(matches!(config.validate(), Err(ConfigError::Validation(_))));
+    }
+
+    #[test]
+    fn test_reader_offline_default_when_section_missing() {
+        let toml_src = r#"
+[server]
+base_url = "http://localhost:8081"
+[library]
+root_path = "/tmp"
+[database]
+[opds]
+[scanner]
+"#;
+        let cfg: Config = toml::from_str(toml_src).unwrap();
+        assert_eq!(cfg.reader.offline.cached_books_max, 5);
+    }
+
+    #[test]
+    fn test_reader_offline_section_override() {
+        let toml_src = r#"
+[server]
+base_url = "http://localhost:8081"
+[library]
+root_path = "/tmp"
+[database]
+[opds]
+[scanner]
+[reader.offline]
+cached_books_max = 0
+"#;
+        let cfg: Config = toml::from_str(toml_src).unwrap();
+        assert_eq!(cfg.reader.offline.cached_books_max, 0);
     }
 }

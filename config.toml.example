@@ -55,6 +55,9 @@ max_upload_size_mb = 100
 enable = true                  # Enable embedded book reader
 read_history_max = 100         # Max reading positions stored per user
 
+[reader.offline]
+cached_books_max = 5            # Books cached in the browser for offline reading (0 disables)
+
 [oauth]
 google_client_id          = ""
 google_client_secret      = ""

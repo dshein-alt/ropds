@@ -192,6 +192,7 @@ mod tests {
             reader: ReaderConfig {
                 enable: true,
                 read_history_max: 100,
+                offline: Default::default(),
             },
             oauth: Default::default(),
             smtp: Default::default(),
