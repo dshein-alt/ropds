@@ -11,6 +11,7 @@
   <link href="/static/css/bootstrap.min.css" rel="stylesheet">
   <link href="/static/css/bootstrap-icons.min.css" rel="stylesheet">
   <link href="/static/css/ropds.css?v={{ version }}" rel="stylesheet">
+  <script>window.ROpdsAppVersion = {{ version | json_encode | safe }};</script>
   <script src="/static/js/ropds.js?v={{ version }}"></script>
 </head>
 <body>
@@ -39,6 +40,11 @@
           <li class="nav-item">
             <a class="nav-link" href="{% if last_read_book_id %}/web/reader/{{ last_read_book_id }}{% else %}#{% endif %}" target="_blank"{% if not last_read_book_id %} tabindex="-1" aria-disabled="true"{% endif %}>
               <i class="bi bi-book-half me-1"></i>{{ t.nav.reader }}
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/static/offline.html">
+              <i class="bi bi-cloud-slash me-1"></i>{{ t.nav.offline_library }}
             </a>
           </li>
           {% endif %}
