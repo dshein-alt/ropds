@@ -66,9 +66,15 @@
 
   if (!isSecureHost) return;
 
+  const version = window.ROpdsAppVersion;
+  if (!version) {
+    console.warn("ROpdsAppVersion missing; skipping service worker registration");
+    return;
+  }
+
   window.addEventListener("load", function () {
     navigator.serviceWorker
-      .register("/static/sw.js", { scope: "/" })
+      .register("/static/sw.js?v=" + encodeURIComponent(version), { scope: "/" })
       .catch(function (error) {
         console.warn("Service worker registration failed:", error);
       });
