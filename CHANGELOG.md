@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] - 2026.05.12
+
+### Fixed
+- Completed the letter drill-down fix from 0.11.1 for the web interface: clicking the final letter group for authors or series now lists only entries whose name has a word starting with the chosen letters, instead of falling back to a substring match.
+
 ## [0.11.1] - 2026.05.12
 
 ### Fixed
