@@ -2,6 +2,7 @@ use std::io::BufRead;
 
 use base64::Engine;
 use quick_xml::Decoder;
+use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
@@ -237,7 +238,9 @@ fn handle_open_tag(
     {
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-            let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
+            let val = attr
+                .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+                .unwrap_or_default();
             match key {
                 "name" => meta.series_title = Some(strip_meta(&val)),
                 "number" => {
@@ -257,7 +260,9 @@ fn handle_open_tag(
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
             if key.ends_with("href") {
-                let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
+                let val = attr
+                    .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+                    .unwrap_or_default();
                 let id = val.trim_start_matches('#').to_lowercase();
                 if !id.is_empty() {
                     *cover_ref = Some(id);

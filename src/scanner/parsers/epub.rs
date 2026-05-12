@@ -1,6 +1,7 @@
 use std::io::{Read, Seek};
 
 use quick_xml::Decoder;
+use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
@@ -71,7 +72,7 @@ fn parse_container_xml(data: &[u8]) -> Option<String> {
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         let val = attr
-                            .decode_and_unescape_value(xml.decoder())
+                            .decoded_and_normalized_value(XmlVersion::Implicit1_0, xml.decoder())
                             .unwrap_or_default();
                         if key == "full-path" {
                             full_path = Some(val.to_string());
@@ -271,7 +272,7 @@ fn parse_opf_manifest(data: &[u8]) -> (Vec<ManifestItem>, Option<String>) {
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         let val = attr
-                            .decode_and_unescape_value(xml.decoder())
+                            .decoded_and_normalized_value(XmlVersion::Implicit1_0, xml.decoder())
                             .unwrap_or_default();
                         match key {
                             "id" => id = val.to_string(),
@@ -294,7 +295,7 @@ fn parse_opf_manifest(data: &[u8]) -> (Vec<ManifestItem>, Option<String>) {
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         let val = attr
-                            .decode_and_unescape_value(xml.decoder())
+                            .decoded_and_normalized_value(XmlVersion::Implicit1_0, xml.decoder())
                             .unwrap_or_default();
                         match key {
                             "name" => name_attr = val.to_string(),
@@ -328,7 +329,9 @@ fn handle_opf_open(
         let mut content_attr = String::new();
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-            let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
+            let val = attr
+                .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+                .unwrap_or_default();
             match key {
                 "name" => name_attr = val.to_string(),
                 "content" => content_attr = val.to_string(),
@@ -350,7 +353,9 @@ fn handle_opf_open(
         *creator_role = None;
         for attr in e.attributes().flatten() {
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-            let val = attr.decode_and_unescape_value(decoder).unwrap_or_default();
+            let val = attr
+                .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+                .unwrap_or_default();
             if key == "role" || key.ends_with(":role") {
                 *creator_role = Some(val.to_string());
             }

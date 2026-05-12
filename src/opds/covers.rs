@@ -254,6 +254,7 @@ fn find_epub_opf<R: std::io::Read + std::io::Seek>(
 }
 
 fn parse_container_rootfile(data: &[u8]) -> Option<String> {
+    use quick_xml::XmlVersion;
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
 
@@ -271,9 +272,12 @@ fn parse_container_rootfile(data: &[u8]) -> Option<String> {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         if key == "full-path" {
                             return Some(
-                                attr.decode_and_unescape_value(xml.decoder())
-                                    .unwrap_or_default()
-                                    .to_string(),
+                                attr.decoded_and_normalized_value(
+                                    XmlVersion::Implicit1_0,
+                                    xml.decoder(),
+                                )
+                                .unwrap_or_default()
+                                .to_string(),
                             );
                         }
                     }
@@ -291,6 +295,7 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
     opf_path: &str,
     archive: &mut zip::ZipArchive<R>,
 ) -> Option<(Vec<u8>, String)> {
+    use quick_xml::XmlVersion;
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
 
@@ -318,7 +323,7 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         let val = attr
-                            .decode_and_unescape_value(xml.decoder())
+                            .decoded_and_normalized_value(XmlVersion::Implicit1_0, xml.decoder())
                             .unwrap_or_default();
                         match key {
                             "id" => id = val.to_string(),
@@ -336,7 +341,7 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         let val = attr
-                            .decode_and_unescape_value(xml.decoder())
+                            .decoded_and_normalized_value(XmlVersion::Implicit1_0, xml.decoder())
                             .unwrap_or_default();
                         match key {
                             "name" => name_attr = val.to_string(),
