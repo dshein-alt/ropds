@@ -36,15 +36,32 @@ pub async fn get_by_lang_code_prefix(
     limit: i32,
     offset: i32,
 ) -> Result<Vec<Series>, sqlx::Error> {
-    let pattern = format!("{prefix}%");
+    if prefix.is_empty() {
+        let sql = pool.sql(
+            "SELECT * FROM series WHERE (? = 0 OR lang_code = ?) \
+             ORDER BY search_ser LIMIT ? OFFSET ?",
+        );
+        return sqlx::query_as::<_, Series>(&sql)
+            .bind(lang_code)
+            .bind(lang_code)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool.inner())
+            .await;
+    }
+    // Word-boundary prefix match: either at start of the name or after a space.
+    let start_pat = format!("{prefix}%");
+    let word_pat = format!("% {prefix}%");
     let sql = pool.sql(
-        "SELECT * FROM series WHERE (? = 0 OR lang_code = ?) AND search_ser LIKE ? \
+        "SELECT * FROM series WHERE (? = 0 OR lang_code = ?) \
+         AND (search_ser LIKE ? OR search_ser LIKE ?) \
          ORDER BY search_ser LIMIT ? OFFSET ?",
     );
     sqlx::query_as::<_, Series>(&sql)
         .bind(lang_code)
         .bind(lang_code)
-        .bind(&pattern)
+        .bind(&start_pat)
+        .bind(&word_pat)
         .bind(limit)
         .bind(offset)
         .fetch_all(pool.inner())
@@ -159,28 +176,41 @@ pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx
 }
 
 /// Alphabet drill-down: get prefix groups for series names.
+///
+/// See [`crate::db::queries::authors::get_name_prefix_groups`] for the
+/// word-boundary semantics applied here.
 pub async fn get_name_prefix_groups(
     pool: &DbPool,
     lang_code: i32,
     current_prefix: &str,
 ) -> Result<Vec<(String, i64)>, sqlx::Error> {
-    let prefix_len = (current_prefix.chars().count() + 1) as i32;
-    let like_pattern = format!("{}%", current_prefix);
-    let sql = pool.sql(
-        "SELECT SUBSTR(search_ser, 1, ?) as prefix, COUNT(*) as cnt \
-         FROM series \
-         WHERE (? = 0 OR lang_code = ?) AND search_ser LIKE ? \
-         GROUP BY 1 \
-         ORDER BY prefix",
-    );
-    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
-        .bind(prefix_len)
-        .bind(lang_code)
-        .bind(lang_code)
-        .bind(&like_pattern)
-        .fetch_all(pool.inner())
-        .await?;
-    Ok(rows)
+    let names: Vec<(String,)> = if current_prefix.is_empty() {
+        let sql = pool.sql("SELECT search_ser FROM series WHERE ? = 0 OR lang_code = ?");
+        sqlx::query_as(&sql)
+            .bind(lang_code)
+            .bind(lang_code)
+            .fetch_all(pool.inner())
+            .await?
+    } else {
+        let start_pat = format!("{}%", current_prefix);
+        let word_pat = format!("% {}%", current_prefix);
+        let sql = pool.sql(
+            "SELECT search_ser FROM series \
+             WHERE (? = 0 OR lang_code = ?) \
+             AND (search_ser LIKE ? OR search_ser LIKE ?)",
+        );
+        sqlx::query_as(&sql)
+            .bind(lang_code)
+            .bind(lang_code)
+            .bind(&start_pat)
+            .bind(&word_pat)
+            .fetch_all(pool.inner())
+            .await?
+    };
+    Ok(super::authors::aggregate_word_prefix_groups(
+        names.iter().map(|(n,)| n.as_str()),
+        current_prefix,
+    ))
 }
 
 /// Delete a series if it has no remaining book links.
@@ -283,14 +313,18 @@ mod tests {
     async fn test_insert_search_count_and_prefix_groups() {
         let pool = create_test_pool().await;
 
-        let alpha = insert(&pool, "Alpha Saga", "ALPHA SAGA", 2).await.unwrap();
-        let _alpine = insert(&pool, "Alpine Arc", "ALPINE ARC", 2).await.unwrap();
+        // Single-word series names keep this test focused on prefix
+        // extraction; word-boundary aggregation is covered separately below.
+        let alpha = insert(&pool, "Alphaseries", "ALPHASERIES", 2)
+            .await
+            .unwrap();
+        let _alpine = insert(&pool, "Alpine", "ALPINE", 2).await.unwrap();
         let _cyr = insert(&pool, "Альфа", "АЛЬФА", 1).await.unwrap();
 
         let found = get_by_id(&pool, alpha).await.unwrap().unwrap();
-        assert_eq!(found.ser_name, "Alpha Saga");
+        assert_eq!(found.ser_name, "Alphaseries");
 
-        let by_name = find_by_name(&pool, "Alpha Saga").await.unwrap().unwrap();
+        let by_name = find_by_name(&pool, "Alphaseries").await.unwrap().unwrap();
         assert_eq!(by_name.id, alpha);
 
         let search = search_by_name(&pool, "ALP", 100, 0).await.unwrap();
@@ -308,6 +342,34 @@ mod tests {
 
         let groups = get_name_prefix_groups(&pool, 2, "A").await.unwrap();
         assert_eq!(groups, vec![("AL".to_string(), 2)]);
+    }
+
+    #[tokio::test]
+    async fn test_word_boundary_prefix_listing_and_groups() {
+        let pool = create_test_pool().await;
+        insert(&pool, "Notes Abraham", "NOTES ABRAHAM", 2)
+            .await
+            .unwrap();
+        insert(&pool, "Aberdin", "ABERDIN", 2).await.unwrap();
+        insert(&pool, "Hakim Abdul Saga", "HAKIM ABDUL SAGA", 2)
+            .await
+            .unwrap();
+        // Inner substring "AB" but never at a word boundary — must not match.
+        insert(&pool, "Gabriel", "GABRIEL", 2).await.unwrap();
+        insert(&pool, "Lamabad", "LAMABAD", 2).await.unwrap();
+
+        let by_ab = get_by_lang_code_prefix(&pool, 2, "AB", 100, 0)
+            .await
+            .unwrap();
+        let names: Vec<&str> = by_ab.iter().map(|s| s.ser_name.as_str()).collect();
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&"Notes Abraham"));
+        assert!(names.contains(&"Aberdin"));
+        assert!(names.contains(&"Hakim Abdul Saga"));
+
+        let groups = get_name_prefix_groups(&pool, 2, "AB").await.unwrap();
+        let prefixes: Vec<&str> = groups.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(prefixes, vec!["ABD", "ABE", "ABR"]);
     }
 
     #[tokio::test]

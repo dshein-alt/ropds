@@ -420,14 +420,25 @@ async fn pg_prefix_group_queries_work() {
         .await
         .unwrap();
 
+    // Empty-prefix groups follow word-boundary semantics: each row
+    // contributes once per distinct word-initial letter in its search field.
+    // "Alpha Book"  -> A (Alpha), B (Book)
+    // "Alice Author" -> A (Alice + Author, deduped per row)
+    // "Alpha Series" -> A (Alpha), S (Series)
     let book_groups = books::get_title_prefix_groups(&pool, 0, "").await.unwrap();
-    assert_eq!(book_groups, vec![("A".to_string(), 1)]);
+    assert_eq!(
+        book_groups,
+        vec![("A".to_string(), 1), ("B".to_string(), 1)]
+    );
 
     let author_groups = authors::get_name_prefix_groups(&pool, 0, "").await.unwrap();
     assert_eq!(author_groups, vec![("A".to_string(), 1)]);
 
     let series_groups = series::get_name_prefix_groups(&pool, 0, "").await.unwrap();
-    assert_eq!(series_groups, vec![("A".to_string(), 1)]);
+    assert_eq!(
+        series_groups,
+        vec![("A".to_string(), 1), ("S".to_string(), 1)]
+    );
 }
 
 // ---------------------------------------------------------------------------

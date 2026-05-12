@@ -205,27 +205,56 @@ pub async fn search_by_title_prefix(
     offset: i32,
     hide_doubles: bool,
 ) -> Result<Vec<Book>, sqlx::Error> {
-    let pattern = format!("{prefix}%");
+    if prefix.is_empty() {
+        return if hide_doubles {
+            let sql = pool.sql(
+                "SELECT * FROM books WHERE avail > 0 \
+                 AND id IN (SELECT MIN(id) FROM books WHERE avail > 0 GROUP BY search_title, author_key) \
+                 ORDER BY search_title LIMIT ? OFFSET ?",
+            );
+            sqlx::query_as::<_, Book>(&sql)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(pool.inner())
+                .await
+        } else {
+            let sql = pool.sql(
+                "SELECT * FROM books WHERE avail > 0 \
+                 ORDER BY search_title LIMIT ? OFFSET ?",
+            );
+            sqlx::query_as::<_, Book>(&sql)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(pool.inner())
+                .await
+        };
+    }
+    // Word-boundary prefix match: at start of the title or after a space.
+    let start_pat = format!("{prefix}%");
+    let word_pat = format!("% {prefix}%");
     if hide_doubles {
         let sql = pool.sql(
-            "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
-             AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title, author_key) \
+            "SELECT * FROM books WHERE (search_title LIKE ? OR search_title LIKE ?) AND avail > 0 \
+             AND id IN (SELECT MIN(id) FROM books WHERE (search_title LIKE ? OR search_title LIKE ?) AND avail > 0 GROUP BY search_title, author_key) \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
-            .bind(&pattern)
-            .bind(&pattern)
+            .bind(&start_pat)
+            .bind(&word_pat)
+            .bind(&start_pat)
+            .bind(&word_pat)
             .bind(limit)
             .bind(offset)
             .fetch_all(pool.inner())
             .await
     } else {
         let sql = pool.sql(
-            "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
+            "SELECT * FROM books WHERE (search_title LIKE ? OR search_title LIKE ?) AND avail > 0 \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
         sqlx::query_as::<_, Book>(&sql)
-            .bind(&pattern)
+            .bind(&start_pat)
+            .bind(&word_pat)
             .bind(limit)
             .bind(offset)
             .fetch_all(pool.inner())
@@ -507,23 +536,37 @@ pub async fn count_by_title_search(
     Ok(row.0)
 }
 
-/// Count books matching a title-starts-with search.
+/// Count books matching a title word-prefix search (start of title or any
+/// word inside the title).
 pub async fn count_by_title_prefix(
     pool: &DbPool,
     prefix: &str,
     hide_doubles: bool,
 ) -> Result<i64, sqlx::Error> {
-    let pattern = format!("{prefix}%");
+    if prefix.is_empty() {
+        let sql = if hide_doubles {
+            "SELECT COUNT(*) FROM (SELECT 1 FROM books \
+             WHERE avail > 0 GROUP BY search_title, author_key) AS t"
+        } else {
+            "SELECT COUNT(*) FROM books WHERE avail > 0"
+        };
+        let sql = pool.sql(sql);
+        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+        return Ok(row.0);
+    }
+    let start_pat = format!("{prefix}%");
+    let word_pat = format!("% {prefix}%");
     let sql = if hide_doubles {
         "SELECT COUNT(*) FROM (SELECT 1 FROM books \
-         WHERE search_title LIKE ? AND avail > 0 \
+         WHERE (search_title LIKE ? OR search_title LIKE ?) AND avail > 0 \
          GROUP BY search_title, author_key) AS t"
     } else {
-        "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0"
+        "SELECT COUNT(*) FROM books WHERE (search_title LIKE ? OR search_title LIKE ?) AND avail > 0"
     };
     let sql = pool.sql(sql);
     let row: (i64,) = sqlx::query_as(&sql)
-        .bind(&pattern)
+        .bind(&start_pat)
+        .bind(&word_pat)
         .fetch_one(pool.inner())
         .await?;
     Ok(row.0)
@@ -642,28 +685,45 @@ pub async fn count_doubles(pool: &DbPool, book_id: i64) -> Result<i64, sqlx::Err
 /// Returns `(prefix_string, count)` pairs.
 /// `current_prefix` is the prefix already selected (empty for first level).
 /// `lang_code` = 0 means all languages.
+///
+/// The prefix is matched at any word boundary inside `search_title` (start of
+/// the title or immediately after a space). See
+/// [`crate::db::queries::authors::get_name_prefix_groups`] for full semantics.
 pub async fn get_title_prefix_groups(
     pool: &DbPool,
     lang_code: i32,
     current_prefix: &str,
 ) -> Result<Vec<(String, i64)>, sqlx::Error> {
-    let prefix_len = (current_prefix.chars().count() + 1) as i32;
-    let like_pattern = format!("{}%", current_prefix);
-    let sql = pool.sql(
-        "SELECT SUBSTR(search_title, 1, ?) as prefix, COUNT(*) as cnt \
-         FROM books \
-         WHERE avail > 0 AND (? = 0 OR lang_code = ?) AND search_title LIKE ? \
-         GROUP BY 1 \
-         ORDER BY prefix",
-    );
-    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
-        .bind(prefix_len)
-        .bind(lang_code)
-        .bind(lang_code)
-        .bind(&like_pattern)
-        .fetch_all(pool.inner())
-        .await?;
-    Ok(rows)
+    let titles: Vec<(String,)> = if current_prefix.is_empty() {
+        let sql = pool.sql(
+            "SELECT search_title FROM books \
+             WHERE avail > 0 AND (? = 0 OR lang_code = ?)",
+        );
+        sqlx::query_as(&sql)
+            .bind(lang_code)
+            .bind(lang_code)
+            .fetch_all(pool.inner())
+            .await?
+    } else {
+        let start_pat = format!("{}%", current_prefix);
+        let word_pat = format!("% {}%", current_prefix);
+        let sql = pool.sql(
+            "SELECT search_title FROM books \
+             WHERE avail > 0 AND (? = 0 OR lang_code = ?) \
+             AND (search_title LIKE ? OR search_title LIKE ?)",
+        );
+        sqlx::query_as(&sql)
+            .bind(lang_code)
+            .bind(lang_code)
+            .bind(&start_pat)
+            .bind(&word_pat)
+            .fetch_all(pool.inner())
+            .await?
+    };
+    Ok(super::authors::aggregate_word_prefix_groups(
+        titles.iter().map(|(t,)| t.as_str()),
+        current_prefix,
+    ))
 }
 
 pub async fn update_title(
@@ -1047,10 +1107,12 @@ mod tests {
     async fn test_title_prefix_groups_drill_down() {
         let pool = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
-        insert_test_book(&pool, cat, "Aa book", 2).await;
-        insert_test_book(&pool, cat, "Ab book", 2).await;
-        insert_test_book(&pool, cat, "Ac book", 2).await;
-        insert_test_book(&pool, cat, "Ba book", 2).await;
+        // Single-word titles isolate the prefix-extraction logic from
+        // word-boundary aggregation across multiple words in a title.
+        insert_test_book(&pool, cat, "Aab", 2).await;
+        insert_test_book(&pool, cat, "Abc", 2).await;
+        insert_test_book(&pool, cat, "Acd", 2).await;
+        insert_test_book(&pool, cat, "Bab", 2).await;
 
         // Top level: "A" with count=3, "B" with count=1
         let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
@@ -1070,9 +1132,9 @@ mod tests {
     async fn test_title_prefix_groups_deep_drill_down() {
         let pool = create_test_pool().await;
         let cat = ensure_catalog(&pool).await;
-        insert_test_book(&pool, cat, "Abc one", 2).await;
-        insert_test_book(&pool, cat, "Abd two", 2).await;
-        insert_test_book(&pool, cat, "Abe three", 2).await;
+        insert_test_book(&pool, cat, "Abcone", 2).await;
+        insert_test_book(&pool, cat, "Abdtwo", 2).await;
+        insert_test_book(&pool, cat, "Abethree", 2).await;
 
         // Level 1: all under "A"
         let groups = get_title_prefix_groups(&pool, 0, "").await.unwrap();
@@ -1090,6 +1152,43 @@ mod tests {
         assert_eq!(groups[0].0, "ABC");
         assert_eq!(groups[1].0, "ABD");
         assert_eq!(groups[2].0, "ABE");
+    }
+
+    #[tokio::test]
+    async fn test_title_prefix_groups_word_boundary_matches_inner_words() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        // Titles where the prefix-matching word is not the first.
+        insert_test_book(&pool, cat, "Notes Abraham", 2).await;
+        insert_test_book(&pool, cat, "Aberdin", 2).await;
+        insert_test_book(&pool, cat, "Hakim Abdul Efendi", 2).await;
+        // Inner substring "AB" but not at a word boundary — must not match.
+        insert_test_book(&pool, cat, "Gabriel Casey", 2).await;
+        insert_test_book(&pool, cat, "Lamabad Cafir", 2).await;
+
+        // Drill into "A" — every title above has at least one word starting with A.
+        let groups = get_title_prefix_groups(&pool, 0, "A").await.unwrap();
+        let ab = groups.iter().find(|(p, _)| p == "AB").map(|(_, c)| *c);
+        assert_eq!(ab, Some(3));
+
+        // Drill into "AB" — only the three "real AB-word" titles.
+        let groups = get_title_prefix_groups(&pool, 0, "AB").await.unwrap();
+        let total: i64 = groups.iter().map(|(_, c)| *c).sum();
+        assert_eq!(total, 3);
+
+        // Listing should return the same three titles, sorted by search_title.
+        let results = search_by_title_prefix(&pool, "AB", 100, 0, false)
+            .await
+            .unwrap();
+        let titles: Vec<&str> = results.iter().map(|b| b.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            vec!["Aberdin", "Hakim Abdul Efendi", "Notes Abraham"]
+        );
+
+        // Count should agree with the listing.
+        let count = count_by_title_prefix(&pool, "AB", false).await.unwrap();
+        assert_eq!(count, 3);
     }
 
     #[tokio::test]
