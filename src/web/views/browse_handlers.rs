@@ -486,6 +486,7 @@ pub async fn authors_browse(
     ctx.insert("chars", &prefix);
     ctx.insert("browse_type", "authors");
     ctx.insert("search_url", "/web/search/authors");
+    ctx.insert("list_url", "/web/authors/list");
     ctx.insert("browse_url", "/web/authors");
     ctx.insert("search_type_param", "b");
 
@@ -519,6 +520,7 @@ pub async fn series_browse(
     ctx.insert("chars", &prefix);
     ctx.insert("browse_type", "series");
     ctx.insert("search_url", "/web/search/series");
+    ctx.insert("list_url", "/web/series/list");
     ctx.insert("browse_url", "/web/series");
     ctx.insert("search_type_param", "b");
 
@@ -671,6 +673,105 @@ pub async fn search_series(
             params.search_type,
             urlencoding::encode(&params.q)
         ),
+    );
+
+    render(&state.tera, "web/series.html", &ctx)
+}
+
+/// Web drill-down leaf for authors: list authors whose name matches the prefix
+/// at any word boundary. Reuses the authors search-results template.
+pub async fn authors_list_by_prefix(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(params): Query<PrefixListParams>,
+) -> Result<Html<String>, StatusCode> {
+    let mut ctx = build_context(&state, &jar, "authors").await;
+    ctx.insert("search_target", "author");
+    let max_items = state.config.opds.max_items as i32;
+    let offset = params.page * max_items;
+
+    let prefix = params.prefix.to_uppercase();
+    let items =
+        authors::get_by_lang_code_prefix(&state.db, params.lang, &prefix, max_items, offset)
+            .await
+            .unwrap_or_default();
+    let total = authors::count_by_lang_code_prefix(&state.db, params.lang, &prefix)
+        .await
+        .unwrap_or(0);
+
+    let hide_doubles = state.config.opds.hide_doubles;
+    let mut enriched: Vec<serde_json::Value> = Vec::new();
+    for author in &items {
+        let book_count = books::count_by_author(&state.db, author.id, hide_doubles)
+            .await
+            .unwrap_or(0);
+        enriched.push(serde_json::json!({
+            "id": author.id,
+            "full_name": author.full_name,
+            "book_count": book_count,
+        }));
+    }
+
+    let pagination = Pagination::new(params.page, max_items, total);
+    let prefix_encoded = urlencoding::encode(&prefix).to_string();
+
+    ctx.insert("authors", &enriched);
+    ctx.insert("pagination", &pagination);
+    ctx.insert("search_terms", &prefix);
+    ctx.insert("search_terms_encoded", &prefix_encoded);
+    ctx.insert("back_url", "/web/authors");
+    ctx.insert(
+        "pagination_qs",
+        &format!("lang={}&prefix={}&", params.lang, prefix_encoded),
+    );
+
+    render(&state.tera, "web/authors.html", &ctx)
+}
+
+/// Web drill-down leaf for series: list series whose name matches the prefix
+/// at any word boundary. Reuses the series search-results template.
+pub async fn series_list_by_prefix(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(params): Query<PrefixListParams>,
+) -> Result<Html<String>, StatusCode> {
+    let mut ctx = build_context(&state, &jar, "series").await;
+    ctx.insert("search_target", "series");
+    let max_items = state.config.opds.max_items as i32;
+    let offset = params.page * max_items;
+
+    let prefix = params.prefix.to_uppercase();
+    let items = series::get_by_lang_code_prefix(&state.db, params.lang, &prefix, max_items, offset)
+        .await
+        .unwrap_or_default();
+    let total = series::count_by_lang_code_prefix(&state.db, params.lang, &prefix)
+        .await
+        .unwrap_or(0);
+
+    let hide_doubles = state.config.opds.hide_doubles;
+    let mut enriched: Vec<serde_json::Value> = Vec::new();
+    for ser in &items {
+        let book_count = books::count_by_series(&state.db, ser.id, hide_doubles)
+            .await
+            .unwrap_or(0);
+        enriched.push(serde_json::json!({
+            "id": ser.id,
+            "ser_name": ser.ser_name,
+            "book_count": book_count,
+        }));
+    }
+
+    let pagination = Pagination::new(params.page, max_items, total);
+    let prefix_encoded = urlencoding::encode(&prefix).to_string();
+
+    ctx.insert("series_list", &enriched);
+    ctx.insert("pagination", &pagination);
+    ctx.insert("search_terms", &prefix);
+    ctx.insert("search_terms_encoded", &prefix_encoded);
+    ctx.insert("back_url", "/web/series");
+    ctx.insert(
+        "pagination_qs",
+        &format!("lang={}&prefix={}&", params.lang, prefix_encoded),
     );
 
     render(&state.tera, "web/series.html", &ctx)

@@ -175,6 +175,40 @@ pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx
     Ok(row.0)
 }
 
+/// Count series matching a word-boundary prefix, scoped by language.
+///
+/// Mirrors the WHERE clause of [`get_by_lang_code_prefix`] so totals stay
+/// in sync with the paginated listing used by the alphabet drill-down.
+pub async fn count_by_lang_code_prefix(
+    pool: &DbPool,
+    lang_code: i32,
+    prefix: &str,
+) -> Result<i64, sqlx::Error> {
+    if prefix.is_empty() {
+        let sql = pool.sql("SELECT COUNT(*) FROM series WHERE ? = 0 OR lang_code = ?");
+        let row: (i64,) = sqlx::query_as(&sql)
+            .bind(lang_code)
+            .bind(lang_code)
+            .fetch_one(pool.inner())
+            .await?;
+        return Ok(row.0);
+    }
+    let start_pat = format!("{prefix}%");
+    let word_pat = format!("% {prefix}%");
+    let sql = pool.sql(
+        "SELECT COUNT(*) FROM series WHERE (? = 0 OR lang_code = ?) \
+         AND (search_ser LIKE ? OR search_ser LIKE ?)",
+    );
+    let row: (i64,) = sqlx::query_as(&sql)
+        .bind(lang_code)
+        .bind(lang_code)
+        .bind(&start_pat)
+        .bind(&word_pat)
+        .fetch_one(pool.inner())
+        .await?;
+    Ok(row.0)
+}
+
 /// Alphabet drill-down: get prefix groups for series names.
 ///
 /// See [`crate::db::queries::authors::get_name_prefix_groups`] for the

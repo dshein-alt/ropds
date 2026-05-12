@@ -83,6 +83,16 @@ pub struct BrowseParams {
 }
 
 #[derive(Deserialize)]
+pub struct PrefixListParams {
+    #[serde(default)]
+    pub lang: i32,
+    #[serde(default)]
+    pub prefix: String,
+    #[serde(default)]
+    pub page: i32,
+}
+
+#[derive(Deserialize)]
 pub struct GenresParams {
     pub section: Option<String>,
 }
