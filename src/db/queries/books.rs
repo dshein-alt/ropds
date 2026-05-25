@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::db::{DbBackend, DbPool};
 
 use crate::db::models::{AvailStatus, Book, CatType};
@@ -664,6 +666,58 @@ pub async fn count_by_catalog(
         .await?;
     Ok(row.0)
 }
+
+/// Count books for many catalogs in one query.
+/// Returns a `HashMap<catalog_id, count>`. Catalogs with zero books are omitted.
+///
+/// Splits the input into chunks of [`COUNT_BY_CATALOG_IDS_CHUNK`] to stay below
+/// per-statement bind-parameter limits (SQLite's `SQLITE_MAX_VARIABLE_NUMBER`
+/// defaults to 32k on modern builds but historically as low as 999; Postgres
+/// caps at 65535). Counts from each chunk merge into a single map.
+pub async fn count_by_catalog_ids(
+    pool: &DbPool,
+    catalog_ids: &[i64],
+    hide_doubles: bool,
+) -> Result<HashMap<i64, i64>, sqlx::Error> {
+    if catalog_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut map: HashMap<i64, i64> = HashMap::with_capacity(catalog_ids.len());
+    for chunk in catalog_ids.chunks(COUNT_BY_CATALOG_IDS_CHUNK) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let raw = if hide_doubles {
+            format!(
+                "SELECT catalog_id, COUNT(*) FROM \
+                 (SELECT catalog_id FROM books \
+                  WHERE catalog_id IN ({placeholders}) AND avail > 0 \
+                  GROUP BY catalog_id, search_title, author_key) AS t \
+                 GROUP BY catalog_id"
+            )
+        } else {
+            format!(
+                "SELECT catalog_id, COUNT(*) FROM books \
+                 WHERE catalog_id IN ({placeholders}) AND avail > 0 \
+                 GROUP BY catalog_id"
+            )
+        };
+        let sql = pool.sql(&raw);
+
+        let mut query = sqlx::query_as::<_, (i64, i64)>(&sql);
+        for id in chunk {
+            query = query.bind(*id);
+        }
+        let rows = query.fetch_all(pool.inner()).await?;
+        map.extend(rows);
+    }
+    Ok(map)
+}
+
+/// Max IDs per chunked `count_by_catalog_ids` query. Conservatively below the
+/// historical SQLite limit of 999 to keep portability across backends.
+pub const COUNT_BY_CATALOG_IDS_CHUNK: usize = 500;
 
 /// Count how many available books share the same search_title and author_key as the given book.
 pub async fn count_doubles(pool: &DbPool, book_id: i64) -> Result<i64, sqlx::Error> {
@@ -2087,5 +2141,70 @@ mod tests {
         assert_eq!(count_by_genre(&pool, genre, true).await.unwrap(), 2);
         assert_eq!(count_by_series(&pool, series, true).await.unwrap(), 2);
         assert_eq!(count_recent_added(&pool, true).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_count_by_catalog_ids_batches() {
+        let pool = create_test_pool().await;
+        let cat_a = ensure_catalog(&pool).await;
+
+        // Second catalog for batching
+        let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, ?)");
+        sqlx::query(&sql)
+            .bind("/test-b")
+            .bind("b")
+            .execute(pool.inner())
+            .await
+            .unwrap();
+        let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
+        let row: (i64,) = sqlx::query_as(&sql)
+            .bind("/test-b")
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
+        let cat_b = row.0;
+
+        insert_test_book(&pool, cat_a, "Alpha", 0).await;
+        insert_test_book(&pool, cat_a, "Beta", 0).await;
+        insert_test_book(&pool, cat_b, "Gamma", 0).await;
+
+        let map = count_by_catalog_ids(&pool, &[cat_a, cat_b], false)
+            .await
+            .unwrap();
+        assert_eq!(map.get(&cat_a).copied(), Some(2));
+        assert_eq!(map.get(&cat_b).copied(), Some(1));
+
+        // Empty input → empty map, no query.
+        let empty = count_by_catalog_ids(&pool, &[], false).await.unwrap();
+        assert!(empty.is_empty());
+
+        // Unknown id → omitted from map.
+        let map = count_by_catalog_ids(&pool, &[cat_a, 999_999], false)
+            .await
+            .unwrap();
+        assert_eq!(map.get(&cat_a).copied(), Some(2));
+        assert_eq!(map.get(&999_999).copied(), None);
+    }
+
+    #[tokio::test]
+    async fn test_count_by_catalog_ids_chunks_large_input() {
+        // Drive enough catalog ids through the query to span more than one
+        // chunk so the chunk-merge path is exercised. Only one catalog has
+        // a book; the rest should be absent from the result map.
+        let pool = create_test_pool().await;
+        let cat_with_book = ensure_catalog(&pool).await;
+        insert_test_book(&pool, cat_with_book, "Solo", 0).await;
+
+        let n = COUNT_BY_CATALOG_IDS_CHUNK + 50;
+        let mut ids: Vec<i64> = Vec::with_capacity(n);
+        ids.push(cat_with_book);
+        // Pad with non-existent ids; query still has to chunk through them.
+        for i in 0..(n - 1) {
+            ids.push(10_000_000 + i as i64);
+        }
+
+        let map = count_by_catalog_ids(&pool, &ids, false).await.unwrap();
+        assert_eq!(map.get(&cat_with_book).copied(), Some(1));
+        assert_eq!(map.len(), 1, "non-existent ids must not appear in map");
     }
 }

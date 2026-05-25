@@ -41,6 +41,7 @@ pub struct CatalogEntry {
     pub title: Option<String>,
     pub format: Option<String>,
     pub authors_str: Option<String>,
+    pub book_count: i64,
 }
 
 #[derive(Debug, Serialize)]

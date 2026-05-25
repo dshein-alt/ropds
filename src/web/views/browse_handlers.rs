@@ -108,27 +108,83 @@ pub async fn catalogs(
     let cat_id = params.cat_id.unwrap_or(0);
     let offset = params.page * max_items;
 
-    let subcatalogs = if cat_id == 0 {
-        catalogs::get_root_catalogs(&state.db)
-            .await
-            .unwrap_or_default()
-    } else {
-        catalogs::get_children(&state.db, cat_id)
-            .await
-            .unwrap_or_default()
-    };
-
     let hide_doubles = state.config.opds.hide_doubles;
-    let (catalog_books, book_total) = if cat_id > 0 {
-        let bks = books::get_by_catalog(&state.db, cat_id, max_items, offset, hide_doubles)
+
+    // Resolve whether the library has a single empty-name top-level catalog —
+    // the synthetic filesystem-root catalog the scanner creates. When that is
+    // the only top-level catalog, /web/catalogs auto-flattens it (shows its
+    // children + direct books). Compute once; reused for entry listing,
+    // breadcrumb seeding, and `..` parent-URL resolution. `roots_cache` keeps
+    // the fetched list so the cat_id == 0 listing branch does not re-query.
+    let (flat_root_id, roots_cache) = if cat_id == 0 {
+        let roots = catalogs::get_root_catalogs(&state.db)
             .await
             .unwrap_or_default();
-        let cnt = books::count_by_catalog(&state.db, cat_id, hide_doubles)
+        let id = if roots.len() == 1 && roots[0].cat_name.is_empty() {
+            Some(roots[0].id)
+        } else {
+            None
+        };
+        (id, Some(roots))
+    } else {
+        // Reuse the same condition without the cat_id == 0 short-circuit:
+        // needed so ".." from a child of the empty-name root only collapses to
+        // /web/catalogs when auto-flatten actually applies (single root).
+        let roots = catalogs::get_root_catalogs(&state.db)
+            .await
+            .unwrap_or_default();
+        let id = if roots.len() == 1 && roots[0].cat_name.is_empty() {
+            Some(roots[0].id)
+        } else {
+            None
+        };
+        (id, None)
+    };
+    let effective_parent = if cat_id == 0 { flat_root_id } else { None };
+
+    let mut subcatalogs = match (cat_id, effective_parent) {
+        (0, None) => roots_cache.unwrap_or_default(),
+        (0, Some(eff)) => catalogs::get_children(&state.db, eff)
+            .await
+            .unwrap_or_default(),
+        _ => catalogs::get_children(&state.db, cat_id)
+            .await
+            .unwrap_or_default(),
+    };
+
+    // Pin the empty-name library-root ("Books" virtual folder) to the top of the
+    // root listing. Stable sort preserves the underlying name order otherwise.
+    if cat_id == 0 {
+        subcatalogs.sort_by_key(|c| !c.cat_name.is_empty());
+    }
+
+    let books_parent = if cat_id > 0 {
+        Some(cat_id)
+    } else {
+        effective_parent
+    };
+    let (catalog_books, book_total) = if let Some(parent) = books_parent {
+        let bks = books::get_by_catalog(&state.db, parent, max_items, offset, hide_doubles)
+            .await
+            .unwrap_or_default();
+        let cnt = books::count_by_catalog(&state.db, parent, hide_doubles)
             .await
             .unwrap_or(0);
         (bks, cnt)
     } else {
         (vec![], 0)
+    };
+
+    let sub_ids: Vec<i64> = subcatalogs.iter().map(|c| c.id).collect();
+    let book_counts = match books::count_by_catalog_ids(&state.db, &sub_ids, hide_doubles).await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(
+                "count_by_catalog_ids failed (cat_id={cat_id}, n={}): {e}",
+                sub_ids.len()
+            );
+            std::collections::HashMap::new()
+        }
     };
 
     let mut entries: Vec<CatalogEntry> = subcatalogs
@@ -141,6 +197,7 @@ pub async fn catalogs(
             title: None,
             format: None,
             authors_str: None,
+            book_count: book_counts.get(&c.id).copied().unwrap_or(0),
         })
         .collect();
 
@@ -161,29 +218,53 @@ pub async fn catalogs(
             title: Some(book.title.clone()),
             format: Some(book.format.clone()),
             authors_str: Some(authors_str),
+            book_count: 0,
         });
     }
+
+    // Compute parent URL for the persistent ".." navigation row.
+    // - cat_id == 0 (root view): no parent, ".." is inert.
+    // - cat_id > 0 with a parent: navigate to /web/catalogs?cat_id=<parent>.
+    //   When the parent IS the auto-flattening library-root (the only top-level
+    //   catalog, empty cat_name), collapse to /web/catalogs so the URL matches
+    //   the canonical root view. When that empty-name root coexists with other
+    //   top-level catalogs (no flatten), keep cat_id=<parent> so navigation
+    //   does not lose the parent context.
+    // - cat_id > 0 with no parent (top-level catalog itself): navigate to /web/catalogs.
+    let parent_url: Option<String> = if cat_id == 0 {
+        None
+    } else {
+        let parent_id = match catalogs::get_by_id(&state.db, cat_id).await {
+            Ok(Some(cat)) => cat.parent_id,
+            _ => None,
+        };
+        Some(match parent_id {
+            Some(pid) if Some(pid) == flat_root_id => "/web/catalogs".to_string(),
+            Some(pid) => format!("/web/catalogs?cat_id={pid}"),
+            None => "/web/catalogs".to_string(),
+        })
+    };
+
+    // Seed breadcrumbs from the current node, or from the effective parent when
+    // auto-flattening at cat_id=0 so the user sees `[/] > Books` instead of
+    // just `[/]`.
+    let crumb_seed = if cat_id > 0 {
+        Some(cat_id)
+    } else {
+        effective_parent
+    };
+    let crumbs = if let Some(seed) = crumb_seed {
+        build_breadcrumbs(&state, seed).await
+    } else {
+        Vec::new()
+    };
 
     ctx.insert("entries", &entries);
     ctx.insert("cat_id", &cat_id);
     ctx.insert("pagination_qs", &format!("cat_id={}&", cat_id));
-
-    if cat_id > 0 {
-        let crumbs = build_breadcrumbs(&state, cat_id).await;
-        if let Some(last) = crumbs.last() {
-            ctx.insert("current_cat_name", &last.name);
-        }
-        if crumbs.len() > 1 {
-            let parent = &crumbs[crumbs.len() - 2];
-            ctx.insert(
-                "parent_url",
-                &format!("/web/catalogs?cat_id={}", parent.cat_id.unwrap_or(0)),
-            );
-            ctx.insert("parent_name", &parent.name);
-        } else {
-            ctx.insert("parent_url", "/web/catalogs");
-        }
-        ctx.insert("breadcrumbs", &crumbs);
+    ctx.insert("breadcrumbs", &crumbs);
+    if let Some(url) = &parent_url {
+        ctx.insert("parent_url", url);
     }
 
     let pagination = Pagination::new(params.page, max_items, book_total);
