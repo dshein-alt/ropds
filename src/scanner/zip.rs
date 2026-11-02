@@ -126,7 +126,11 @@ pub(super) async fn process_zip(
         let meta = match meta {
             Ok(m) => m,
             Err(e) => {
-                debug!("Failed to parse {} in {}: {e}", ze.filename, zip_filename);
+                debug!(
+                    "Failed to parse {} in {}: {e:?}",
+                    ze.filename,
+                    zip_path.display()
+                );
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
@@ -294,10 +298,20 @@ pub(super) fn validate_zip_integrity(path: &Path) -> Result<bool, ScanError> {
     for i in 0..archive.len() {
         let mut entry = match archive.by_index(i) {
             Ok(e) => e,
-            Err(_) => return Ok(false),
+            Err(e) => {
+                debug!(
+                    "ZIP integrity check failed for entry #{i} in {}: {e:?}",
+                    path.display()
+                );
+                return Ok(false);
+            }
         };
         let mut buf = Vec::new();
-        if std::io::Read::read_to_end(&mut entry, &mut buf).is_err() {
+        if let Err(e) = std::io::Read::read_to_end(&mut entry, &mut buf) {
+            debug!(
+                "ZIP integrity check failed for entry #{i} in {}: {e:?}",
+                path.display()
+            );
             return Ok(false);
         }
     }
