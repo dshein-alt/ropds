@@ -81,7 +81,7 @@ where
     let inp_names: Vec<String> = (0..archive.len())
         .filter_map(|i| {
             let entry = archive.by_index(i).ok()?;
-            let name = entry.name().to_string();
+            let name = entry.name().ok()?.into_owned();
             if name.ends_with(".inp") {
                 Some(name)
             } else {
@@ -217,7 +217,7 @@ fn parse_structure_info<R: Read + Seek>(
     let mut structure_entry_name: Option<String> = None;
     for i in 0..archive.len() {
         let entry = archive.by_index(i).ok()?;
-        let name = entry.name().to_string();
+        let name = entry.name().ok()?.into_owned();
         if name.eq_ignore_ascii_case("structure.info")
             || name
                 .rsplit('/')

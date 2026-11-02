@@ -40,9 +40,10 @@ fn find_opf_path<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Str
     let mut opf_files = Vec::new();
     for i in 0..archive.len() {
         if let Ok(entry) = archive.by_index(i)
-            && entry.name().ends_with(".opf")
+            && let Ok(name) = entry.name()
+            && name.ends_with(".opf")
         {
-            opf_files.push(entry.name().to_string());
+            opf_files.push(name.into_owned());
         }
     }
     match opf_files.len() {

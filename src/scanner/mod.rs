@@ -368,7 +368,8 @@ async fn do_scan(
     if scan_errors > 0 {
         warn!(
             "Skipping deletion step: {scan_errors} error(s) occurred during scan, \
-             some books may have been left unverified due to worker failures"
+             some books may have been left unverified due to worker failures; \
+             set server.log_level = \"debug\" and rerun the scan for per-file error details"
         );
     } else if config.scanner.delete_logical {
         let deleted = books::logical_delete_unavailable(pool).await?;
@@ -540,7 +541,7 @@ async fn process_entry(ctx: Arc<ScanContext>, entry: ScanEntry) {
         } => {
             if let Err(e) = process_file(&ctx, &path, &rel_path, &filename, &extension, size).await
             {
-                debug!("Error processing {}: {e}", path.display());
+                debug!("Error processing {}: {e:?}", path.display());
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -550,7 +551,7 @@ async fn process_entry(ctx: Arc<ScanContext>, entry: ScanEntry) {
             mtime,
         } => {
             if let Err(e) = process_zip(&ctx, &path, &rel_path, &mtime).await {
-                debug!("Error processing ZIP {}: {e}", path.display());
+                debug!("Error processing ZIP {}: {e:?}", path.display());
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -560,7 +561,7 @@ async fn process_entry(ctx: Arc<ScanContext>, entry: ScanEntry) {
             mtime,
         } => {
             if let Err(e) = process_inpx(Arc::clone(&ctx), &path, &rel_path, &mtime).await {
-                debug!("Error processing INPX {}: {e}", path.display());
+                debug!("Error processing INPX {}: {e:?}", path.display());
                 ctx.stats.errors.fetch_add(1, Ordering::Relaxed);
             }
         }

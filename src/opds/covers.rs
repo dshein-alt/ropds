@@ -221,9 +221,10 @@ fn find_epub_opf<R: std::io::Read + std::io::Seek>(
     // Fallback: find *.opf
     for i in 0..archive.len() {
         if let Ok(entry) = archive.by_index(i)
-            && entry.name().ends_with(".opf")
+            && let Ok(name) = entry.name()
+            && name.ends_with(".opf")
         {
-            return Some(entry.name().to_string());
+            return Some(name.into_owned());
         }
     }
     None

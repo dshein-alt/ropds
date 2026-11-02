@@ -1,15 +1,15 @@
 [package]
 name = "ropds"
-version = "0.13.1"
+version = "0.13.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Async runtime & web framework
-tokio = { version = "1.53.1", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 axum = { version = "0.8.9", features = ["macros", "multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6.10", features = ["trace", "cors", "compression-gzip", "compression-br"] }
+tower-http = { version = "0.7.1", features = ["trace", "cors", "compression-gzip", "compression-br"] }
 
 # Templates
 tera = { version = "2", features = ["glob_fs"] }
@@ -22,7 +22,7 @@ axum-extra = { version = "0.12.6", features = ["cookie"] }
 # Serialization & config
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "1.1.2"
+toml = "1.1.8"
 
 # Logging
 tracing = "0.1"
@@ -40,7 +40,7 @@ time = "0.3"
 
 # Scanner: filesystem, archives, XML parsing, images, parallelism
 walkdir = "2"
-zip = "8.6.0"
+zip = "9.2.2"
 dashmap = "6"
 quick-xml = { version = "0.42.0", features = ["encoding"] }
 encoding_rs = "0.8"
@@ -60,11 +60,11 @@ hex = "0.4"
 argon2 = "0.5"
 
 # OAuth2 social login
-openidconnect = "4.0.1"
+openidconnect = "4.1.0"
 oauth2         = "5.0"
 reqwest    = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
 lettre     = { version = "0.11.23", features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"], default-features = false }
-rand       = "0.10.2"
+rand       = "0.10.3"
 
 # CLI
 clap = { version = "4.6", features = ["derive"] }
@@ -84,11 +84,11 @@ http-body-util = "0.1"
 
 [build-dependencies]
 walkdir = "2"
-oxc_allocator = "0.146.0"
-oxc_codegen = "0.146.0"
-oxc_minifier = "0.146.0"
-oxc_parser = "0.146.0"
-oxc_span = "0.146.0"
+oxc_allocator = "0.156.0"
+oxc_codegen = "0.156.0"
+oxc_minifier = "0.156.0"
+oxc_parser = "0.156.0"
+oxc_span = "0.156.0"
 sha2 = "0.11"
 hex = "0.4"
 

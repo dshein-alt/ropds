@@ -11,7 +11,6 @@ use std::sync::OnceLock;
 
 use encoding_rs::Encoding;
 use zip::ZipArchive;
-use zip::read::HasZipMetadata;
 
 /// Resolve `library.zip_codepage` to an encoding.
 ///
@@ -56,9 +55,12 @@ pub fn decode(raw: &[u8], is_utf8: bool, encoding: Option<&'static Encoding>) ->
 pub fn entry_name<R: Read>(
     entry: &zip::read::ZipFile<'_, R>,
     encoding: Option<&'static Encoding>,
-) -> String {
-    decode(entry.name_raw(), entry.get_metadata().is_utf8, encoding)
-        .unwrap_or_else(|| entry.name().to_string())
+) -> zip::result::ZipResult<String> {
+    let is_utf8 = entry.flags().as_u16() & (1 << 11) != 0;
+    if let Some(name) = decode(entry.name_raw(), is_utf8, encoding) {
+        return Ok(name);
+    }
+    entry.name().map(|name| name.into_owned())
 }
 
 /// The last path component of a ZIP entry name.
@@ -128,7 +130,9 @@ pub fn find_entry_index<R: Read + Seek>(
         .file_names()
         .enumerate()
         .find(|(_, name)| {
-            matches(name, wanted) || mangled.as_deref().is_some_and(|m| matches(name, m))
+            name.as_ref().is_ok_and(|name| {
+                matches(name, wanted) || mangled.as_deref().is_some_and(|m| matches(name, m))
+            })
         })
         .map(|(index, _)| index)
 }
@@ -190,11 +194,11 @@ pub(crate) mod tests {
         // what the crate decoded the raw bytes to.
         let raw = zip_with_raw_name(CP866_NAME);
         let archive = ZipArchive::new(std::io::Cursor::new(raw)).unwrap();
-        let crate_name = archive.file_names().next().unwrap();
-        assert_eq!(cp437_decode(CP866_NAME), crate_name);
+        let crate_name = archive.file_names().next().unwrap().unwrap();
+        assert_eq!(cp437_decode(CP866_NAME), crate_name.as_ref());
         assert_eq!(
             mangle(UTF8_NAME, resolve("cp866").unwrap()).as_deref(),
-            Some(crate_name)
+            Some(crate_name.as_ref())
         );
     }
 

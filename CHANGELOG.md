@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.2] - 2026-11-02
+
+### Added
+- Scanner error summaries now explain how to enable detailed per-file diagnostics. Debug logging identifies the affected file or archive entry and includes the underlying error, while the default log remains concise.
+
+### Changed
+- Updated project dependencies, including security fixes for ZIP archive processing.
+
 ## [0.13.1] - 2026-08-24
 
 ### Fixed

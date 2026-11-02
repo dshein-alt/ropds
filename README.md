@@ -90,6 +90,8 @@ Scan the library once without starting the server:
 ./target/release/ropds --scan
 ```
 
+To see the path and detailed error for each file that could not be processed, set `log_level = "debug"` in `[server]` and rerun the scan. Files with errors are skipped; deletion of missing books is also skipped for that run to avoid removing entries that were not verified.
+
 ## Running with Docker
 
 Pre-built multi-architecture images (linux/amd64, linux/arm64) are published on every release:
