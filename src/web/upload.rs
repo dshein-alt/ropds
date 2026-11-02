@@ -262,7 +262,7 @@ fn extract_book_from_zip(
             continue;
         }
 
-        let name = crate::zipname::entry_name(&entry, encoding);
+        let name = crate::zipname::entry_name(&entry, encoding).map_err(|_| "error_unsupported")?;
         let ext = std::path::Path::new(&name)
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase())

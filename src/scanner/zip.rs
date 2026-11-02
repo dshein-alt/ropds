@@ -183,7 +183,7 @@ where
             continue;
         }
 
-        let entry_name = crate::zipname::entry_name(&entry, encoding);
+        let entry_name = crate::zipname::entry_name(&entry, encoding)?;
         let filename = Path::new(&entry_name)
             .file_name()
             .unwrap_or_default()
