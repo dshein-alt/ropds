@@ -37,10 +37,20 @@ main {
 
 @media (max-width: 1199.98px) {
   #navMain.collapse.show {
-    max-height: calc(100vh - 4rem);
-    max-height: calc(100dvh - 4rem);
+    max-height: calc(100vh - 7rem);
+    max-height: calc(100dvh - 7rem);
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+}
+
+@media (min-width: 1200px) {
+  #navMain {
+    order: 2;
+  }
+
+  .navbar-search-row {
+    order: 3;
   }
 }
 
