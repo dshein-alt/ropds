@@ -689,3 +689,112 @@ async fn pg_set_book_authors_and_update_key() {
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0].id, bob);
 }
+
+// ---------------------------------------------------------------------------
+// Random book widget
+// ---------------------------------------------------------------------------
+
+/// Issue #26: random IDs are resolved through the primary key, without a sort.
+#[tokio::test]
+async fn pg_get_random_uses_primary_key_lookup() {
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/test", "test", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+    books::insert(
+        &pool,
+        cat_id,
+        "b.fb2",
+        "/test",
+        "fb2",
+        "Book",
+        "BOOK",
+        "",
+        "",
+        "en",
+        2,
+        100,
+        CatType::Normal,
+        0,
+        "",
+    )
+    .await
+    .unwrap();
+
+    let rows: Vec<(String,)> =
+        sqlx::query_as("EXPLAIN SELECT * FROM books WHERE id = 42 AND avail > 0")
+            .fetch_all(pool.inner())
+            .await
+            .unwrap();
+    let plan = rows
+        .iter()
+        .map(|r| r.0.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        plan.contains("books_pkey"),
+        "expected a primary-key lookup, plan: {plan}"
+    );
+    assert!(
+        !plan.contains("Sort"),
+        "expected no sorting step, plan: {plan}"
+    );
+
+    let book = books::get_random(&pool).await.unwrap().unwrap();
+    assert!(book.avail > 0);
+}
+
+/// Issue #26: every available book must be reachable, and deleted ones never.
+#[tokio::test]
+async fn pg_get_random_covers_every_available_book() {
+    let (_container, pool) = start_postgres().await;
+    let cat_id = catalogs::insert(&pool, None, "/test", "test", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let id = books::insert(
+            &pool,
+            cat_id,
+            &format!("b{i}.fb2"),
+            "/test",
+            "fb2",
+            &format!("Book {i}"),
+            &format!("BOOK {i}"),
+            "",
+            "",
+            "en",
+            2,
+            100,
+            CatType::Normal,
+            0,
+            "",
+        )
+        .await
+        .unwrap();
+        ids.push(id);
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..200 {
+        let book = books::get_random(&pool)
+            .await
+            .unwrap()
+            .expect("library has available books");
+        assert!(ids.contains(&book.id), "unexpected book {}", book.id);
+        seen.insert(book.id);
+    }
+    assert_eq!(
+        seen.len(),
+        ids.len(),
+        "every available book should show up eventually"
+    );
+
+    // An empty library yields no book, not an error.
+    books::set_avail_all(&pool, ropds::db::models::AvailStatus::Deleted)
+        .await
+        .unwrap();
+    assert!(books::get_random(&pool).await.unwrap().is_none());
+}

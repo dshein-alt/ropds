@@ -605,3 +605,62 @@ async fn mysql_set_book_authors_and_update_key() {
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0].id, bob);
 }
+
+// ---------------------------------------------------------------------------
+// Random book widget
+// ---------------------------------------------------------------------------
+
+/// Issue #26: the widget query used SQLite's `RANDOM()`, which MySQL does not
+/// provide, so it failed on every page render. It is plain SQL now, and every
+/// available book has to be reachable.
+#[tokio::test]
+async fn mysql_get_random_returns_available_books() {
+    let (_container, pool) = start_mysql().await;
+    let cat_id = catalogs::insert(&pool, None, "/test", "test", CatType::Normal, 0, "")
+        .await
+        .unwrap();
+
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let id = books::insert(
+            &pool,
+            cat_id,
+            &format!("b{i}.fb2"),
+            "/test",
+            "fb2",
+            &format!("Book {i}"),
+            &format!("BOOK {i}"),
+            "",
+            "",
+            "en",
+            2,
+            100,
+            CatType::Normal,
+            0,
+            "",
+        )
+        .await
+        .unwrap();
+        ids.push(id);
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..200 {
+        let book = books::get_random(&pool)
+            .await
+            .unwrap()
+            .expect("library has available books");
+        assert!(ids.contains(&book.id), "unexpected book {}", book.id);
+        seen.insert(book.id);
+    }
+    assert_eq!(
+        seen.len(),
+        ids.len(),
+        "every available book should show up eventually"
+    );
+
+    books::set_avail_all(&pool, ropds::db::models::AvailStatus::Deleted)
+        .await
+        .unwrap();
+    assert!(books::get_random(&pool).await.unwrap().is_none());
+}
