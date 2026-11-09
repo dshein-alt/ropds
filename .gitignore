@@ -19,4 +19,9 @@ devel/
 *.swp
 *.jpg
 docs/*
+
+# ignore agents configs
+.claude
 .codex
+.pi
+.kimi-code
