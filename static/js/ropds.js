@@ -462,6 +462,11 @@ function convertUtcTimes(root) {
 // Bookshelf star toggle via AJAX (no page reload)
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
+    function reportError() {
+      var status = document.getElementById("bookshelf-status");
+      if (status) status.textContent = status.dataset.message || "";
+    }
+
     document.addEventListener("click", function (e) {
       var btn = e.target.closest(".bookshelf-toggle-btn");
       if (!btn) return;
@@ -470,6 +475,8 @@ function convertUtcTimes(root) {
       var form = btn.closest("form");
       if (!form) return;
 
+      var status = document.getElementById("bookshelf-status");
+      if (status) status.textContent = "";
       var body = new URLSearchParams(new FormData(form)).toString();
       btn.disabled = true;
 
@@ -482,24 +489,37 @@ function convertUtcTimes(root) {
         body: body,
         credentials: "same-origin"
       })
-        .then(function (res) { return res.json(); })
+        .then(function (res) {
+          if (!res.ok) throw new Error("Bookshelf update failed");
+          return res.json();
+        })
         .then(function (data) {
-          if (!data.ok) return;
+          if (!data.ok) {
+            reportError();
+            return;
+          }
 
           // On the bookshelf page, remove the card
           var isBookshelfPage = !!document.getElementById("bookshelf-grid");
           if (isBookshelfPage && !data.on_shelf) {
             var card = btn.closest(".col");
             if (card) {
-              card.style.transition = "opacity 0.3s";
-              card.style.opacity = "0";
-              setTimeout(function () { card.remove(); }, 300);
+              var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              if (reduceMotion) {
+                card.remove();
+              } else {
+                card.style.transition = "opacity 0.3s";
+                card.style.opacity = "0";
+                setTimeout(function () { card.remove(); }, 300);
+              }
             }
             return;
           }
 
-          // On other pages, toggle the star appearance
+          // On other pages, synchronize visual and accessibility state
           var icon = btn.querySelector("i");
+          btn.setAttribute("aria-pressed", data.on_shelf ? "true" : "false");
+          btn.title = data.on_shelf ? btn.dataset.removeTitle : btn.dataset.addTitle;
           if (data.on_shelf) {
             btn.classList.remove("btn-outline-secondary");
             btn.classList.add("btn-warning");
@@ -510,6 +530,7 @@ function convertUtcTimes(root) {
             if (icon) { icon.classList.remove("bi-star-fill"); icon.classList.add("bi-star"); }
           }
         })
+        .catch(reportError)
         .finally(function () {
           btn.disabled = false;
         });

@@ -128,6 +128,7 @@ error = "Invalid username or password."
 [common]
 not_found = "Not found"
 error = "Error"
+close = "Close"
 no_results = "No results found."
 root = "Root"
 
@@ -278,6 +279,7 @@ sort_date = "Date"
 sort_title = "Title"
 sort_author = "Author"
 loading = "Loading..."
+error = "Could not update the bookshelf. Please try again."
 
 [upload]
 title = "Upload Book"

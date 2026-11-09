@@ -128,6 +128,7 @@ error = "用户名或密码无效。"
 [common]
 not_found = "未找到"
 error = "错误"
+close = "关闭"
 no_results = "未找到结果。"
 root = "根目录"
 
@@ -278,6 +279,7 @@ sort_date = "日期"
 sort_title = "标题"
 sort_author = "作者"
 loading = "加载中..."
+error = "无法更新书架，请重试。"
 
 [upload]
 title = "上传书籍"

@@ -46,23 +46,25 @@
           {% endif %}
 
           <div class="book-actions mt-1">
-            <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm py-0 px-1">
-              <i class="bi bi-download"></i> {{ item.format }}
+            <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm" aria-label="{{ t.book.download }} {{ item.format }}: {{ item.title }}">
+              <i aria-hidden="true" class="bi bi-download"></i> {{ item.format }}
             </a>
             {% if item.show_zip %}
-            <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm py-0 px-1">zip</a>
+            <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm" aria-label="{{ t.book.download }} ZIP: {{ item.title }}">zip</a>
             {% endif %}
             {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
-            <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-outline-success py-0 px-1" title="{{ t.book.read }}">
-              <i class="bi bi-book-half"></i>
+            <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-icon btn-outline-success" title="{{ t.book.read }}" aria-label="{{ t.book.read }}: {{ item.title }}">
+              <i aria-hidden="true" class="bi bi-book-half"></i>
             </a>
             {% endif %}
             <form method="post" action="/web/bookshelf/toggle" class="bookshelf-action-form">
               <input type="hidden" name="book_id" value="{{ item.id }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="redirect" value="/web/bookshelf">
-              <button type="submit" class="btn btn-sm btn-warning bookshelf-toggle-btn py-0 px-1" title="{{ t.bookshelf.remove }}">
-                <i class="bi bi-star-fill"></i>
+              <button type="submit" class="btn btn-sm btn-icon btn-warning bookshelf-toggle-btn" title="{{ t.bookshelf.remove }}"
+                      aria-label="{{ t.nav.bookshelf }}: {{ item.title }}" aria-pressed="true"
+                      data-add-title="{{ t.bookshelf.add }}" data-remove-title="{{ t.bookshelf.remove }}">
+                <i aria-hidden="true" class="bi bi-star-fill"></i>
               </button>
             </form>
           </div>

@@ -128,6 +128,7 @@ error = "Ungültiger Benutzername oder Passwort."
 [common]
 not_found = "Nicht gefunden"
 error = "Fehler"
+close = "Schließen"
 no_results = "Keine Ergebnisse gefunden."
 root = "Wurzel"
 
@@ -278,6 +279,7 @@ sort_date = "Datum"
 sort_title = "Titel"
 sort_author = "Autor"
 loading = "Lädt..."
+error = "Das Bücherregal konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut."
 
 [upload]
 title = "Buch hochladen"

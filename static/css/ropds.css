@@ -189,6 +189,31 @@ main {
   margin: 0;
 }
 
+.btn-icon {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.book-actions .btn {
+  min-height: 44px;
+}
+
+.navbar-nav .nav-link,
+.navbar .dropdown-item {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .book-card {
+    transition: none;
+  }
+}
+
 /* Alphabet browse grid */
 .prefix-grid {
   display: grid;
