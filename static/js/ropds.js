@@ -442,15 +442,38 @@
   });
 })();
 
-// Convert UTC timestamps to local timezone
+// Convert UTC timestamps to local timezone: medium date + short time, no seconds.
+// Falls back to the concise text rendered by the templates when a date is invalid.
 function convertUtcTimes(root) {
-  (root || document).querySelectorAll("time.utc-time").forEach(function (el) {
-    var dt = new Date(el.getAttribute("datetime").replace(" ", "T"));
-    if (isNaN(dt)) return;
-    var pad = function (n) { return n < 10 ? "0" + n : n; };
-    el.textContent =
-      dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
-      " " + pad(dt.getHours()) + ":" + pad(dt.getMinutes()) + ":" + pad(dt.getSeconds());
+  var els = (root || document).querySelectorAll("time.utc-time:not([data-utc-local])");
+  if (!els.length) return;
+
+  var pad = function (n) { return n < 10 ? "0" + n : n; };
+  var localStamp = function (dt) {
+    return dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
+      " " + pad(dt.getHours()) + ":" + pad(dt.getMinutes());
+  };
+
+  var formatter = null;
+  try {
+    formatter = new Intl.DateTimeFormat(document.documentElement.lang || undefined,
+      { dateStyle: "medium", timeStyle: "short" });
+  } catch (error) {}
+
+  els.forEach(function (el) {
+    el.setAttribute("data-utc-local", "1");
+    var value = (el.getAttribute("datetime") || "").trim();
+    if (!value) return;
+    // Timestamps are stored in UTC: normalize offsets and annotate bare values.
+    var iso = value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+    if (!/(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(iso)) iso += "Z";
+    var dt = new Date(iso);
+    if (isNaN(dt.getTime())) return;
+    var text = "";
+    try {
+      text = formatter ? formatter.format(dt) : localStamp(dt);
+    } catch (error) {}
+    if (text) el.textContent = text;
   });
 }
 (function () {

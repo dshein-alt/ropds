@@ -123,4 +123,7 @@ async fn home_shows_continue_reading_for_authenticated_user() {
     assert!(html.contains("Continue reading"));
     assert!(html.contains(&format!("/web/reader/{}", second_book.id)));
     assert!(html.contains("77%"));
+    assert!(html.contains("datetime=\"2024-06-02T00:00:00\""));
+    assert!(html.contains("2024-06-02 00:00 UTC"));
+    assert!(!html.contains("2024-06-02 00:00:00 UTC"));
 }
