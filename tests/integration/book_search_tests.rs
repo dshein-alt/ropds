@@ -85,6 +85,9 @@ async fn search_books_by_title() {
         html.contains("EPUB Test Book"),
         "should find EPUB test book"
     );
+    assert!(html.contains("action=\"/web/search/books\""));
+    assert!(html.contains("<input type=\"hidden\" name=\"type\" value=\"m\">"));
+    assert!(html.contains("id=\"search-type-group\" hidden"));
 }
 
 /// Search books by title prefix (type=b).
@@ -303,14 +306,24 @@ async fn search_single_book_by_id() {
         .unwrap()
         .unwrap();
 
+    let user_id = create_test_user(&pool, "single_book_user", "password123", false).await;
+    let session = session_cookie_value(user_id);
     let state = test_app_state(pool, config);
     let app = test_router(state);
 
-    let resp = get(app, &format!("/web/search/books?type=i&q={}", book.id)).await;
+    let resp = get_with_session(
+        app,
+        &format!("/web/search/books?type=i&q={}", book.id),
+        &session,
+    )
+    .await;
     assert_eq!(resp.status(), 200);
 
     let html = body_string(resp).await;
     assert!(html.contains("Test Book Title"));
+    assert!(html.contains("aria-label=\"Bookshelf: Test Book Title\" aria-pressed=\"false\""));
+    assert!(html.contains("data-add-title=\"Add to bookshelf\""));
+    assert!(html.contains("data-remove-title=\"Remove from bookshelf\""));
     assert!(html.contains("<dialog id=\"cover-dialog\""));
     if book.cover > 0 {
         assert!(html.contains("class=\"cover-preview rounded\""));
