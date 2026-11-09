@@ -6,9 +6,9 @@
         {% if show_covers %}
         <div class="flex-shrink-0">
           {% if item.cover %}
-          <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover-compact rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/">
+          <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover-compact rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/" width="70" height="105" decoding="async">
           {% else %}
-          <img src="/static/images/nocover.svg" alt="" class="book-cover-compact rounded">
+          <img src="/static/images/nocover.svg" alt="" class="book-cover-compact rounded" width="70" height="105" decoding="async">
           {% endif %}
         </div>
         {% endif %}

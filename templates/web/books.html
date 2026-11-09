@@ -26,15 +26,17 @@
       <div class="col-12">
         <div class="card book-card">
           <div class="card-body">
-            <div class="d-flex gap-3">
+            <div class="d-flex gap-2 gap-sm-3">
 
               {# Cover #}
               {% if show_covers %}
               <div class="flex-shrink-0">
                 {% if item.cover %}
-                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/">
+                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/"
+                     width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
                 {% else %}
-                <img src="/static/images/nocover.svg" alt="" class="book-cover rounded">
+                <img src="/static/images/nocover.svg" alt="" class="book-cover rounded"
+                     width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
                 {% endif %}
               </div>
               {% endif %}
