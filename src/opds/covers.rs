@@ -232,22 +232,16 @@ fn find_epub_opf<R: std::io::Read + std::io::Seek>(
 
 fn parse_container_rootfile(data: &[u8]) -> Option<String> {
     use quick_xml::XmlVersion;
-    use quick_xml::encoding::DecodingReader;
     use quick_xml::events::Event;
-    use quick_xml::reader::Reader;
 
-    let mut xml = Reader::from_reader(DecodingReader::new(data));
+    // container.xml is transcoded to UTF-8 up front (see crate::xml).
+    let text = crate::xml::decode(data);
+    let mut xml = crate::xml::reader(&text);
     xml.config_mut().trim_text(true);
     let mut buf = Vec::new();
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) | Err(_) => break,
-            // Non-UTF-8 documents (fb2 is often windows-1251) are transcoded on the fly
-            Ok(Event::Decl(ref e)) => {
-                if let Some(enc) = e.encoder() {
-                    xml.get_mut().set_encoding(enc);
-                }
-            }
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 let qname = e.name();
                 let name = qname.as_ref();
@@ -277,9 +271,7 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
 ) -> Option<(Vec<u8>, String)> {
     use quick_xml::XmlVersion;
-    use quick_xml::encoding::DecodingReader;
     use quick_xml::events::Event;
-    use quick_xml::reader::Reader;
 
     let opf_dir = match opf_path.rfind('/') {
         Some(i) => &opf_path[..=i],
@@ -289,18 +281,13 @@ fn extract_epub_cover<R: std::io::Read + std::io::Seek>(
     let mut cover_id: Option<String> = None;
     let mut manifest: Vec<(String, String, String, String)> = Vec::new(); // (id, href, media_type, properties)
 
-    let mut xml = Reader::from_reader(DecodingReader::new(opf_data));
+    let text = crate::xml::decode(opf_data);
+    let mut xml = crate::xml::reader(&text);
     xml.config_mut().trim_text(true);
     let mut buf = Vec::new();
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) | Err(_) => break,
-            // Non-UTF-8 documents (fb2 is often windows-1251) are transcoded on the fly
-            Ok(Event::Decl(ref e)) => {
-                if let Some(enc) = e.encoder() {
-                    xml.get_mut().set_encoding(enc);
-                }
-            }
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 let local = local_name(e.name().as_ref());
                 if local == "item" {
@@ -433,7 +420,9 @@ fn make_thumbnail(data: &[u8], size: u32) -> Result<Vec<u8>, image::ImageError> 
 /// Find the cover image reference id from raw FB2 bytes.
 /// Searches for `<coverpage>...<image ...href="#id"/>...</coverpage>`.
 fn find_fb2_cover_ref(data: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(data);
+    // Transcode legacy FB2 (windows-1251, UTF-16) so that the markers below are
+    // findable as text; UTF-8 input stays borrowed (issue #25).
+    let text = crate::xml::decode(data);
     let cp_start = text.find("<coverpage")?;
     let cp_end = text[cp_start..].find("</coverpage>")? + cp_start;
     let coverpage = &text[cp_start..cp_end];
@@ -582,6 +571,22 @@ mod tests {
         "##;
         assert_eq!(find_fb2_cover_ref(fb2), Some("coverimage".to_string()));
         assert_eq!(find_fb2_cover_ref(b"<FictionBook/>"), None);
+
+        // Issue #25: a UTF-16 FB2 hides its ASCII markers between NUL bytes, so
+        // the document has to be transcoded before it can be searched.
+        let fb2_utf16: Vec<u8> = vec![0xFF, 0xFE]
+            .into_iter()
+            .chain(
+                std::str::from_utf8(fb2)
+                    .unwrap()
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes),
+            )
+            .collect();
+        assert_eq!(
+            find_fb2_cover_ref(&fb2_utf16),
+            Some("coverimage".to_string())
+        );
     }
 
     #[test]
@@ -641,6 +646,40 @@ mod tests {
         let result = extract_epub_cover(opf, "OPS/content.opf", &mut archive).unwrap();
         assert_eq!(result.0, cover);
         assert_eq!(result.1, "image/png");
+    }
+
+    /// Issue #25: these parsers run on user archives while serving a cover
+    /// request, so a legacy-encoded container.xml/opf used to panic the handler.
+    #[test]
+    fn test_epub_metadata_parsers_survive_legacy_encodings() {
+        let container = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n\
+            <container><rootfiles><rootfile full-path=\"OPS/content.opf\" \
+            media-type=\"application/oebps-package+xml\"/></rootfiles></container>";
+        let container_utf16: Vec<u8> = vec![0xFF, 0xFE]
+            .into_iter()
+            .chain(container.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        assert_eq!(
+            parse_container_rootfile(&container_utf16),
+            Some("OPS/content.opf".to_string())
+        );
+
+        // OPF in windows-1251, with a Cyrillic image file name ("ков.jpg").
+        let mut opf: Vec<u8> = Vec::new();
+        opf.extend_from_slice(
+            b"<?xml version=\"1.0\" encoding=\"windows-1251\" standalone=\"yes\"?>\n",
+        );
+        opf.extend_from_slice(b"<package><metadata><meta name=\"cover\" content=\"cover-id\"/></metadata><manifest><item id=\"cover-id\" href=\"");
+        opf.extend_from_slice(&[0xEA, 0xEE, 0xE2]); // "ков"
+        opf.extend_from_slice(b".jpg\" media-type=\"image/jpeg\"/></manifest></package>");
+
+        let cover = b"legacy-cover";
+        let zip_data = make_zip(&[("OPS/ков.jpg", cover)]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(zip_data)).unwrap();
+
+        let result = extract_epub_cover(&opf, "OPS/content.opf", &mut archive).unwrap();
+        assert_eq!(result.0, cover);
+        assert_eq!(result.1, "image/jpeg");
     }
 
     #[test]
