@@ -32,8 +32,11 @@
               {% if show_covers %}
               <div class="flex-shrink-0">
                 {% if item.cover %}
-                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/"
-                     width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
+                <a href="/opds/cover/{{ item.id }}/" class="cover-preview rounded" aria-label="{{ t.book.view_cover }}: {{ item.title }}"
+                   data-cover-alt="{{ t.book.cover }}: {{ item.title }}">
+                  <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded"
+                       width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
+                </a>
                 {% else %}
                 <img src="/static/images/nocover.svg" alt="" class="book-cover rounded"
                      width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">

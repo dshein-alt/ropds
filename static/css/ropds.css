@@ -278,29 +278,49 @@ footer {
 /* Cover preview */
 .cover-preview {
   cursor: pointer;
+  display: block;
 }
 
-.cover-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1060;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
-  cursor: pointer;
+.cover-preview:focus-visible {
+  outline: 2px solid var(--bs-focus-ring-color);
+  outline-offset: 3px;
 }
 
-.cover-overlay[hidden] {
-  display: none;
-}
-
-.cover-overlay img {
+.cover-dialog {
+  position: relative;
   max-width: 90vw;
   max-height: 90vh;
+  max-height: 90dvh;
+  padding: 3rem 1rem 1rem;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.cover-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.cover-dialog img {
+  display: block;
+  max-width: calc(90vw - 2rem);
+  max-height: calc(90vh - 4rem);
+  max-height: calc(90dvh - 4rem);
   object-fit: contain;
   border-radius: 0.5rem;
   box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.4);
+}
+
+.cover-dialog-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background-color: var(--bs-body-bg);
+  border-radius: 50%;
+}
+
+.cover-dialog-open {
+  overflow: hidden;
 }
 
 /* Search dropdown */

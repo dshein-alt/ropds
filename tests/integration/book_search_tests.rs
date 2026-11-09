@@ -311,6 +311,11 @@ async fn search_single_book_by_id() {
 
     let html = body_string(resp).await;
     assert!(html.contains("Test Book Title"));
+    assert!(html.contains("<dialog id=\"cover-dialog\""));
+    if book.cover > 0 {
+        assert!(html.contains("class=\"cover-preview rounded\""));
+        assert!(html.contains("aria-label=\"View cover: Test Book Title\""));
+    }
 }
 
 // ── Alphabet drill-down: word-boundary (default) vs. first-word config ──

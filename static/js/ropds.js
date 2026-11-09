@@ -412,32 +412,51 @@
   });
 })();
 
-// Cover preview overlay
+// Cover preview dialog
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
-    var overlay = document.getElementById("cover-overlay");
-    var overlayImg = document.getElementById("cover-overlay-img");
-    if (!overlay || !overlayImg) return;
+    var dialog = document.getElementById("cover-dialog");
+    var dialogImg = document.getElementById("cover-dialog-img");
+    if (!dialog || !dialogImg) return;
+    var origin = null;
 
     document.addEventListener("click", function (e) {
       var thumb = e.target.closest(".cover-preview");
-      if (thumb && thumb.dataset.coverUrl) {
-        e.preventDefault();
-        overlayImg.src = thumb.dataset.coverUrl;
-        overlay.hidden = false;
-      }
+      if (!thumb) return;
+      e.preventDefault();
+      origin = thumb;
+      dialogImg.alt = thumb.dataset.coverAlt || "";
+      document.getElementById("cover-status").textContent = "";
+      document.body.classList.add("cover-dialog-open");
+      dialog.showModal();
+      dialogImg.src = thumb.href;
     });
 
-    overlay.addEventListener("click", function () {
-      overlay.hidden = true;
-      overlayImg.src = "";
+    dialog.querySelector("[data-cover-close]").addEventListener("click", function () {
+      dialog.close();
     });
 
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape" && !overlay.hidden) {
-        overlay.hidden = true;
-        overlayImg.src = "";
-      }
+    dialog.addEventListener("click", function (e) {
+      if (e.target !== dialog) return;
+      var rect = dialog.getBoundingClientRect();
+      var inside = e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) dialog.close();
+    });
+
+    dialog.addEventListener("close", function () {
+      document.body.classList.remove("cover-dialog-open");
+      dialogImg.src = "";
+      dialogImg.alt = "";
+      if (origin && origin.isConnected) origin.focus();
+      origin = null;
+    });
+
+    dialogImg.addEventListener("error", function () {
+      if (!dialog.open) return;
+      dialog.close();
+      var status = document.getElementById("cover-status");
+      if (status) status.textContent = status.dataset.message || "";
     });
   });
 })();
