@@ -31,7 +31,7 @@
             <span class="badge text-bg-secondary">{{ item.format }}</span>
             {{ item.size | filesizeformat }}
             {% if item.read_time and item.read_time != "" %}
-            · <time class="utc-time" datetime="{{ item.read_time | replace(from=' ', to='T') }}">{{ item.read_time[0:16] }} UTC</time>
+            · <time class="utc-time" datetime="{{ item.read_time | replace(from=' ', to='T') }}">{{ item.read_time[0:16] }}</time>
             {% endif %}
           </div>
 
