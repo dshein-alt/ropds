@@ -14,6 +14,9 @@ settings = "Settings"
 upload = "Upload"
 reader = "Reader"
 recent = "Recently Added"
+library = "Library"
+navigation = "Navigation"
+toggle_menu = "Toggle navigation"
 
 [search]
 placeholder = "Search..."

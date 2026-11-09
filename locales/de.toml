@@ -14,6 +14,9 @@ settings = "Einstellungen"
 upload = "Hochladen"
 reader = "Leser"
 recent = "Kürzlich hinzugefügt"
+library = "Bibliothek"
+navigation = "Navigation"
+toggle_menu = "Navigation umschalten"
 
 [search]
 placeholder = "Suchen..."

@@ -14,6 +14,9 @@ settings = "设置"
 upload = "上传"
 reader = "阅读器"
 recent = "最近添加"
+library = "书库"
+navigation = "导航"
+toggle_menu = "切换导航"
 
 [search]
 placeholder = "搜索..."

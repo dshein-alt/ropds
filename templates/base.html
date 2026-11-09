@@ -17,47 +17,63 @@
 <body>
 
   {# ── Navbar ──────────────────────────────────────────────── #}
-  <nav class="navbar navbar-expand-lg sticky-top bg-body-tertiary border-bottom">
+  <nav class="navbar navbar-expand-xl sticky-top bg-body-tertiary border-bottom" aria-label="{{ t.nav.navigation }}">
     <div class="container">
       <a class="navbar-brand d-flex align-items-center" href="/web">
         <img src="/static/images/logo.png" alt="" onerror="this.style.display='none'">
         <span class="fw-semibold">{{ app_title }}</span>
       </a>
 
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain"
+              aria-controls="navMain" aria-expanded="false" aria-label="{{ t.nav.toggle_menu }}">
         <span class="navbar-toggler-icon"></span>
       </button>
 
-      <div class="collapse navbar-collapse flex-lg-wrap" id="navMain">
-        <ul class="navbar-nav w-100 flex-nowrap justify-content-lg-evenly">
-          {% if is_authenticated %}
-          <li class="nav-item">
-            <a class="nav-link{% if active_page == 'bookshelf' %} active{% endif %}" href="/web/bookshelf">
-              <i class="bi bi-star me-1"></i>{{ t.nav.bookshelf }}
-            </a>
-          </li>
-          {% if reader_enabled %}
-          <li class="nav-item">
-            <a class="nav-link" href="{% if last_read_book_id %}/web/reader/{{ last_read_book_id }}{% else %}#{% endif %}" target="_blank"{% if not last_read_book_id %} tabindex="-1" aria-disabled="true"{% endif %}>
-              <i class="bi bi-book-half me-1"></i>{{ t.nav.reader }}
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/static/offline.html">
-              <i class="bi bi-cloud-slash me-1"></i>{{ t.nav.offline_library }}
-            </a>
-          </li>
-          {% endif %}
-          {% endif %}
-          <li class="nav-item">
-            <a class="nav-link{% if active_page == 'catalogs' %} active{% endif %}" href="/web/catalogs">
-              <i class="bi bi-folder2-open me-1"></i>{{ t.nav.catalogs }}
-            </a>
+      <div class="collapse navbar-collapse flex-xl-wrap" id="navMain">
+        <ul class="navbar-nav w-100 flex-xl-wrap justify-content-xl-evenly">
+          <li class="nav-item dropdown">
+            <button class="nav-link dropdown-toggle text-start{% if active_page == 'bookshelf' or active_page == 'catalogs' or active_page == 'upload' %} active{% endif %}"
+                    type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-collection-play me-1"></i>{{ t.nav.library }}
+            </button>
+            <ul class="dropdown-menu">
+              {% if is_authenticated %}
+              <li>
+                <a class="dropdown-item{% if active_page == 'bookshelf' %} active{% endif %}" href="/web/bookshelf"{% if active_page == 'bookshelf' %} aria-current="page"{% endif %}>
+                  <i class="bi bi-star me-2"></i>{{ t.nav.bookshelf }}
+                </a>
+              </li>
+              {% if reader_enabled %}
+              <li>
+                <a class="dropdown-item" href="{% if last_read_book_id %}/web/reader/{{ last_read_book_id }}{% else %}#{% endif %}" target="_blank"{% if not last_read_book_id %} tabindex="-1" aria-disabled="true"{% endif %}>
+                  <i class="bi bi-book-half me-2"></i>{{ t.nav.reader }}
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item" href="/static/offline.html">
+                  <i class="bi bi-cloud-slash me-2"></i>{{ t.nav.offline_library }}
+                </a>
+              </li>
+              {% endif %}
+              {% endif %}
+              <li>
+                <a class="dropdown-item{% if active_page == 'catalogs' %} active{% endif %}" href="/web/catalogs"{% if active_page == 'catalogs' %} aria-current="page"{% endif %}>
+                  <i class="bi bi-folder2-open me-2"></i>{{ t.nav.catalogs }}
+                </a>
+              </li>
+              {% if can_upload %}
+              <li>
+                <a class="dropdown-item{% if active_page == 'upload' %} active{% endif %}" href="/web/upload"{% if active_page == 'upload' %} aria-current="page"{% endif %}>
+                  <i class="bi bi-cloud-arrow-up me-2"></i>{{ t.nav.upload }}
+                </a>
+              </li>
+              {% endif %}
+            </ul>
           </li>
 
           {% if alphabet_menu %}
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle{% if active_page == 'books' %} active{% endif %}" href="/web/books" role="button" data-bs-toggle="dropdown">
+            <a class="nav-link dropdown-toggle{% if active_page == 'books' %} active{% endif %}" href="/web/books" role="button" data-bs-toggle="dropdown" aria-expanded="false"{% if active_page == 'books' %} aria-current="page"{% endif %}>
               <i class="bi bi-book me-1"></i>{{ t.nav.books }}
             </a>
             <ul class="dropdown-menu">
@@ -70,7 +86,7 @@
             </ul>
           </li>
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle{% if active_page == 'authors' %} active{% endif %}" href="/web/authors" role="button" data-bs-toggle="dropdown">
+            <a class="nav-link dropdown-toggle{% if active_page == 'authors' %} active{% endif %}" href="/web/authors" role="button" data-bs-toggle="dropdown" aria-expanded="false"{% if active_page == 'authors' %} aria-current="page"{% endif %}>
               <i class="bi bi-people me-1"></i>{{ t.nav.authors }}
             </a>
             <ul class="dropdown-menu">
@@ -83,7 +99,7 @@
             </ul>
           </li>
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle{% if active_page == 'series' %} active{% endif %}" href="/web/series" role="button" data-bs-toggle="dropdown">
+            <a class="nav-link dropdown-toggle{% if active_page == 'series' %} active{% endif %}" href="/web/series" role="button" data-bs-toggle="dropdown" aria-expanded="false"{% if active_page == 'series' %} aria-current="page"{% endif %}>
               <i class="bi bi-collection me-1"></i>{{ t.nav.series }}
             </a>
             <ul class="dropdown-menu">
@@ -97,40 +113,33 @@
           </li>
           {% else %}
           <li class="nav-item">
-            <a class="nav-link{% if active_page == 'books' %} active{% endif %}" href="/web/books?lang=0">
+            <a class="nav-link{% if active_page == 'books' %} active{% endif %}" href="/web/books?lang=0"{% if active_page == 'books' %} aria-current="page"{% endif %}>
               <i class="bi bi-book me-1"></i>{{ t.nav.books }}
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link{% if active_page == 'authors' %} active{% endif %}" href="/web/authors?lang=0">
+            <a class="nav-link{% if active_page == 'authors' %} active{% endif %}" href="/web/authors?lang=0"{% if active_page == 'authors' %} aria-current="page"{% endif %}>
               <i class="bi bi-people me-1"></i>{{ t.nav.authors }}
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link{% if active_page == 'series' %} active{% endif %}" href="/web/series?lang=0">
+            <a class="nav-link{% if active_page == 'series' %} active{% endif %}" href="/web/series?lang=0"{% if active_page == 'series' %} aria-current="page"{% endif %}>
               <i class="bi bi-collection me-1"></i>{{ t.nav.series }}
             </a>
           </li>
           {% endif %}
 
           <li class="nav-item">
-            <a class="nav-link{% if active_page == 'recent' %} active{% endif %}" href="/web/recent">
+            <a class="nav-link{% if active_page == 'recent' %} active{% endif %}" href="/web/recent"{% if active_page == 'recent' %} aria-current="page"{% endif %}>
               <i class="bi bi-clock-history me-1"></i>{{ t.nav.recent }}
             </a>
           </li>
 
           <li class="nav-item">
-            <a class="nav-link{% if active_page == 'genres' %} active{% endif %}" href="/web/genres">
+            <a class="nav-link{% if active_page == 'genres' %} active{% endif %}" href="/web/genres"{% if active_page == 'genres' %} aria-current="page"{% endif %}>
               <i class="bi bi-tags me-1"></i>{{ t.nav.genres }}
             </a>
           </li>
-          {% if can_upload %}
-          <li class="nav-item">
-            <a class="nav-link{% if active_page == 'upload' %} active{% endif %}" href="/web/upload">
-              <i class="bi bi-cloud-arrow-up me-1"></i>{{ t.nav.upload }}
-            </a>
-          </li>
-          {% endif %}
         </ul>
 
         {# ── Search Bar + Theme / Language / User Menu (second row) ── #}
@@ -146,7 +155,7 @@
               </button>
             </div>
           </form>
-          <div class="search-type-group btn-group btn-group-sm d-none d-lg-flex" role="group">
+          <div class="search-type-group btn-group btn-group-sm d-none d-xl-flex" role="group">
             <input type="radio" class="btn-check" name="search-target" id="st-title" data-action="/web/search/books"{% if search_target == 'title' %} checked{% endif %}>
             <label class="btn btn-outline-secondary" for="st-title">{{ t.search.by_title }}</label>
             <input type="radio" class="btn-check" name="search-target" id="st-author" data-action="/web/search/authors"{% if search_target == 'author' %} checked{% endif %}>
@@ -154,7 +163,7 @@
             <input type="radio" class="btn-check" name="search-target" id="st-series" data-action="/web/search/series"{% if search_target == 'series' %} checked{% endif %}>
             <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
           </div>
-          <div class="vr mx-1 d-none d-lg-block"></div>
+          <div class="vr mx-1 d-none d-xl-block"></div>
           <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="{{ t.theme.toggle }}">
               <i id="theme-icon" class="bi bi-moon"></i>
