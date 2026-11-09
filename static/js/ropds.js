@@ -419,14 +419,19 @@
     var dialogImg = document.getElementById("cover-dialog-img");
     if (!dialog || !dialogImg) return;
     var origin = null;
+    var lockedScrollY = 0;
 
     document.addEventListener("click", function (e) {
       var thumb = e.target.closest(".cover-preview");
-      if (!thumb) return;
+      if (!thumb || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
+      if (dialog.open) return;
       origin = thumb;
       dialogImg.alt = thumb.dataset.coverAlt || "";
-      document.getElementById("cover-status").textContent = "";
+      var status = document.getElementById("cover-status");
+      if (status) status.textContent = "";
+      lockedScrollY = window.scrollY;
+      document.body.style.top = -lockedScrollY + "px";
       document.body.classList.add("cover-dialog-open");
       dialog.showModal();
       dialogImg.src = thumb.href;
@@ -445,10 +450,12 @@
     });
 
     dialog.addEventListener("close", function () {
+      if (origin && origin.isConnected) origin.focus({ preventScroll: true });
       document.body.classList.remove("cover-dialog-open");
+      document.body.style.top = "";
+      window.scrollTo({ top: lockedScrollY, left: 0, behavior: "instant" });
       dialogImg.src = "";
       dialogImg.alt = "";
-      if (origin && origin.isConnected) origin.focus();
       origin = null;
     });
 
