@@ -73,7 +73,8 @@
                           data-book-id="{{ item.id }}"
                           data-series-name="{% if item.series_list | length > 0 %}{{ item.series_list[0].ser_name }}{% endif %}"
                           data-series-no="{% if item.series_list | length > 0 %}{{ item.series_list[0].ser_no }}{% endif %}"
-                          title="{{ t.book.edit_genres }}" aria-label="{{ t.book.edit_genres }}: {{ item.title }}">
+                          title="{{ t.book.edit_genres }}" aria-label="{{ t.book.edit_genres }}: {{ item.title }}"
+                          data-label-prefix="{{ t.book.edit_genres }}">
                     <i aria-hidden="true" class="bi bi-pencil"></i>
                   </button>
                   {% endif %}
@@ -112,16 +113,19 @@
                 {% endif %}
 
                 <div class="book-actions mt-1">
-                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm" aria-label="{{ t.book.download }} {{ item.format }}: {{ item.title }}">
+                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm" aria-label="{{ t.book.download }} {{ item.format }}: {{ item.title }}"
+                     data-label-prefix="{{ t.book.download }} {{ item.format }}">
                     <i aria-hidden="true" class="bi bi-download me-1"></i>{{ item.format }}
                   </a>
                   {% if item.show_zip %}
-                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm" aria-label="{{ t.book.download }} ZIP: {{ item.title }}">zip</a>
+                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm" aria-label="{{ t.book.download }} ZIP: {{ item.title }}"
+                     data-label-prefix="{{ t.book.download }} ZIP">zip</a>
                   {% endif %}
 
                   {# Read button (for supported formats) #}
                   {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
-                  <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-icon btn-outline-success" title="{{ t.book.read }}" aria-label="{{ t.book.read }}: {{ item.title }}">
+                  <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-icon btn-outline-success" title="{{ t.book.read }}" aria-label="{{ t.book.read }}: {{ item.title }}"
+                     data-label-prefix="{{ t.book.read }}">
                     <i aria-hidden="true" class="bi bi-book-half"></i>
                   </a>
                   {% endif %}
@@ -135,6 +139,7 @@
                     <button type="submit" class="btn btn-sm btn-icon bookshelf-toggle-btn {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}"
                             title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}"
                             aria-label="{{ t.nav.bookshelf }}: {{ item.title }}" aria-pressed="{% if item.on_bookshelf %}true{% else %}false{% endif %}"
+                            data-label-prefix="{{ t.nav.bookshelf }}"
                             data-add-title="{{ t.bookshelf.add }}" data-remove-title="{{ t.bookshelf.remove }}">
                       <i aria-hidden="true" class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
                     </button>
@@ -420,12 +425,15 @@
             showTitleError(titleData.error || "title_invalid");
             throw new Error("title save failed");
           }
-          // Update DOM — card title
+          // Update DOM — card title and accessible action names
           var cardEl = document.querySelector('.btn-edit-book[data-book-id="' + editBookId + '"]');
           if (cardEl) {
             var bookCard = cardEl.closest(".col-12");
             var cardTitle = bookCard.querySelector(".card-title");
             if (cardTitle) cardTitle.textContent = titleData.title;
+            bookCard.querySelectorAll("[data-label-prefix]").forEach(function (el) {
+              el.setAttribute("aria-label", el.dataset.labelPrefix + ": " + titleData.title);
+            });
           }
           // Update modal header
           document.getElementById("edit-modal-title").textContent = titleData.title;
@@ -471,6 +479,7 @@
               // No genres previously — add icon and badges span
               var icon = document.createElement("i");
               icon.className = "bi bi-tags text-body-secondary me-1";
+              icon.setAttribute("aria-hidden", "true");
               card.insertBefore(icon, card.querySelector(".btn-edit-book"));
               badgesSpan = document.createElement("span");
               badgesSpan.className = "book-genres-badges";

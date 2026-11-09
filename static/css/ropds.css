@@ -35,10 +35,6 @@ main {
   white-space: nowrap;
 }
 
-.navbar-nav button.nav-link {
-  cursor: pointer;
-}
-
 @media (max-width: 1199.98px) {
   #navMain.collapse.show {
     max-height: calc(100vh - 7rem);
@@ -85,7 +81,11 @@ main {
 }
 
 .search-type-group[hidden] {
-  display: none !important;
+  display: none;
+}
+
+.search-type-group .btn {
+  min-height: 44px;
 }
 
 @media (max-width: 1199.98px) {
@@ -101,7 +101,6 @@ main {
 
   .search-type-group .btn {
     flex: 1 1 auto;
-    min-height: 44px;
   }
 }
 
