@@ -81,6 +81,11 @@ fn detect_encoding(bytes: &[u8]) -> (&'static Encoding, usize) {
 /// detection to decide.
 fn declared_encoding(bytes: &[u8]) -> Option<&'static Encoding> {
     let window = &bytes[..bytes.len().min(DECL_SNIFF_WINDOW)];
+    let window = &window[utf8_bom_len(window)..];
+    if !window.starts_with(b"<?xml") || !window.get(5).is_some_and(u8::is_ascii_whitespace) {
+        return None;
+    }
+
     // Look inside the declaration only: an `encoding="..."` attribute deeper in
     // the document (e.g. an OPF meta tag) is not an encoding declaration.
     let decl_end = find(window, b"?>").map_or(window.len(), |i| i + 2);
@@ -220,8 +225,8 @@ mod tests {
     /// for an encoding declaration.
     #[test]
     fn test_ignores_encoding_attribute_outside_declaration() {
-        let doc = r#"<root encoding="windows-1251"><a href="x"/></root>"#;
-        assert!(matches!(decode(doc.as_bytes()), Cow::Borrowed(_)));
+        let doc = r#"<root encoding="windows-1251"><title>Тест</title></root>"#;
+        assert_eq!(decode(doc.as_bytes()), doc);
     }
 
     #[test]

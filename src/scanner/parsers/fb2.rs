@@ -175,7 +175,7 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
 /// Extract cover image from raw FB2 bytes by searching for the matching <binary> element.
 /// Used as fallback when the XML parser fails before reaching binary elements.
 pub fn extract_cover_from_bytes(data: &[u8], cover_id: &str) -> Option<(Vec<u8>, String)> {
-    let text = String::from_utf8_lossy(data);
+    let text = crate::xml::decode(data);
 
     // Search for <binary id="cover_id" ...> (case-insensitive on id value)
     let cover_id_lower = cover_id.to_lowercase();
@@ -403,10 +403,15 @@ mod tests {
     /// declared encoding differs from the detected one and has to be applied.
     #[test]
     fn test_parse_fb2_utf16_bom() {
-        let fb2 = r#"<?xml version="1.0" encoding="UTF-16"?>
-<FictionBook><description><title-info>
+        let cover_bytes = b"\x89PNGutf16-cover";
+        let cover_b64 = base64::engine::general_purpose::STANDARD.encode(cover_bytes);
+        let fb2 = format!(
+            r##"<?xml version="1.0" encoding="UTF-16"?>
+<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info>
   <book-title>Основание</book-title><lang>ru</lang>
-</title-info></description></FictionBook>"#;
+  <coverpage><image l:href="#coverid"/></coverpage>
+</title-info></description><binary id="coverid" content-type="image/png">{cover_b64}</binary></FictionBook>"##
+        );
 
         for bom in [0xFEu8, 0xFF] {
             let mut data = if bom == 0xFE {
@@ -425,6 +430,12 @@ mod tests {
             let meta = parse(Cursor::new(data)).unwrap();
             assert_eq!(meta.title, "Основание", "BOM {bom:#X}");
             assert_eq!(meta.lang, "ru", "BOM {bom:#X}");
+            assert_eq!(meta.cover_type, "image/png", "BOM {bom:#X}");
+            assert_eq!(
+                meta.cover_data.as_deref(),
+                Some(cover_bytes.as_slice()),
+                "BOM {bom:#X}"
+            );
         }
     }
 
