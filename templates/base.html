@@ -220,7 +220,10 @@
     </div>
   </nav>
 
-  <div id="bookshelf-status" class="visually-hidden" role="alert" aria-atomic="true" data-message="{{ t.bookshelf.error }}"></div>
+  <div id="bookshelf-status" class="alert alert-danger alert-dismissible fade show ui-status-alert d-none" role="alert" aria-atomic="true" data-message="{{ t.bookshelf.error }}">
+    <span class="ui-status-text"></span>
+    <button type="button" class="btn-close btn-icon" data-bs-dismiss="alert" aria-label="{{ t.common.close }}"></button>
+  </div>
 
   {# ── Main Content ──────────────────────────────────────────── #}
   <main class="container py-4">
@@ -283,7 +286,10 @@
   </footer>
 
   {# ── Cover preview dialog ─────────────────────────────── #}
-  <div id="cover-status" class="visually-hidden" role="alert" aria-atomic="true" data-message="{{ t.book.cover_error }}"></div>
+  <div id="cover-status" class="alert alert-danger alert-dismissible fade show ui-status-alert d-none" role="alert" aria-atomic="true" data-message="{{ t.book.cover_error }}">
+    <span class="ui-status-text"></span>
+    <button type="button" class="btn-close btn-icon" data-bs-dismiss="alert" aria-label="{{ t.common.close }}"></button>
+  </div>
   <dialog id="cover-dialog" class="cover-dialog" aria-label="{{ t.book.view_cover }}">
     <button type="button" class="btn-close btn-icon cover-dialog-close" data-cover-close aria-label="{{ t.common.close }}" autofocus></button>
     <img id="cover-dialog-img" alt="">

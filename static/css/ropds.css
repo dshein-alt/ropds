@@ -330,6 +330,17 @@ footer {
   overflow: hidden;
 }
 
+.ui-status-alert {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  z-index: 1080;
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  margin: 0;
+  transform: translateX(-50%);
+}
+
 /* Search dropdown */
 .search-type-group .btn-check:checked + .btn {
   background-color: var(--ropds-accent);

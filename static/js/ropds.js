@@ -412,6 +412,14 @@
   });
 })();
 
+function setUiStatus(id, message) {
+  var status = document.getElementById(id);
+  if (!status) return;
+  var text = status.querySelector(".ui-status-text");
+  if (text) text.textContent = message;
+  status.classList.toggle("d-none", !message);
+}
+
 // Cover preview dialog
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
@@ -428,8 +436,7 @@
       if (dialog.open) return;
       origin = thumb;
       dialogImg.alt = thumb.dataset.coverAlt || "";
-      var status = document.getElementById("cover-status");
-      if (status) status.textContent = "";
+      setUiStatus("cover-status", "");
       lockedScrollY = window.scrollY;
       document.body.style.top = -lockedScrollY + "px";
       document.body.classList.add("cover-dialog-open");
@@ -463,7 +470,7 @@
       if (!dialog.open) return;
       dialog.close();
       var status = document.getElementById("cover-status");
-      if (status) status.textContent = status.dataset.message || "";
+      setUiStatus("cover-status", status ? status.dataset.message : "");
     });
   });
 })();
@@ -513,7 +520,7 @@ function convertUtcTimes(root) {
   document.addEventListener("DOMContentLoaded", function () {
     function reportError() {
       var status = document.getElementById("bookshelf-status");
-      if (status) status.textContent = status.dataset.message || "";
+      setUiStatus("bookshelf-status", status ? status.dataset.message : "");
     }
 
     document.addEventListener("click", function (e) {
@@ -524,8 +531,7 @@ function convertUtcTimes(root) {
       var form = btn.closest("form");
       if (!form) return;
 
-      var status = document.getElementById("bookshelf-status");
-      if (status) status.textContent = "";
+      setUiStatus("bookshelf-status", "");
       var body = new URLSearchParams(new FormData(form)).toString();
       btn.disabled = true;
 
