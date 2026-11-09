@@ -19,6 +19,7 @@ navigation = "Navigation"
 toggle_menu = "Navigation umschalten"
 
 [search]
+by = "Suchen nach"
 placeholder = "Suchen..."
 by_title = "Titel"
 by_author = "Autor"

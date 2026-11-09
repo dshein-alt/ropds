@@ -19,6 +19,7 @@ navigation = "Навигация"
 toggle_menu = "Переключить навигацию"
 
 [search]
+by = "Искать по"
 placeholder = "Поиск..."
 by_title = "Название"
 by_author = "Автор"

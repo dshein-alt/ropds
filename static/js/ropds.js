@@ -239,18 +239,23 @@
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("search-form");
+    const group = document.getElementById("search-type-group");
     const radios = document.querySelectorAll('input[name="search-target"]');
-    if (!form || !radios.length) return;
-    // Keep form action in sync with the currently selected radio on initial load.
-    const selected = document.querySelector('input[name="search-target"]:checked');
-    if (selected && selected.dataset.action) {
-      form.action = selected.dataset.action;
+    if (!form || !group || !radios.length) return;
+
+    function syncAction() {
+      const selected = document.querySelector('input[name="search-target"]:checked');
+      if (selected && selected.dataset.action) {
+        form.action = selected.dataset.action;
+      }
     }
+
+    syncAction();
     radios.forEach(function (radio) {
-      radio.addEventListener("change", function () {
-        form.action = this.dataset.action;
-      });
+      radio.addEventListener("change", syncAction);
     });
+    window.addEventListener("pageshow", syncAction);
+    group.hidden = false;
   });
 })();
 

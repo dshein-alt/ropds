@@ -76,6 +76,28 @@ main {
 
 .search-type-group {
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.search-type-group[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 1199.98px) {
+  .navbar-search-row {
+    flex-wrap: wrap;
+  }
+
+  .search-type-group {
+    order: 3;
+    flex: 0 0 100%;
+    margin-top: 0.5rem !important;
+  }
+
+  .search-type-group .btn {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
 }
 
 /* Utility: allow text-truncate inside flex items */

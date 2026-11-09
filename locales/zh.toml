@@ -19,6 +19,7 @@ navigation = "导航"
 toggle_menu = "切换导航"
 
 [search]
+by = "搜索方式"
 placeholder = "搜索..."
 by_title = "标题"
 by_author = "作者"

@@ -32,8 +32,7 @@
       {# ── Persistent search + Theme / Language / User Menu ── #}
       <div class="navbar-search-row d-flex align-items-center w-100 pt-2 pb-1">
         <form id="search-form" class="d-flex flex-grow-1 me-2"
-              action="{% if search_target == 'author' %}/web/search/authors{% elif search_target == 'series' %}/web/search/series{% else %}/web/search/books{% endif %}"
-              method="get" role="search">
+              action="/web/search/books" method="get" role="search">
           <label class="visually-hidden" for="global-search">{{ t.nav.search }}</label>
           <div class="input-group">
             <input type="hidden" name="type" value="m">
@@ -43,14 +42,15 @@
             </button>
           </div>
         </form>
-        <div class="search-type-group btn-group btn-group-sm d-none d-xl-flex" role="group">
+        <fieldset class="search-type-group btn-group btn-group-sm border-0 m-0 p-0" id="search-type-group" hidden>
+          <legend class="visually-hidden">{{ t.search.by }}</legend>
           <input type="radio" class="btn-check" name="search-target" id="st-title" data-action="/web/search/books"{% if search_target == 'title' %} checked{% endif %}>
           <label class="btn btn-outline-secondary" for="st-title">{{ t.search.by_title }}</label>
           <input type="radio" class="btn-check" name="search-target" id="st-author" data-action="/web/search/authors"{% if search_target == 'author' %} checked{% endif %}>
           <label class="btn btn-outline-secondary" for="st-author">{{ t.search.by_author }}</label>
           <input type="radio" class="btn-check" name="search-target" id="st-series" data-action="/web/search/series"{% if search_target == 'series' %} checked{% endif %}>
           <label class="btn btn-outline-secondary" for="st-series">{{ t.search.by_series }}</label>
-        </div>
+        </fieldset>
         <div class="vr mx-1 d-none d-xl-block"></div>
         <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
           <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="{{ t.theme.toggle }}">
