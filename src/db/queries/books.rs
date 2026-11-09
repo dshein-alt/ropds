@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use rand::RngExt;
+
 use crate::db::queries::{PrefixMode, prefix_search};
 use crate::db::{DbBackend, DbPool};
 
@@ -481,9 +483,42 @@ pub async fn physical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Err
 }
 
 /// Random available book (for footer).
+///
+/// Probes random primary keys instead of assigning a random key to every row
+/// and sorting the whole table, which took seconds on libraries of 100k+ books
+/// (issue #26); it also used SQLite's `RANDOM()`, which MySQL does not have.
 pub async fn get_random(pool: &DbPool) -> Result<Option<Book>, sqlx::Error> {
-    let sql = pool.sql("SELECT * FROM books WHERE avail > 0 ORDER BY ABS(RANDOM()) LIMIT 1");
+    get_random_with(pool, |min_id, max_id| {
+        rand::rng().random_range(min_id..=max_id)
+    })
+    .await
+}
+
+async fn get_random_with(
+    pool: &DbPool,
+    mut random_id: impl FnMut(i64, i64) -> i64,
+) -> Result<Option<Book>, sqlx::Error> {
+    let sql = pool.sql("SELECT MIN(id), MAX(id) FROM books");
+    let (min_id, max_id): (Option<i64>, Option<i64>) =
+        sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    let (Some(min_id), Some(max_id)) = (min_id, max_id) else {
+        return Ok(None);
+    };
+
+    let sql = pool.sql("SELECT * FROM books WHERE id = ? AND avail > 0");
+    for _ in 0..10 {
+        let id = random_id(min_id, max_id);
+        let book = sqlx::query_as::<_, Book>(&sql)
+            .bind(id)
+            .fetch_optional(pool.inner())
+            .await?;
+        if book.is_some() {
+            return Ok(book);
+        }
+    }
+
     sqlx::query_as::<_, Book>(&sql)
+        .bind(42_i64)
         .fetch_optional(pool.inner())
         .await
 }
@@ -1794,6 +1829,81 @@ mod tests {
         assert_eq!(
             get_by_id(&pool, second).await.unwrap().unwrap().avail,
             AvailStatus::Deleted as i32
+        );
+    }
+
+    /// Issue #26: every available ID is reachable, and deleted IDs are skipped.
+    #[tokio::test]
+    async fn test_get_random_covers_every_available_book() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            ids.push(insert_test_book(&pool, cat, &format!("Book {i}"), 2).await);
+        }
+        let hidden = insert_test_book(&pool, cat, "Deleted Book", 2).await;
+        set_avail(&pool, hidden, AvailStatus::Deleted)
+            .await
+            .unwrap();
+
+        let mut seen = std::collections::HashSet::new();
+        let mut attempt = 0;
+        for _ in 0..=ids.len() {
+            let book = get_random_with(&pool, |_, _| {
+                let id = if attempt == 0 {
+                    hidden
+                } else {
+                    ids[(attempt - 1) % ids.len()]
+                };
+                attempt += 1;
+                id
+            })
+            .await
+            .unwrap()
+            .expect("library has available books");
+            assert_ne!(book.id, hidden, "deleted book offered");
+            assert!(ids.contains(&book.id), "unexpected book {}", book.id);
+            seen.insert(book.id);
+        }
+
+        assert_eq!(seen.len(), ids.len());
+    }
+
+    #[tokio::test]
+    async fn test_get_random_uses_id_42_after_ten_misses() {
+        let pool = create_test_pool().await;
+        let cat = ensure_catalog(&pool).await;
+        let deleted = insert_test_book(&pool, cat, "Deleted", 2).await;
+        let fallback = insert_test_book(&pool, cat, "Fallback", 2).await;
+        set_avail(&pool, deleted, AvailStatus::Deleted)
+            .await
+            .unwrap();
+
+        let sql = pool.sql("UPDATE books SET id = 42 WHERE id = ?");
+        sqlx::query(&sql)
+            .bind(fallback)
+            .execute(pool.inner())
+            .await
+            .unwrap();
+
+        let mut attempts = 0;
+        let book = get_random_with(&pool, |_, _| {
+            attempts += 1;
+            deleted
+        })
+        .await
+        .unwrap()
+        .expect("fallback book is available");
+        assert_eq!(attempts, 10);
+        assert_eq!(book.id, 42);
+
+        set_avail(&pool, 42, AvailStatus::Deleted).await.unwrap();
+        assert!(
+            get_random_with(&pool, |_, _| deleted)
+                .await
+                .unwrap()
+                .is_none()
         );
     }
 

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The "random book" widget no longer stalls page loading in large libraries. Picking a book now takes the same short moment whether the library holds a few hundred or a few hundred thousand books, instead of several seconds. On MySQL setups this widget never showed a book at all, and now works as intended.
+
 ## [0.13.2] - 2026-11-02
 
 ### Added
