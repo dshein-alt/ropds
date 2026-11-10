@@ -709,12 +709,13 @@ mod tests {
         let cat_id = ensure_catalog(&pool, "a/b", CatType::Normal).await.unwrap();
         assert!(cat_id > 0);
 
-        let parent: Option<(i64,)> =
-            sqlx::query_as(&pool.sql("SELECT id FROM catalogs WHERE path = ?"))
-                .bind("a")
-                .fetch_optional(pool.inner())
-                .await
-                .unwrap();
+        let parent: Option<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(
+            &*pool.sql("SELECT id FROM catalogs WHERE path = ?"),
+        ))
+        .bind("a")
+        .fetch_optional(pool.inner())
+        .await
+        .unwrap();
         assert!(parent.is_some());
 
         let a1 = ensure_author(&pool, "Isaac Asimov").await.unwrap();

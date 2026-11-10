@@ -54,11 +54,12 @@ pub async fn basic_auth_layer(
 
 /// Verify username/password against the users table using argon2.
 async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: &str) -> bool {
-    let result: Result<Option<(String,)>, _> =
-        sqlx::query_as(&pool.sql("SELECT password_hash FROM users WHERE username = ?"))
-            .bind(username)
-            .fetch_optional(pool.inner())
-            .await;
+    let result: Result<Option<(String,)>, _> = sqlx::query_as(sqlx::AssertSqlSafe(
+        &*pool.sql("SELECT password_hash FROM users WHERE username = ?"),
+    ))
+    .bind(username)
+    .fetch_optional(pool.inner())
+    .await;
 
     match result {
         Ok(Some((stored_hash,))) => crate::password::verify(password, &stored_hash),
@@ -86,11 +87,12 @@ pub async fn get_user_id_from_headers(
     let credentials = String::from_utf8(decoded).ok()?;
     let (username, password) = credentials.split_once(':')?;
 
-    let result: Result<Option<(i64, String)>, _> =
-        sqlx::query_as(&pool.sql("SELECT id, password_hash FROM users WHERE username = ?"))
-            .bind(username)
-            .fetch_optional(pool.inner())
-            .await;
+    let result: Result<Option<(i64, String)>, _> = sqlx::query_as(sqlx::AssertSqlSafe(
+        &*pool.sql("SELECT id, password_hash FROM users WHERE username = ?"),
+    ))
+    .bind(username)
+    .fetch_optional(pool.inner())
+    .await;
     match result.ok().flatten() {
         Some((id, hash)) if crate::password::verify(password, &hash) => Some(id),
         _ => None,
@@ -124,9 +126,9 @@ mod tests {
     async fn test_verify_credentials_and_get_user_id_from_headers() {
         let pool = create_test_pool().await;
         let hash = crate::password::hash("secret123");
-        sqlx::query(
-            &pool.sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)"),
-        )
+        sqlx::query(sqlx::AssertSqlSafe(&*pool.sql(
+            "INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)",
+        )))
         .bind("alice")
         .bind(hash)
         .execute(pool.inner())

@@ -7,7 +7,7 @@ use super::*;
 /// Insert a catalog row directly and return its id.
 async fn insert_cat(pool: &DbPool, parent_id: Option<i64>, path: &str, cat_name: &str) -> i64 {
     let sql = pool.sql("INSERT INTO catalogs (parent_id, path, cat_name) VALUES (?, ?, ?)");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(parent_id)
         .bind(path)
         .bind(cat_name)
@@ -15,7 +15,7 @@ async fn insert_cat(pool: &DbPool, parent_id: Option<i64>, path: &str, cat_name:
         .await
         .unwrap();
     let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-    let (id,): (i64,) = sqlx::query_as(&sql)
+    let (id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(path)
         .fetch_one(pool.inner())
         .await
@@ -31,7 +31,7 @@ async fn insert_book_in_cat(pool: &DbPool, catalog_id: i64, title: &str) {
          lang, lang_code, size, avail, cat_type, cover, cover_type) \
          VALUES (?, ?, '/', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .bind(format!("{title}.fb2"))
         .bind(title)

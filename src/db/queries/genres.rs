@@ -20,7 +20,7 @@ pub async fn get_by_id(pool: &DbPool, id: i64, lang: &str) -> Result<Option<Genr
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          WHERE g.id = ?",
     );
-    sqlx::query_as::<_, Genre>(&sql)
+    sqlx::query_as::<_, Genre>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang)
         .bind(lang)
         .bind(id)
@@ -34,7 +34,7 @@ pub async fn get_section_code(
     section_id: i64,
 ) -> Result<Option<String>, sqlx::Error> {
     let sql = pool.sql("SELECT code FROM genre_sections WHERE id = ?");
-    let row: Option<(String,)> = sqlx::query_as(&sql)
+    let row: Option<(String,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(section_id)
         .fetch_optional(pool.inner())
         .await?;
@@ -44,7 +44,7 @@ pub async fn get_section_code(
 /// Genre by code (no translations needed — used by scanner for linking).
 pub async fn get_by_code(pool: &DbPool, code: &str) -> Result<Option<Genre>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM genres WHERE code = ?");
-    sqlx::query_as::<_, Genre>(&sql)
+    sqlx::query_as::<_, Genre>(sqlx::AssertSqlSafe(&*sql))
         .bind(code)
         .fetch_optional(pool.inner())
         .await
@@ -59,7 +59,7 @@ pub async fn get_sections(pool: &DbPool, lang: &str) -> Result<Vec<(String, Stri
          LEFT JOIN genre_section_translations gst_en ON gst_en.section_id = gs.id AND gst_en.lang = 'en' \
          ORDER BY name",
     );
-    let rows: Vec<(String, String)> = sqlx::query_as(&sql)
+    let rows: Vec<(String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(lang)
         .fetch_all(pool.inner())
         .await?;
@@ -86,7 +86,7 @@ pub async fn get_by_section(
          WHERE gs.code = ? \
          ORDER BY subsection",
     );
-    sqlx::query_as::<_, Genre>(&sql)
+    sqlx::query_as::<_, Genre>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang)
         .bind(lang)
         .bind(section_code)
@@ -109,7 +109,7 @@ pub async fn get_all(pool: &DbPool, lang: &str) -> Result<Vec<Genre>, sqlx::Erro
          LEFT JOIN genre_translations gt_en ON gt_en.genre_id = g.id AND gt_en.lang = 'en' \
          ORDER BY section, subsection",
     );
-    sqlx::query_as::<_, Genre>(&sql)
+    sqlx::query_as::<_, Genre>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang)
         .bind(lang)
         .fetch_all(pool.inner())
@@ -137,7 +137,7 @@ pub async fn get_for_book(
          WHERE bg.book_id = ? \
          ORDER BY section, subsection",
     );
-    sqlx::query_as::<_, Genre>(&sql)
+    sqlx::query_as::<_, Genre>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang)
         .bind(lang)
         .bind(book_id)
@@ -169,7 +169,7 @@ pub async fn get_sections_with_counts(
          GROUP BY gs.code, gst.name, gst_en.name \
          ORDER BY name",
     );
-    let rows: Vec<(String, String, i64)> = sqlx::query_as(&sql)
+    let rows: Vec<(String, String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(lang)
         .fetch_all(pool.inner())
         .await?;
@@ -206,12 +206,13 @@ pub async fn get_by_section_with_counts(
                   gst.name, gst_en.name, gt.name, gt_en.name \
          ORDER BY subsection",
     );
-    let rows: Vec<(i64, String, String, String, i64, i64)> = sqlx::query_as(&sql)
-        .bind(lang)
-        .bind(lang)
-        .bind(section_code)
-        .fetch_all(pool.inner())
-        .await?;
+    let rows: Vec<(i64, String, String, String, i64, i64)> =
+        sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .bind(lang)
+            .bind(lang)
+            .bind(section_code)
+            .fetch_all(pool.inner())
+            .await?;
     Ok(rows
         .into_iter()
         .map(|(id, code, section, subsection, section_id, cnt)| {
@@ -242,7 +243,7 @@ pub async fn link_book(pool: &DbPool, book_id: i64, genre_id: i64) -> Result<(),
         }
     };
     let sql = pool.sql(sql);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .bind(genre_id)
         .execute(pool.inner())
@@ -266,7 +267,7 @@ pub async fn set_book_genres(
     genre_ids: &[i64],
 ) -> Result<(), sqlx::Error> {
     let del = pool.sql("DELETE FROM book_genres WHERE book_id = ?");
-    sqlx::query(&del)
+    sqlx::query(sqlx::AssertSqlSafe(&*del))
         .bind(book_id)
         .execute(pool.inner())
         .await?;
@@ -279,7 +280,7 @@ pub async fn set_book_genres(
     };
     let sql = pool.sql(sql);
     for &genre_id in genre_ids {
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(book_id)
             .bind(genre_id)
             .execute(pool.inner())
@@ -294,19 +295,22 @@ pub async fn set_book_genres(
 
 pub async fn get_all_sections(pool: &DbPool) -> Result<Vec<GenreSection>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM genre_sections ORDER BY code");
-    sqlx::query_as::<_, GenreSection>(&sql)
+    sqlx::query_as::<_, GenreSection>(sqlx::AssertSqlSafe(&*sql))
         .fetch_all(pool.inner())
         .await
 }
 
 pub async fn create_section(pool: &DbPool, code: &str) -> Result<i64, sqlx::Error> {
     let sql = pool.sql("INSERT INTO genre_sections (code) VALUES (?)");
-    let result = sqlx::query(&sql).bind(code).execute(pool.inner()).await?;
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
+        .bind(code)
+        .execute(pool.inner())
+        .await?;
     if let Some(id) = result.last_insert_id() {
         return Ok(id);
     }
     let sql = pool.sql("SELECT id FROM genre_sections WHERE code = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(code)
         .fetch_one(pool.inner())
         .await?;
@@ -315,7 +319,7 @@ pub async fn create_section(pool: &DbPool, code: &str) -> Result<i64, sqlx::Erro
 
 pub async fn delete_section(pool: &DbPool, section_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM genre_sections WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(section_id)
         .execute(pool.inner())
         .await?;
@@ -332,7 +336,7 @@ pub async fn get_section_translations(
 ) -> Result<Vec<GenreSectionTranslation>, sqlx::Error> {
     let sql =
         pool.sql("SELECT * FROM genre_section_translations WHERE section_id = ? ORDER BY lang");
-    sqlx::query_as::<_, GenreSectionTranslation>(&sql)
+    sqlx::query_as::<_, GenreSectionTranslation>(sqlx::AssertSqlSafe(&*sql))
         .bind(section_id)
         .fetch_all(pool.inner())
         .await
@@ -355,7 +359,7 @@ pub async fn upsert_section_translation(
         }
     };
     let sql = pool.sql(sql);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(section_id)
         .bind(lang)
         .bind(name)
@@ -370,7 +374,7 @@ pub async fn delete_section_translation(
     lang: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM genre_section_translations WHERE section_id = ? AND lang = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(section_id)
         .bind(lang)
         .execute(pool.inner())
@@ -385,7 +389,7 @@ pub async fn delete_section_translation(
 pub async fn create_genre(pool: &DbPool, code: &str, section_id: i64) -> Result<i64, sqlx::Error> {
     let sql = pool
         .sql("INSERT INTO genres (code, section, subsection, section_id) VALUES (?, '', '', ?)");
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(code)
         .bind(section_id)
         .execute(pool.inner())
@@ -394,7 +398,7 @@ pub async fn create_genre(pool: &DbPool, code: &str, section_id: i64) -> Result<
         return Ok(id);
     }
     let sql = pool.sql("SELECT id FROM genres WHERE code = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(code)
         .fetch_one(pool.inner())
         .await?;
@@ -403,7 +407,7 @@ pub async fn create_genre(pool: &DbPool, code: &str, section_id: i64) -> Result<
 
 pub async fn delete_genre(pool: &DbPool, genre_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM genres WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(genre_id)
         .execute(pool.inner())
         .await?;
@@ -419,7 +423,7 @@ pub async fn get_genre_translations(
     genre_id: i64,
 ) -> Result<Vec<GenreTranslation>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM genre_translations WHERE genre_id = ? ORDER BY lang");
-    sqlx::query_as::<_, GenreTranslation>(&sql)
+    sqlx::query_as::<_, GenreTranslation>(sqlx::AssertSqlSafe(&*sql))
         .bind(genre_id)
         .fetch_all(pool.inner())
         .await
@@ -442,7 +446,7 @@ pub async fn upsert_genre_translation(
         }
     };
     let sql = pool.sql(sql);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(genre_id)
         .bind(lang)
         .bind(name)
@@ -457,7 +461,7 @@ pub async fn delete_genre_translation(
     lang: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM genre_translations WHERE genre_id = ? AND lang = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(genre_id)
         .bind(lang)
         .execute(pool.inner())
@@ -481,7 +485,9 @@ pub async fn get_available_languages(pool: &DbPool) -> Result<Vec<String>, sqlx:
              SELECT lang FROM genre_translations \
          ) AS langs ORDER BY lang",
     );
-    let rows: Vec<(String,)> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
+    let rows: Vec<(String,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_all(pool.inner())
+        .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
@@ -497,7 +503,9 @@ pub async fn get_all_admin(
          LEFT JOIN genre_sections gs ON gs.id = g.section_id \
          ORDER BY section_code, g.code",
     );
-    let genres: Vec<(i64, String, String)> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
+    let genres: Vec<(i64, String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_all(pool.inner())
+        .await?;
 
     let mut result = Vec::with_capacity(genres.len());
     for (id, code, section_code) in genres {
@@ -517,9 +525,15 @@ mod tests {
     async fn ensure_catalog(pool: &DbPool) -> i64 {
         let sql = pool
             .sql("INSERT INTO catalogs (path, cat_name) VALUES ('/genres-test', 'genres-test')");
-        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/genres-test'");
-        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         row.0
     }
 

@@ -570,16 +570,15 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
 
     match (allow_upload, is_superuser) {
         (Some(u), Some(a)) => {
-            if let Err(e) = sqlx::query(
-                &state
-                    .db
-                    .sql("UPDATE users SET allow_upload = ?, is_superuser = ? WHERE id = ?"),
-            )
-            .bind(u)
-            .bind(a)
-            .bind(user_id)
-            .execute(state.db.inner())
-            .await
+            if let Err(e) =
+                sqlx::query(sqlx::AssertSqlSafe(&*state.db.sql(
+                    "UPDATE users SET allow_upload = ?, is_superuser = ? WHERE id = ?",
+                )))
+                .bind(u)
+                .bind(a)
+                .bind(user_id)
+                .execute(state.db.inner())
+                .await
             {
                 tracing::warn!(
                     "Keycloak role sync failed (allow_upload + is_superuser) for user {user_id}: {e}"
@@ -587,11 +586,11 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
             }
         }
         (Some(u), None) => {
-            if let Err(e) = sqlx::query(
-                &state
+            if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(
+                &*state
                     .db
                     .sql("UPDATE users SET allow_upload = ? WHERE id = ?"),
-            )
+            ))
             .bind(u)
             .bind(user_id)
             .execute(state.db.inner())
@@ -601,11 +600,11 @@ async fn sync_keycloak_roles(user_id: i64, roles: &[String], state: &AppState) {
             }
         }
         (None, Some(a)) => {
-            if let Err(e) = sqlx::query(
-                &state
+            if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(
+                &*state
                     .db
                     .sql("UPDATE users SET is_superuser = ? WHERE id = ?"),
-            )
+            ))
             .bind(a)
             .bind(user_id)
             .execute(state.db.inner())

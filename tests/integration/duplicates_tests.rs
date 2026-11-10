@@ -6,14 +6,14 @@ use super::*;
 async fn insert_dup_book(pool: &DbPool, title: &str, search_title: &str, filename: &str) -> i64 {
     let cat_path = format!("/dup-it-{filename}");
     let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, 'dup-it')");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(&cat_path)
         .execute(pool.inner())
         .await
         .unwrap();
 
     let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-    let (catalog_id,): (i64,) = sqlx::query_as(&sql)
+    let (catalog_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(&cat_path)
         .fetch_one(pool.inner())
         .await
@@ -24,7 +24,7 @@ async fn insert_dup_book(pool: &DbPool, title: &str, search_title: &str, filenam
          lang, lang_code, size, avail, cat_type, cover, cover_type) \
          VALUES (?, ?, '/dup-it', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .bind(filename)
         .bind(title)
@@ -34,7 +34,7 @@ async fn insert_dup_book(pool: &DbPool, title: &str, search_title: &str, filenam
         .unwrap();
 
     let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND filename = ?");
-    let (book_id,): (i64,) = sqlx::query_as(&sql)
+    let (book_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .bind(filename)
         .fetch_one(pool.inner())
@@ -47,14 +47,14 @@ async fn insert_author(pool: &DbPool, name: &str) -> i64 {
     let search = name.to_uppercase();
     let sql =
         pool.sql("INSERT INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, 2)");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(name)
         .bind(&search)
         .execute(pool.inner())
         .await
         .unwrap();
     let sql = pool.sql("SELECT id FROM authors WHERE full_name = ?");
-    let (id,): (i64,) = sqlx::query_as(&sql)
+    let (id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(name)
         .fetch_one(pool.inner())
         .await
@@ -64,7 +64,7 @@ async fn insert_author(pool: &DbPool, name: &str) -> i64 {
 
 async fn link_author(pool: &DbPool, book_id: i64, author_id: i64) {
     let sql = pool.sql("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?)");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .bind(author_id)
         .execute(pool.inner())
@@ -325,21 +325,27 @@ async fn admin_delete_zip_book_adds_suppression() {
 
     // Insert a ZIP-type book (cat_type = 1)
     let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/zip-cat', 'zip-it')");
-    sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
+        .execute(pool.inner())
+        .await
+        .unwrap();
     let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/zip-cat'");
-    let (catalog_id,): (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+    let (catalog_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_one(pool.inner())
+        .await
+        .unwrap();
     let sql = pool.sql(
         "INSERT INTO books (catalog_id, filename, path, format, title, search_title, \
          lang, lang_code, size, avail, cat_type, cover, cover_type) \
          VALUES (?, 'book.fb2', '/archive.zip', 'fb2', 'Zip Book', 'ZIP BOOK', 'en', 2, 100, 2, 1, 0, '')",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .execute(pool.inner())
         .await
         .unwrap();
     let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND filename = 'book.fb2'");
-    let (book_id,): (i64,) = sqlx::query_as(&sql)
+    let (book_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .fetch_one(pool.inner())
         .await

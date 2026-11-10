@@ -68,13 +68,13 @@ async fn opds_recent_feed_has_prev_next_navigation() {
         .unwrap();
 
     let sql = pool.sql("UPDATE books SET reg_date = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind("2024-01-01 00:00:00")
         .bind(old_book.id)
         .execute(pool.inner())
         .await
         .unwrap();
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind("2024-05-01 00:00:00")
         .bind(new_book.id)
         .execute(pool.inner())

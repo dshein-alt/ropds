@@ -4,7 +4,7 @@ use crate::db::models::{CatType, Catalog};
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Catalog>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM catalogs WHERE id = ?");
-    sqlx::query_as::<_, Catalog>(&sql)
+    sqlx::query_as::<_, Catalog>(sqlx::AssertSqlSafe(&*sql))
         .bind(id)
         .fetch_optional(pool.inner())
         .await
@@ -12,7 +12,7 @@ pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Catalog>, sqlx::
 
 pub async fn get_children(pool: &DbPool, parent_id: i64) -> Result<Vec<Catalog>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM catalogs WHERE parent_id = ? ORDER BY cat_name");
-    sqlx::query_as::<_, Catalog>(&sql)
+    sqlx::query_as::<_, Catalog>(sqlx::AssertSqlSafe(&*sql))
         .bind(parent_id)
         .fetch_all(pool.inner())
         .await
@@ -20,14 +20,14 @@ pub async fn get_children(pool: &DbPool, parent_id: i64) -> Result<Vec<Catalog>,
 
 pub async fn get_root_catalogs(pool: &DbPool) -> Result<Vec<Catalog>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM catalogs WHERE parent_id IS NULL ORDER BY cat_name");
-    sqlx::query_as::<_, Catalog>(&sql)
+    sqlx::query_as::<_, Catalog>(sqlx::AssertSqlSafe(&*sql))
         .fetch_all(pool.inner())
         .await
 }
 
 pub async fn find_by_path(pool: &DbPool, path: &str) -> Result<Option<Catalog>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM catalogs WHERE path = ?");
-    sqlx::query_as::<_, Catalog>(&sql)
+    sqlx::query_as::<_, Catalog>(sqlx::AssertSqlSafe(&*sql))
         .bind(path)
         .fetch_optional(pool.inner())
         .await
@@ -53,7 +53,7 @@ pub async fn insert(
         }
     };
     let sql = pool.sql(raw);
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(parent_id)
         .bind(path)
         .bind(cat_name)
@@ -69,7 +69,7 @@ pub async fn insert(
     }
     // Fallback: query back by path (INSERT OR IGNORE returns 0 on conflict)
     let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(path)
         .fetch_one(pool.inner())
         .await?;
@@ -85,7 +85,7 @@ pub async fn update_archive_meta(
 ) -> Result<(), sqlx::Error> {
     let sql =
         pool.sql("UPDATE catalogs SET cat_type = ?, cat_size = ?, cat_mtime = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(cat_type as i32)
         .bind(cat_size)
         .bind(cat_mtime)
@@ -113,7 +113,9 @@ pub async fn delete_empty(pool: &DbPool) -> Result<u64, sqlx::Error> {
     );
     let mut total = 0u64;
     loop {
-        let result = sqlx::query(&sql).execute(pool.inner()).await?;
+        let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await?;
         let deleted = result.rows_affected();
         if deleted == 0 {
             break;
@@ -135,7 +137,7 @@ mod tests {
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/catalogs', 'fb2', ?, ?, 'en', 2, 100, ?, ?, 0, '')",
         );
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(format!("{title}.fb2"))
             .bind(title)
@@ -147,7 +149,7 @@ mod tests {
             .unwrap();
 
         let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(title)
             .fetch_one(pool.inner())

@@ -266,7 +266,9 @@ async fn clear_data_tables(pool: &sqlx::AnyPool, backend: DbBackend) -> Result<(
                 "TRUNCATE TABLE {} RESTART IDENTITY CASCADE",
                 quoted.join(", ")
             );
-            sqlx::query(&sql).execute(&mut *conn).await?;
+            sqlx::query(sqlx::AssertSqlSafe(&*sql))
+                .execute(&mut *conn)
+                .await?;
         }
         DbBackend::Mysql => {
             sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
@@ -275,7 +277,9 @@ async fn clear_data_tables(pool: &sqlx::AnyPool, backend: DbBackend) -> Result<(
             for t in &tables {
                 let safe = t.replace('`', "``");
                 let sql = format!("TRUNCATE TABLE `{safe}`");
-                sqlx::query(&sql).execute(&mut *conn).await?;
+                sqlx::query(sqlx::AssertSqlSafe(&*sql))
+                    .execute(&mut *conn)
+                    .await?;
             }
             sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
                 .execute(&mut *conn)
@@ -287,7 +291,9 @@ async fn clear_data_tables(pool: &sqlx::AnyPool, backend: DbBackend) -> Result<(
             for t in &tables {
                 let safe = t.replace('"', "\"\"");
                 let sql = format!("DELETE FROM \"{safe}\"");
-                sqlx::query(&sql).execute(&mut *conn).await?;
+                sqlx::query(sqlx::AssertSqlSafe(&*sql))
+                    .execute(&mut *conn)
+                    .await?;
             }
             // Reset AUTOINCREMENT counters if the sqlite_sequence table exists.
             let _ = sqlx::query("DELETE FROM sqlite_sequence")
@@ -332,7 +338,9 @@ async fn preflight_init(pool: &sqlx::AnyPool, backend: DbBackend) -> Result<(), 
             DbBackend::Mysql => format!("`{}`", t.replace('`', "``")),
         };
         let sql = format!("SELECT COUNT(*) FROM {quoted}");
-        let (count,): (i64,) = sqlx::query_as(&sql).fetch_one(pool).await?;
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool)
+            .await?;
         if count > 0 {
             populated.push((t.to_string(), count));
         }

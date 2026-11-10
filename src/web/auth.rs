@@ -248,11 +248,12 @@ pub async fn logout(
 
 /// Verify username/password against the users table using argon2.
 async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: &str) -> bool {
-    let result: Result<Option<(String,)>, _> =
-        sqlx::query_as(&pool.sql("SELECT password_hash FROM users WHERE username = ?"))
-            .bind(username)
-            .fetch_optional(pool.inner())
-            .await;
+    let result: Result<Option<(String,)>, _> = sqlx::query_as(sqlx::AssertSqlSafe(
+        &*pool.sql("SELECT password_hash FROM users WHERE username = ?"),
+    ))
+    .bind(username)
+    .fetch_optional(pool.inner())
+    .await;
 
     match result {
         Ok(Some((stored_hash,))) => crate::password::verify(password, &stored_hash),
@@ -262,11 +263,12 @@ async fn verify_credentials(pool: &crate::db::DbPool, username: &str, password: 
 
 /// Get user ID by username.
 async fn get_user_id(pool: &crate::db::DbPool, username: &str) -> Option<i64> {
-    let result: Result<Option<(i64,)>, _> =
-        sqlx::query_as(&pool.sql("SELECT id FROM users WHERE username = ?"))
-            .bind(username)
-            .fetch_optional(pool.inner())
-            .await;
+    let result: Result<Option<(i64,)>, _> = sqlx::query_as(sqlx::AssertSqlSafe(
+        &*pool.sql("SELECT id FROM users WHERE username = ?"),
+    ))
+    .bind(username)
+    .fetch_optional(pool.inner())
+    .await;
     result.ok().flatten().map(|(id,)| id)
 }
 
@@ -322,9 +324,9 @@ mod tests {
     async fn test_verify_credentials_and_get_user_id() {
         let pool = create_test_pool().await;
         let hash = crate::password::hash("password123");
-        sqlx::query(
-            &pool.sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)"),
-        )
+        sqlx::query(sqlx::AssertSqlSafe(&*pool.sql(
+            "INSERT INTO users (username, password_hash, is_superuser) VALUES (?, ?, 0)",
+        )))
         .bind("alice")
         .bind(hash)
         .execute(pool.inner())

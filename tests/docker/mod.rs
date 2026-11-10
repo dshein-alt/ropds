@@ -154,7 +154,7 @@ pub async fn create_test_user(
         "INSERT INTO users (username, password_hash, is_superuser, display_name, password_change_required, allow_upload) \
          VALUES (?, ?, ?, ?, 0, ?)",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(username)
         .bind(&password_hash)
         .bind(su)
@@ -165,7 +165,7 @@ pub async fn create_test_user(
         .expect("should create test user");
 
     let sql = pool.sql("SELECT id FROM users WHERE username = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(username)
         .fetch_one(pool.inner())
         .await

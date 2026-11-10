@@ -8,7 +8,7 @@ use crate::db::models::Author;
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Author>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM authors WHERE id = ?");
-    sqlx::query_as::<_, Author>(&sql)
+    sqlx::query_as::<_, Author>(sqlx::AssertSqlSafe(&*sql))
         .bind(id)
         .fetch_optional(pool.inner())
         .await
@@ -25,7 +25,7 @@ pub async fn search_by_name(
         "SELECT * FROM authors WHERE search_full_name LIKE ? \
          ORDER BY search_full_name LIMIT ? OFFSET ?",
     );
-    sqlx::query_as::<_, Author>(&sql)
+    sqlx::query_as::<_, Author>(sqlx::AssertSqlSafe(&*sql))
         .bind(&pattern)
         .bind(limit)
         .bind(offset)
@@ -46,7 +46,7 @@ pub async fn get_by_lang_code_prefix(
             "SELECT * FROM authors WHERE (? = 0 OR lang_code = ?) \
              ORDER BY search_full_name LIMIT ? OFFSET ?",
         );
-        return sqlx::query_as::<_, Author>(&sql)
+        return sqlx::query_as::<_, Author>(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .bind(limit)
@@ -57,7 +57,7 @@ pub async fn get_by_lang_code_prefix(
     let pf = prefix_search("search_full_name", prefix, mode);
     let raw = build_lang_prefix_listing_sql("authors", "search_full_name", &pf);
     let sql = pool.sql(&raw);
-    let mut q = sqlx::query_as::<_, Author>(&sql)
+    let mut q = sqlx::query_as::<_, Author>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang_code)
         .bind(lang_code);
     for b in &pf.binds {
@@ -68,7 +68,7 @@ pub async fn get_by_lang_code_prefix(
 
 pub async fn find_by_name(pool: &DbPool, full_name: &str) -> Result<Option<Author>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM authors WHERE full_name = ?");
-    sqlx::query_as::<_, Author>(&sql)
+    sqlx::query_as::<_, Author>(sqlx::AssertSqlSafe(&*sql))
         .bind(full_name)
         .fetch_optional(pool.inner())
         .await
@@ -90,7 +90,7 @@ pub async fn insert(
         }
     };
     let sql = pool.sql(sql);
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(full_name)
         .bind(search_full_name)
         .bind(lang_code)
@@ -103,7 +103,7 @@ pub async fn insert(
     }
     // Fallback: query back by name (INSERT OR IGNORE returns 0 on conflict)
     let sql = pool.sql("SELECT id FROM authors WHERE full_name = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(full_name)
         .fetch_one(pool.inner())
         .await?;
@@ -119,7 +119,7 @@ pub async fn link_book(pool: &DbPool, book_id: i64, author_id: i64) -> Result<()
         }
     };
     let sql = pool.sql(sql);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .bind(author_id)
         .execute(pool.inner())
@@ -136,13 +136,13 @@ pub async fn set_book_authors(
 ) -> Result<(), sqlx::Error> {
     // Remember old author IDs before unlinking
     let sql = pool.sql("SELECT author_id FROM book_authors WHERE book_id = ?");
-    let old_ids: Vec<(i64,)> = sqlx::query_as(&sql)
+    let old_ids: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .fetch_all(pool.inner())
         .await?;
 
     let sql = pool.sql("DELETE FROM book_authors WHERE book_id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .execute(pool.inner())
         .await?;
@@ -155,7 +155,7 @@ pub async fn set_book_authors(
     };
     let sql = pool.sql(sql);
     for &author_id in author_ids {
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(book_id)
             .bind(author_id)
             .execute(pool.inner())
@@ -174,13 +174,13 @@ pub async fn set_book_authors(
 /// Delete an author if they have no remaining book links.
 pub async fn delete_if_orphaned(pool: &DbPool, author_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("SELECT COUNT(*) FROM book_authors WHERE author_id = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(author_id)
         .fetch_one(pool.inner())
         .await?;
     if row.0 == 0 {
         let sql = pool.sql("DELETE FROM authors WHERE id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(author_id)
             .execute(pool.inner())
             .await?;
@@ -194,7 +194,7 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Author>, sq
          JOIN book_authors ba ON ba.author_id = a.id \
          WHERE ba.book_id = ? ORDER BY a.full_name",
     );
-    sqlx::query_as::<_, Author>(&sql)
+    sqlx::query_as::<_, Author>(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .fetch_all(pool.inner())
         .await
@@ -204,7 +204,7 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<Author>, sq
 pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
     let sql = pool.sql("SELECT COUNT(*) FROM authors WHERE search_full_name LIKE ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(&pattern)
         .fetch_one(pool.inner())
         .await?;
@@ -223,7 +223,7 @@ pub async fn count_by_lang_code_prefix(
 ) -> Result<i64, sqlx::Error> {
     if prefix.is_empty() {
         let sql = pool.sql("SELECT COUNT(*) FROM authors WHERE ? = 0 OR lang_code = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .fetch_one(pool.inner())
@@ -233,7 +233,7 @@ pub async fn count_by_lang_code_prefix(
     let pf = prefix_search("search_full_name", prefix, mode);
     let raw = build_lang_prefix_count_sql("authors", &pf);
     let sql = pool.sql(&raw);
-    let mut q = sqlx::query_as::<_, (i64,)>(&sql)
+    let mut q = sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang_code)
         .bind(lang_code);
     for b in &pf.binds {
@@ -257,7 +257,7 @@ pub async fn get_name_prefix_groups(
 ) -> Result<Vec<(String, i64)>, sqlx::Error> {
     let names: Vec<(String,)> = if current_prefix.is_empty() {
         let sql = pool.sql("SELECT search_full_name FROM authors WHERE ? = 0 OR lang_code = ?");
-        sqlx::query_as(&sql)
+        sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .fetch_all(pool.inner())
@@ -266,7 +266,7 @@ pub async fn get_name_prefix_groups(
         let pf = prefix_search("search_full_name", current_prefix, mode);
         let raw = build_lang_prefix_names_sql("authors", "search_full_name", &pf);
         let sql = pool.sql(&raw);
-        let mut q = sqlx::query_as::<_, (String,)>(&sql)
+        let mut q = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code);
         for b in &pf.binds {
@@ -415,9 +415,15 @@ mod tests {
 
     async fn ensure_catalog(pool: &DbPool) -> i64 {
         let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/authors', 'authors')");
-        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/authors'");
-        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         row.0
     }
 
@@ -428,7 +434,7 @@ mod tests {
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/authors', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
         );
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(format!("{title}.fb2"))
             .bind(title)
@@ -437,7 +443,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(title)
             .fetch_one(pool.inner())

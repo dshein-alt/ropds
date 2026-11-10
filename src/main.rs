@@ -319,7 +319,7 @@ async fn set_admin_password(pool: &ropds::db::DbPool, password: &str) -> Result<
 
     if let Some((id,)) = existing {
         let sql = pool.sql("UPDATE users SET password_hash = ?, allow_upload = 1, display_name = CASE WHEN display_name = '' THEN 'Administrator' ELSE display_name END WHERE id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(&hashed)
             .bind(id)
             .execute(pool.inner())
@@ -327,7 +327,7 @@ async fn set_admin_password(pool: &ropds::db::DbPool, password: &str) -> Result<
         Ok(false)
     } else {
         let sql = pool.sql("INSERT INTO users (username, password_hash, is_superuser, display_name, allow_upload) VALUES ('admin', ?, 1, 'Administrator', 1)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(&hashed)
             .execute(pool.inner())
             .await?;

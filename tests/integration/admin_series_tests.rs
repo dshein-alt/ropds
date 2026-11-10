@@ -7,14 +7,14 @@ use super::*;
 async fn insert_test_book(pool: &DbPool, title: &str) -> i64 {
     let cat_path = format!("/admin-it-{title}");
     let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, 'admin-it')");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(&cat_path)
         .execute(pool.inner())
         .await
         .unwrap();
 
     let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-    let (catalog_id,): (i64,) = sqlx::query_as(&sql)
+    let (catalog_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(&cat_path)
         .fetch_one(pool.inner())
         .await
@@ -26,7 +26,7 @@ async fn insert_test_book(pool: &DbPool, title: &str) -> i64 {
          lang, lang_code, size, avail, cat_type, cover, cover_type) \
          VALUES (?, ?, '/admin-it', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .bind(format!("{title}.fb2"))
         .bind(title)
@@ -36,7 +36,7 @@ async fn insert_test_book(pool: &DbPool, title: &str) -> i64 {
         .unwrap();
 
     let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
-    let (book_id,): (i64,) = sqlx::query_as(&sql)
+    let (book_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .bind(title)
         .fetch_one(pool.inner())

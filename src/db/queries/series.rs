@@ -8,7 +8,7 @@ use crate::db::models::Series;
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Series>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM series WHERE id = ?");
-    sqlx::query_as::<_, Series>(&sql)
+    sqlx::query_as::<_, Series>(sqlx::AssertSqlSafe(&*sql))
         .bind(id)
         .fetch_optional(pool.inner())
         .await
@@ -25,7 +25,7 @@ pub async fn search_by_name(
         "SELECT * FROM series WHERE search_ser LIKE ? \
          ORDER BY search_ser LIMIT ? OFFSET ?",
     );
-    sqlx::query_as::<_, Series>(&sql)
+    sqlx::query_as::<_, Series>(sqlx::AssertSqlSafe(&*sql))
         .bind(&pattern)
         .bind(limit)
         .bind(offset)
@@ -46,7 +46,7 @@ pub async fn get_by_lang_code_prefix(
             "SELECT * FROM series WHERE (? = 0 OR lang_code = ?) \
              ORDER BY search_ser LIMIT ? OFFSET ?",
         );
-        return sqlx::query_as::<_, Series>(&sql)
+        return sqlx::query_as::<_, Series>(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .bind(limit)
@@ -57,7 +57,7 @@ pub async fn get_by_lang_code_prefix(
     let pf = prefix_search("search_ser", prefix, mode);
     let raw = build_lang_prefix_listing_sql("series", "search_ser", &pf);
     let sql = pool.sql(&raw);
-    let mut q = sqlx::query_as::<_, Series>(&sql)
+    let mut q = sqlx::query_as::<_, Series>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang_code)
         .bind(lang_code);
     for b in &pf.binds {
@@ -68,7 +68,7 @@ pub async fn get_by_lang_code_prefix(
 
 pub async fn find_by_name(pool: &DbPool, ser_name: &str) -> Result<Option<Series>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM series WHERE ser_name = ?");
-    sqlx::query_as::<_, Series>(&sql)
+    sqlx::query_as::<_, Series>(sqlx::AssertSqlSafe(&*sql))
         .bind(ser_name)
         .fetch_optional(pool.inner())
         .await
@@ -90,7 +90,7 @@ pub async fn insert(
         }
     };
     let sql = pool.sql(sql);
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(ser_name)
         .bind(search_ser)
         .bind(lang_code)
@@ -103,7 +103,7 @@ pub async fn insert(
     }
     // Fallback: query back by name (INSERT OR IGNORE returns 0 on conflict)
     let sql = pool.sql("SELECT id FROM series WHERE ser_name = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(ser_name)
         .fetch_one(pool.inner())
         .await?;
@@ -126,7 +126,7 @@ pub async fn link_book(
         }
     };
     let sql = pool.sql(sql);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .bind(series_id)
         .bind(ser_no)
@@ -141,7 +141,7 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<(Series, i3
          FROM series s JOIN book_series bs ON bs.series_id = s.id \
          WHERE bs.book_id = ? ORDER BY s.ser_name",
     );
-    let rows: Vec<(i64, String, String, i32, i32)> = sqlx::query_as(&sql)
+    let rows: Vec<(i64, String, String, i32, i32)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .fetch_all(pool.inner())
         .await?;
@@ -166,7 +166,7 @@ pub async fn get_for_book(pool: &DbPool, book_id: i64) -> Result<Vec<(Series, i3
 pub async fn count_by_name_search(pool: &DbPool, term: &str) -> Result<i64, sqlx::Error> {
     let pattern = format!("%{term}%");
     let sql = pool.sql("SELECT COUNT(*) FROM series WHERE search_ser LIKE ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(&pattern)
         .fetch_one(pool.inner())
         .await?;
@@ -185,7 +185,7 @@ pub async fn count_by_lang_code_prefix(
 ) -> Result<i64, sqlx::Error> {
     if prefix.is_empty() {
         let sql = pool.sql("SELECT COUNT(*) FROM series WHERE ? = 0 OR lang_code = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .fetch_one(pool.inner())
@@ -195,7 +195,7 @@ pub async fn count_by_lang_code_prefix(
     let pf = prefix_search("search_ser", prefix, mode);
     let raw = build_lang_prefix_count_sql("series", &pf);
     let sql = pool.sql(&raw);
-    let mut q = sqlx::query_as::<_, (i64,)>(&sql)
+    let mut q = sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(&*sql))
         .bind(lang_code)
         .bind(lang_code);
     for b in &pf.binds {
@@ -217,7 +217,7 @@ pub async fn get_name_prefix_groups(
 ) -> Result<Vec<(String, i64)>, sqlx::Error> {
     let names: Vec<(String,)> = if current_prefix.is_empty() {
         let sql = pool.sql("SELECT search_ser FROM series WHERE ? = 0 OR lang_code = ?");
-        sqlx::query_as(&sql)
+        sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .fetch_all(pool.inner())
@@ -226,7 +226,7 @@ pub async fn get_name_prefix_groups(
         let pf = prefix_search("search_ser", current_prefix, mode);
         let raw = build_lang_prefix_names_sql("series", "search_ser", &pf);
         let sql = pool.sql(&raw);
-        let mut q = sqlx::query_as::<_, (String,)>(&sql)
+        let mut q = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code);
         for b in &pf.binds {
@@ -244,13 +244,13 @@ pub async fn get_name_prefix_groups(
 /// Delete a series if it has no remaining book links.
 pub async fn delete_if_orphaned(pool: &DbPool, series_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("SELECT COUNT(*) FROM book_series WHERE series_id = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(series_id)
         .fetch_one(pool.inner())
         .await?;
     if row.0 == 0 {
         let sql = pool.sql("DELETE FROM series WHERE id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(series_id)
             .execute(pool.inner())
             .await?;
@@ -269,13 +269,13 @@ pub async fn set_book_series(
 ) -> Result<(), sqlx::Error> {
     // Remember old series IDs before unlinking
     let sql = pool.sql("SELECT series_id FROM book_series WHERE book_id = ?");
-    let old_ids: Vec<(i64,)> = sqlx::query_as(&sql)
+    let old_ids: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .fetch_all(pool.inner())
         .await?;
 
     let sql = pool.sql("DELETE FROM book_series WHERE book_id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .execute(pool.inner())
         .await?;
@@ -306,9 +306,15 @@ mod tests {
 
     async fn ensure_catalog(pool: &DbPool) -> i64 {
         let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/series', 'series')");
-        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/series'");
-        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         row.0
     }
 
@@ -319,7 +325,7 @@ mod tests {
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/series', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
         );
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(format!("{title}.fb2"))
             .bind(title)
@@ -328,7 +334,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(title)
             .fetch_one(pool.inner())

@@ -9,7 +9,7 @@ use crate::db::models::{AvailStatus, Book, CatType};
 
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<Book>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM books WHERE id = ?");
-    sqlx::query_as::<_, Book>(&sql)
+    sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
         .bind(id)
         .fetch_optional(pool.inner())
         .await
@@ -28,7 +28,7 @@ pub async fn get_by_catalog(
              AND id IN (SELECT MIN(id) FROM books WHERE catalog_id = ? AND avail > 0 GROUP BY search_title, author_key) \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(catalog_id)
             .bind(limit)
@@ -39,7 +39,7 @@ pub async fn get_by_catalog(
         let sql = pool.sql(
             "SELECT * FROM books WHERE catalog_id = ? AND avail > 0 ORDER BY search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(limit)
             .bind(offset)
@@ -65,7 +65,7 @@ pub async fn get_by_author(
                WHERE ba2.author_id = ? AND b2.avail > 0 GROUP BY b2.search_title, b2.author_key) \
              ORDER BY b.search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(author_id)
             .bind(author_id)
             .bind(limit)
@@ -79,7 +79,7 @@ pub async fn get_by_author(
              WHERE ba.author_id = ? AND b.avail > 0 \
              ORDER BY b.search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(author_id)
             .bind(limit)
             .bind(offset)
@@ -105,7 +105,7 @@ pub async fn get_by_genre(
                WHERE bg2.genre_id = ? AND b2.avail > 0 GROUP BY b2.search_title, b2.author_key) \
              ORDER BY b.search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(genre_id)
             .bind(genre_id)
             .bind(limit)
@@ -119,7 +119,7 @@ pub async fn get_by_genre(
              WHERE bg.genre_id = ? AND b.avail > 0 \
              ORDER BY b.search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(genre_id)
             .bind(limit)
             .bind(offset)
@@ -145,7 +145,7 @@ pub async fn get_by_series(
                WHERE bs2.series_id = ? AND b2.avail > 0 GROUP BY b2.search_title, b2.author_key) \
              ORDER BY bs.ser_no, b.search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(series_id)
             .bind(series_id)
             .bind(limit)
@@ -159,7 +159,7 @@ pub async fn get_by_series(
              WHERE bs.series_id = ? AND b.avail > 0 \
              ORDER BY bs.ser_no, b.search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(series_id)
             .bind(limit)
             .bind(offset)
@@ -182,7 +182,7 @@ pub async fn search_by_title(
              AND id IN (SELECT MIN(id) FROM books WHERE search_title LIKE ? AND avail > 0 GROUP BY search_title, author_key) \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(&pattern)
             .bind(&pattern)
             .bind(limit)
@@ -194,7 +194,7 @@ pub async fn search_by_title(
             "SELECT * FROM books WHERE search_title LIKE ? AND avail > 0 \
              ORDER BY search_title LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(&pattern)
             .bind(limit)
             .bind(offset)
@@ -218,7 +218,7 @@ pub async fn search_by_title_prefix(
                  AND id IN (SELECT MIN(id) FROM books WHERE avail > 0 GROUP BY search_title, author_key) \
                  ORDER BY search_title LIMIT ? OFFSET ?",
             );
-            sqlx::query_as::<_, Book>(&sql)
+            sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
                 .bind(limit)
                 .bind(offset)
                 .fetch_all(pool.inner())
@@ -228,7 +228,7 @@ pub async fn search_by_title_prefix(
                 "SELECT * FROM books WHERE avail > 0 \
                  ORDER BY search_title LIMIT ? OFFSET ?",
             );
-            sqlx::query_as::<_, Book>(&sql)
+            sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
                 .bind(limit)
                 .bind(offset)
                 .fetch_all(pool.inner())
@@ -252,7 +252,7 @@ pub async fn search_by_title_prefix(
         )
     };
     let sql = pool.sql(&raw);
-    let mut q = sqlx::query_as::<_, Book>(&sql);
+    let mut q = sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql));
     // Outer WHERE prefix binds.
     for b in &pf.binds {
         q = q.bind(b.as_str());
@@ -272,7 +272,7 @@ pub async fn find_by_path_and_filename(
     filename: &str,
 ) -> Result<Option<Book>, sqlx::Error> {
     let sql = pool.sql("SELECT * FROM books WHERE path = ? AND filename = ?");
-    sqlx::query_as::<_, Book>(&sql)
+    sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
         .bind(path)
         .bind(filename)
         .fetch_optional(pool.inner())
@@ -292,7 +292,7 @@ pub async fn list_existing_for_scan(
     // Full in-memory snapshot to eliminate per-book lookup queries during scan.
     // Trade-off: memory usage scales with total book rows.
     let sql = pool.sql("SELECT id, path, filename FROM books");
-    sqlx::query_as::<_, ExistingBookIndexRow>(&sql)
+    sqlx::query_as::<_, ExistingBookIndexRow>(sqlx::AssertSqlSafe(&*sql))
         .fetch_all(pool.inner())
         .await
 }
@@ -312,7 +312,7 @@ pub async fn set_avail_confirmed_for_ids(pool: &DbPool, ids: &[i64]) -> Result<u
             format!("UPDATE books SET avail = ? WHERE avail = ? AND id IN ({placeholders})");
         let sql = pool.sql(&query_sql);
 
-        let mut query = sqlx::query(&sql)
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(AvailStatus::Confirmed as i32)
             .bind(AvailStatus::Unverified as i32);
         for id in chunk {
@@ -348,7 +348,7 @@ pub async fn insert(
          annotation, docdate, lang, lang_code, size, avail, cat_type, cover, cover_type) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?)",
     );
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .bind(filename)
         .bind(path)
@@ -369,7 +369,7 @@ pub async fn insert(
         return Ok(id);
     }
     let sql = pool.sql("SELECT id FROM books WHERE path = ? AND filename = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(path)
         .bind(filename)
         .fetch_one(pool.inner())
@@ -379,7 +379,7 @@ pub async fn insert(
 
 pub async fn set_avail_all(pool: &DbPool, avail: AvailStatus) -> Result<u64, sqlx::Error> {
     let sql = pool.sql("UPDATE books SET avail = ? WHERE avail > 0");
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(avail as i32)
         .execute(pool.inner())
         .await?;
@@ -388,7 +388,7 @@ pub async fn set_avail_all(pool: &DbPool, avail: AvailStatus) -> Result<u64, sql
 
 pub async fn set_avail(pool: &DbPool, id: i64, avail: AvailStatus) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE books SET avail = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(avail as i32)
         .bind(id)
         .execute(pool.inner())
@@ -403,7 +403,7 @@ pub async fn rename_filename(
     new_filename: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE books SET filename = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(new_filename)
         .bind(id)
         .execute(pool.inner())
@@ -417,7 +417,7 @@ pub async fn set_avail_by_path(
     avail: AvailStatus,
 ) -> Result<u64, sqlx::Error> {
     let sql = pool.sql("UPDATE books SET avail = ? WHERE path = ?");
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(avail as i32)
         .bind(path)
         .execute(pool.inner())
@@ -432,7 +432,7 @@ pub async fn set_avail_for_inpx_dir(
 ) -> Result<u64, sqlx::Error> {
     let result = if inpx_dir.is_empty() {
         let sql = pool.sql("UPDATE books SET avail = ? WHERE cat_type = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(avail as i32)
             .bind(CatType::Inpx as i32)
             .execute(pool.inner())
@@ -440,7 +440,7 @@ pub async fn set_avail_for_inpx_dir(
     } else {
         let pattern = format!("{inpx_dir}/%");
         let sql = pool.sql("UPDATE books SET avail = ? WHERE cat_type = ? AND path LIKE ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(avail as i32)
             .bind(CatType::Inpx as i32)
             .bind(pattern)
@@ -454,7 +454,7 @@ pub async fn set_avail_for_inpx_dir(
 /// Mark unverified books as logically deleted (avail=0, hidden from queries).
 pub async fn logical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Error> {
     let sql = pool.sql("UPDATE books SET avail = ? WHERE avail <= ?");
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(AvailStatus::Deleted as i32)
         .bind(AvailStatus::Unverified as i32)
         .execute(pool.inner())
@@ -465,7 +465,7 @@ pub async fn logical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Erro
 /// Get IDs of unavailable books (for cover cleanup before physical deletion).
 pub async fn get_unavailable_ids(pool: &DbPool) -> Result<Vec<i64>, sqlx::Error> {
     let sql = pool.sql("SELECT id FROM books WHERE avail <= ?");
-    let rows: Vec<(i64,)> = sqlx::query_as(&sql)
+    let rows: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(AvailStatus::Unverified as i32)
         .fetch_all(pool.inner())
         .await?;
@@ -475,7 +475,7 @@ pub async fn get_unavailable_ids(pool: &DbPool) -> Result<Vec<i64>, sqlx::Error>
 /// Physically delete unavailable books from the database.
 pub async fn physical_delete_unavailable(pool: &DbPool) -> Result<u64, sqlx::Error> {
     let sql = pool.sql("DELETE FROM books WHERE avail <= ?");
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(AvailStatus::Unverified as i32)
         .execute(pool.inner())
         .await?;
@@ -499,8 +499,9 @@ async fn get_random_with(
     mut random_id: impl FnMut(i64, i64) -> i64,
 ) -> Result<Option<Book>, sqlx::Error> {
     let sql = pool.sql("SELECT MIN(id), MAX(id) FROM books");
-    let (min_id, max_id): (Option<i64>, Option<i64>) =
-        sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    let (min_id, max_id): (Option<i64>, Option<i64>) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_one(pool.inner())
+        .await?;
     let (Some(min_id), Some(max_id)) = (min_id, max_id) else {
         return Ok(None);
     };
@@ -508,7 +509,7 @@ async fn get_random_with(
     let sql = pool.sql("SELECT * FROM books WHERE id = ? AND avail > 0");
     for _ in 0..10 {
         let id = random_id(min_id, max_id);
-        let book = sqlx::query_as::<_, Book>(&sql)
+        let book = sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(id)
             .fetch_optional(pool.inner())
             .await?;
@@ -517,7 +518,7 @@ async fn get_random_with(
         }
     }
 
-    sqlx::query_as::<_, Book>(&sql)
+    sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
         .bind(42_i64)
         .fetch_optional(pool.inner())
         .await
@@ -536,7 +537,7 @@ pub async fn get_recent_added(
              AND id IN (SELECT MAX(id) FROM books WHERE avail > 0 GROUP BY search_title, author_key) \
              ORDER BY reg_date DESC, id DESC LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(limit)
             .bind(offset)
             .fetch_all(pool.inner())
@@ -545,7 +546,7 @@ pub async fn get_recent_added(
         let sql = pool.sql(
             "SELECT * FROM books WHERE avail > 0 ORDER BY reg_date DESC, id DESC LIMIT ? OFFSET ?",
         );
-        sqlx::query_as::<_, Book>(&sql)
+        sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
             .bind(limit)
             .bind(offset)
             .fetch_all(pool.inner())
@@ -562,7 +563,9 @@ pub async fn count_recent_added(pool: &DbPool, hide_doubles: bool) -> Result<i64
         "SELECT COUNT(*) FROM books WHERE avail > 0"
     };
     let sql = pool.sql(sql);
-    let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_one(pool.inner())
+        .await?;
     Ok(row.0)
 }
 
@@ -581,7 +584,7 @@ pub async fn count_by_title_search(
         "SELECT COUNT(*) FROM books WHERE search_title LIKE ? AND avail > 0"
     };
     let sql = pool.sql(sql);
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(&pattern)
         .fetch_one(pool.inner())
         .await?;
@@ -604,7 +607,9 @@ pub async fn count_by_title_prefix(
             "SELECT COUNT(*) FROM books WHERE avail > 0"
         };
         let sql = pool.sql(sql);
-        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await?;
         return Ok(row.0);
     }
     let pf = prefix_search("search_title", prefix, mode);
@@ -622,7 +627,7 @@ pub async fn count_by_title_prefix(
         )
     };
     let sql = pool.sql(&raw);
-    let mut q = sqlx::query_as::<_, (i64,)>(&sql);
+    let mut q = sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(&*sql));
     for b in &pf.binds {
         q = q.bind(b.as_str());
     }
@@ -647,7 +652,7 @@ pub async fn count_by_author(
          WHERE ba.author_id = ? AND b.avail > 0"
     };
     let sql = pool.sql(sql);
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(author_id)
         .fetch_one(pool.inner())
         .await?;
@@ -671,7 +676,7 @@ pub async fn count_by_genre(
          WHERE bg.genre_id = ? AND b.avail > 0"
     };
     let sql = pool.sql(sql);
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(genre_id)
         .fetch_one(pool.inner())
         .await?;
@@ -695,7 +700,7 @@ pub async fn count_by_series(
          WHERE bs.series_id = ? AND b.avail > 0"
     };
     let sql = pool.sql(sql);
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(series_id)
         .fetch_one(pool.inner())
         .await?;
@@ -716,7 +721,7 @@ pub async fn count_by_catalog(
         "SELECT COUNT(*) FROM books WHERE catalog_id = ? AND avail > 0"
     };
     let sql = pool.sql(sql);
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(catalog_id)
         .fetch_one(pool.inner())
         .await?;
@@ -761,7 +766,7 @@ pub async fn count_by_catalog_ids(
         };
         let sql = pool.sql(&raw);
 
-        let mut query = sqlx::query_as::<_, (i64, i64)>(&sql);
+        let mut query = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(&*sql));
         for id in chunk {
             query = query.bind(*id);
         }
@@ -783,7 +788,7 @@ pub async fn count_doubles(pool: &DbPool, book_id: i64) -> Result<i64, sqlx::Err
          AND author_key = (SELECT author_key FROM books WHERE id = ?) \
          AND avail > 0",
     );
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .bind(book_id)
         .fetch_one(pool.inner())
@@ -810,7 +815,7 @@ pub async fn get_title_prefix_groups(
             "SELECT search_title FROM books \
              WHERE avail > 0 AND (? = 0 OR lang_code = ?)",
         );
-        sqlx::query_as(&sql)
+        sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code)
             .fetch_all(pool.inner())
@@ -823,7 +828,7 @@ pub async fn get_title_prefix_groups(
             clause = pf.clause,
         );
         let sql = pool.sql(&raw);
-        let mut q = sqlx::query_as::<_, (String,)>(&sql)
+        let mut q = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(&*sql))
             .bind(lang_code)
             .bind(lang_code);
         for b in &pf.binds {
@@ -846,7 +851,7 @@ pub async fn update_title(
     lang_code: i32,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE books SET title = ?, search_title = ?, lang_code = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(title)
         .bind(search_title)
         .bind(lang_code)
@@ -880,7 +885,7 @@ pub async fn get_duplicate_groups(
          ORDER BY cnt DESC, search_title \
          LIMIT ? OFFSET ?",
     );
-    sqlx::query_as::<_, DuplicateGroup>(&sql)
+    sqlx::query_as::<_, DuplicateGroup>(sqlx::AssertSqlSafe(&*sql))
         .bind(limit)
         .bind(offset)
         .fetch_all(pool.inner())
@@ -897,7 +902,9 @@ pub async fn count_duplicate_groups(pool: &DbPool) -> Result<i64, sqlx::Error> {
          HAVING COUNT(*) > 1\
          ) AS t",
     );
-    let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_one(pool.inner())
+        .await?;
     Ok(row.0)
 }
 
@@ -912,7 +919,7 @@ pub async fn get_books_in_group(
          WHERE search_title = ? AND author_key = ? AND avail > 0 \
          ORDER BY id",
     );
-    sqlx::query_as::<_, Book>(&sql)
+    sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
         .bind(search_title)
         .bind(author_key)
         .fetch_all(pool.inner())
@@ -934,7 +941,7 @@ pub async fn update_author_key(pool: &DbPool, book_id: i64) -> Result<(), sqlx::
         .collect::<Vec<_>>()
         .join(",");
     let sql = pool.sql("UPDATE books SET author_key = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(&key)
         .bind(book_id)
         .execute(pool.inner())
@@ -955,13 +962,16 @@ pub async fn set_book_authors_and_update_key(
 
     // ── set_book_authors logic ──────────────────────────────────────
     let sql = pool.sql("SELECT author_id FROM book_authors WHERE book_id = ?");
-    let old_ids: Vec<(i64,)> = sqlx::query_as(&sql)
+    let old_ids: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(book_id)
         .fetch_all(&mut *tx)
         .await?;
 
     let sql = pool.sql("DELETE FROM book_authors WHERE book_id = ?");
-    sqlx::query(&sql).bind(book_id).execute(&mut *tx).await?;
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
+        .bind(book_id)
+        .execute(&mut *tx)
+        .await?;
 
     let link_sql = match pool.backend() {
         DbBackend::Mysql => "INSERT IGNORE INTO book_authors (book_id, author_id) VALUES (?, ?)",
@@ -972,7 +982,7 @@ pub async fn set_book_authors_and_update_key(
     };
     let link_sql = pool.sql(link_sql);
     for &author_id in author_ids {
-        sqlx::query(&link_sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*link_sql))
             .bind(book_id)
             .bind(author_id)
             .execute(&mut *tx)
@@ -985,7 +995,7 @@ pub async fn set_book_authors_and_update_key(
          JOIN book_authors ba ON ba.author_id = a.id \
          WHERE ba.book_id = ? ORDER BY a.id",
     );
-    let rows: Vec<(i64,)> = sqlx::query_as(&author_sql)
+    let rows: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*author_sql))
         .bind(book_id)
         .fetch_all(&mut *tx)
         .await?;
@@ -995,7 +1005,7 @@ pub async fn set_book_authors_and_update_key(
         .collect::<Vec<_>>()
         .join(",");
     let update_sql = pool.sql("UPDATE books SET author_key = ? WHERE id = ?");
-    sqlx::query(&update_sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*update_sql))
         .bind(&key)
         .bind(book_id)
         .execute(&mut *tx)
@@ -1028,11 +1038,17 @@ pub async fn delete_book_and_relations(pool: &DbPool, book_id: i64) -> Result<()
     ] {
         let raw = format!("DELETE FROM {table} WHERE book_id = ?");
         let sql = pool.sql(&raw);
-        sqlx::query(&sql).bind(book_id).execute(&mut *tx).await?;
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .bind(book_id)
+            .execute(&mut *tx)
+            .await?;
     }
 
     let sql = pool.sql("DELETE FROM books WHERE id = ?");
-    sqlx::query(&sql).bind(book_id).execute(&mut *tx).await?;
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
+        .bind(book_id)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
     Ok(())
@@ -1046,14 +1062,14 @@ mod tests {
     /// Create a root catalog and return its id. Call once per test pool.
     async fn ensure_catalog(pool: &DbPool) -> i64 {
         let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("/test")
             .bind("test")
             .execute(pool.inner())
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind("/test")
             .fetch_one(pool.inner())
             .await
@@ -1118,7 +1134,7 @@ mod tests {
         let search_name = full_name.to_uppercase();
         let sql = pool
             .sql("INSERT INTO authors (full_name, search_full_name, lang_code) VALUES (?, ?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(full_name)
             .bind(search_name)
             .bind(2)
@@ -1126,7 +1142,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM authors WHERE full_name = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(full_name)
             .fetch_one(pool.inner())
             .await
@@ -1137,7 +1153,7 @@ mod tests {
     async fn insert_test_series(pool: &DbPool, ser_name: &str) -> i64 {
         let search_name = ser_name.to_uppercase();
         let sql = pool.sql("INSERT INTO series (ser_name, search_ser, lang_code) VALUES (?, ?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(ser_name)
             .bind(search_name)
             .bind(2)
@@ -1145,7 +1161,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM series WHERE ser_name = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(ser_name)
             .fetch_one(pool.inner())
             .await
@@ -1155,7 +1171,7 @@ mod tests {
 
     async fn insert_test_genre(pool: &DbPool, code: &str) -> i64 {
         let sql = pool.sql("INSERT INTO genres (code, section, subsection) VALUES (?, ?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(code)
             .bind("Test section")
             .bind("Test subsection")
@@ -1163,7 +1179,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM genres WHERE code = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(code)
             .fetch_one(pool.inner())
             .await
@@ -1399,7 +1415,7 @@ mod tests {
 
         // Mark one book as unavailable
         let sql = pool.sql("UPDATE books SET avail = 0 WHERE id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(book_id)
             .execute(pool.inner())
             .await
@@ -1580,7 +1596,7 @@ mod tests {
 
         for book_id in [b1, b2] {
             let sql = pool.sql("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?)");
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*sql))
                 .bind(book_id)
                 .bind(author)
                 .execute(pool.inner())
@@ -1588,7 +1604,7 @@ mod tests {
                 .unwrap();
 
             let sql = pool.sql("INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?)");
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*sql))
                 .bind(book_id)
                 .bind(genre)
                 .execute(pool.inner())
@@ -1597,7 +1613,7 @@ mod tests {
         }
 
         let sql = pool.sql("INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(b1)
             .bind(series)
             .bind(1)
@@ -1605,7 +1621,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(b2)
             .bind(series)
             .bind(2)
@@ -1881,7 +1897,7 @@ mod tests {
             .unwrap();
 
         let sql = pool.sql("UPDATE books SET id = 42 WHERE id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(fallback)
             .execute(pool.inner())
             .await
@@ -1990,25 +2006,25 @@ mod tests {
 
         // Make ordering deterministic for assertions.
         let sql = pool.sql("UPDATE books SET reg_date = ? WHERE id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("2024-01-01 10:00:00")
             .bind(old_id)
             .execute(pool.inner())
             .await
             .unwrap();
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("2024-02-01 10:00:00")
             .bind(new_id)
             .execute(pool.inner())
             .await
             .unwrap();
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("2024-01-15 10:00:00")
             .bind(dup_old)
             .execute(pool.inner())
             .await
             .unwrap();
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("2024-03-01 10:00:00")
             .bind(dup_new)
             .execute(pool.inner())
@@ -2032,7 +2048,7 @@ mod tests {
 
     async fn link_author(pool: &DbPool, book_id: i64, author_id: i64) {
         let sql = pool.sql("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(book_id)
             .bind(author_id)
             .execute(pool.inner())
@@ -2330,7 +2346,7 @@ mod tests {
         // Link both to genre and series
         for b in [b1, b2] {
             let sql = pool.sql("INSERT INTO book_genres (book_id, genre_id) VALUES (?, ?)");
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*sql))
                 .bind(b)
                 .bind(genre)
                 .execute(pool.inner())
@@ -2339,7 +2355,7 @@ mod tests {
 
             let sql =
                 pool.sql("INSERT INTO book_series (book_id, series_id, ser_no) VALUES (?, ?, ?)");
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*sql))
                 .bind(b)
                 .bind(series)
                 .bind(1)
@@ -2372,14 +2388,14 @@ mod tests {
 
         // Second catalog for batching
         let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("/test-b")
             .bind("b")
             .execute(pool.inner())
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind("/test-b")
             .fetch_one(pool.inner())
             .await

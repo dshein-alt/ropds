@@ -1,13 +1,10 @@
-use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use rand::RngExt;
 
 /// Hash a plaintext password using Argon2id with a random salt.
 pub fn hash(password: &str) -> String {
-    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
-    let argon2 = Argon2::default();
-    argon2
-        .hash_password(password.as_bytes(), &salt)
+    Argon2::default()
+        .hash_password(password.as_bytes())
         .expect("Argon2 hashing should not fail")
         .to_string()
 }

@@ -10,13 +10,13 @@ use super::*;
 async fn seed_book(pool: &DbPool, title: &str) {
     let path = format!("/prefix-mode/{title}");
     let sql = pool.sql("INSERT OR IGNORE INTO catalogs (path, cat_name) VALUES (?, 'pm')");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(&path)
         .execute(pool.inner())
         .await
         .unwrap();
     let sql = pool.sql("SELECT id FROM catalogs WHERE path = ?");
-    let (cat_id,): (i64,) = sqlx::query_as(&sql)
+    let (cat_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(&path)
         .fetch_one(pool.inner())
         .await
@@ -27,7 +27,7 @@ async fn seed_book(pool: &DbPool, title: &str) {
          lang, lang_code, size, avail, cat_type, cover, cover_type) \
          VALUES (?, ?, ?, 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(cat_id)
         .bind(format!("{title}.fb2"))
         .bind(&path)

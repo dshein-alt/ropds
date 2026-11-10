@@ -39,13 +39,13 @@ async fn recent_page_lists_newest_books_first() {
         .unwrap();
 
     let sql = pool.sql("UPDATE books SET reg_date = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind("2024-01-01 00:00:00")
         .bind(old_book.id)
         .execute(pool.inner())
         .await
         .unwrap();
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind("2024-05-01 00:00:00")
         .bind(new_book.id)
         .execute(pool.inner())
@@ -99,14 +99,14 @@ async fn home_shows_continue_reading_for_authenticated_user() {
         "UPDATE reading_positions SET updated_at = ? \
          WHERE user_id = ? AND book_id = ?",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind("2024-06-01 00:00:00")
         .bind(user_id)
         .bind(first_book.id)
         .execute(pool.inner())
         .await
         .unwrap();
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind("2024-06-02 00:00:00")
         .bind(user_id)
         .bind(second_book.id)

@@ -18,7 +18,7 @@ pub async fn is_suppressed(pool: &DbPool, path: &str, filename: &str) -> Result<
                  WHERE suppressed_key = ? AND path = ? AND filename = ?",
             );
             let key = suppression_key(path, filename);
-            sqlx::query_as(&sql)
+            sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
                 .bind(key)
                 .bind(path)
                 .bind(filename)
@@ -28,7 +28,7 @@ pub async fn is_suppressed(pool: &DbPool, path: &str, filename: &str) -> Result<
         _ => {
             let sql =
                 pool.sql("SELECT COUNT(*) FROM suppressed_books WHERE path = ? AND filename = ?");
-            sqlx::query_as(&sql)
+            sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
                 .bind(path)
                 .bind(filename)
                 .fetch_one(pool.inner())
@@ -50,7 +50,9 @@ pub async fn suppress(pool: &DbPool, path: &str, filename: &str) -> Result<(), s
         }
     };
     let sql = pool.sql(sql);
-    let query = sqlx::query(&sql).bind(path).bind(filename);
+    let query = sqlx::query(sqlx::AssertSqlSafe(&*sql))
+        .bind(path)
+        .bind(filename);
     match pool.backend() {
         crate::db::DbBackend::Mysql => {
             let key = suppression_key(path, filename);

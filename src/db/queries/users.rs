@@ -26,7 +26,9 @@ pub async fn get_all_views(pool: &DbPool) -> Result<Vec<UserView>, sqlx::Error> 
          THEN 1 ELSE 0 END AS is_oauth \
          FROM users u ORDER BY u.id"
     );
-    let users: Vec<UserView> = sqlx::query_as(&sql).fetch_all(pool.inner()).await?;
+    let users: Vec<UserView> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_all(pool.inner())
+        .await?;
     Ok(users)
 }
 
@@ -35,7 +37,7 @@ pub async fn get_by_id(pool: &DbPool, user_id: i64) -> Result<Option<User>, sqlx
     let sql = pool.sql(
         "SELECT id, username, password_hash, is_superuser, created_at, last_login, password_change_required, display_name, allow_upload FROM users WHERE id = ?"
     );
-    let user: Option<User> = sqlx::query_as(&sql)
+    let user: Option<User> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_optional(pool.inner())
         .await?;
@@ -45,7 +47,7 @@ pub async fn get_by_id(pool: &DbPool, user_id: i64) -> Result<Option<User>, sqlx
 /// Get `is_superuser` flag for a given user ID.
 pub async fn is_superuser(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
     let sql = pool.sql("SELECT is_superuser FROM users WHERE id = ?");
-    let row: Option<(i32,)> = sqlx::query_as(&sql)
+    let row: Option<(i32,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_optional(pool.inner())
         .await?;
@@ -70,7 +72,7 @@ pub async fn update_password(
     password_hash: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE users SET password_hash = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(password_hash)
         .bind(user_id)
         .execute(pool.inner())
@@ -81,7 +83,7 @@ pub async fn update_password(
 /// Delete a user by ID.
 pub async fn delete(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM users WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .execute(pool.inner())
         .await?;
@@ -95,7 +97,7 @@ pub async fn update_last_login(
     timestamp: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE users SET last_login = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(timestamp)
         .bind(user_id)
         .execute(pool.inner())
@@ -110,7 +112,7 @@ pub async fn update_allow_upload(
     allow_upload: i32,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE users SET allow_upload = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(allow_upload)
         .bind(user_id)
         .execute(pool.inner())
@@ -125,7 +127,7 @@ pub async fn update_display_name(
     display_name: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE users SET display_name = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(display_name)
         .bind(user_id)
         .execute(pool.inner())
@@ -136,7 +138,7 @@ pub async fn update_display_name(
 /// Get display name for a user. Returns empty string if not found.
 pub async fn get_username(pool: &DbPool, user_id: i64) -> Result<String, sqlx::Error> {
     let sql = pool.sql("SELECT username FROM users WHERE id = ?");
-    let row: Option<(String,)> = sqlx::query_as(&sql)
+    let row: Option<(String,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_optional(pool.inner())
         .await?;
@@ -146,7 +148,7 @@ pub async fn get_username(pool: &DbPool, user_id: i64) -> Result<String, sqlx::E
 /// Get user ID by username.
 pub async fn get_id_by_username(pool: &DbPool, username: &str) -> Result<Option<i64>, sqlx::Error> {
     let sql = pool.sql("SELECT id FROM users WHERE username = ?");
-    let row: Option<(i64,)> = sqlx::query_as(&sql)
+    let row: Option<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(username)
         .fetch_optional(pool.inner())
         .await?;
@@ -160,7 +162,7 @@ pub async fn update_username(
     username: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE users SET username = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(username)
         .bind(user_id)
         .execute(pool.inner())
@@ -193,7 +195,7 @@ async fn insert_user(
             "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) \
              VALUES (?, ?, ?, ?, ?) RETURNING id",
         );
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(username)
             .bind(password_hash)
             .bind(is_superuser)
@@ -208,7 +210,7 @@ async fn insert_user(
         "INSERT INTO users (username, password_hash, is_superuser, password_change_required, display_name) \
          VALUES (?, ?, ?, ?, ?)",
     );
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(username)
         .bind(password_hash)
         .bind(is_superuser)
@@ -225,7 +227,7 @@ async fn insert_user(
 
     // AnyPool last_insert_id() can return None — fallback query by unique username.
     let sql = pool.sql("SELECT id FROM users WHERE username = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(username)
         .fetch_one(pool.inner())
         .await?;
@@ -235,7 +237,7 @@ async fn insert_user(
 /// Check if user must change password before accessing the app.
 pub async fn password_change_required(pool: &DbPool, user_id: i64) -> Result<bool, sqlx::Error> {
     let sql = pool.sql("SELECT password_change_required FROM users WHERE id = ?");
-    let row: Option<(i32,)> = sqlx::query_as(&sql)
+    let row: Option<(i32,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_optional(pool.inner())
         .await?;
@@ -248,7 +250,7 @@ pub async fn clear_password_change_required(
     user_id: i64,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE users SET password_change_required = 0 WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .execute(pool.inner())
         .await?;

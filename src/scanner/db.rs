@@ -316,7 +316,7 @@ async fn commit_pending_book_batch(
 
     for pending in pending_books {
         let has_cover = if pending.cover_data.is_some() { 1 } else { 0 };
-        let result = sqlx::query(&books_insert_sql)
+        let result = sqlx::query(sqlx::AssertSqlSafe(&*books_insert_sql))
             .bind(pending.catalog_id)
             .bind(&pending.filename)
             .bind(&pending.path)
@@ -339,7 +339,7 @@ async fn commit_pending_book_batch(
         let book_id = if let Some(id) = result.last_insert_id() {
             id
         } else {
-            let row: (i64,) = sqlx::query_as(&select_inserted_sql)
+            let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*select_inserted_sql))
                 .bind(&pending.path)
                 .bind(&pending.filename)
                 .fetch_one(&mut *tx)
@@ -348,21 +348,21 @@ async fn commit_pending_book_batch(
         };
 
         for author_id in pending.author_ids {
-            sqlx::query(&link_author_sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*link_author_sql))
                 .bind(book_id)
                 .bind(author_id)
                 .execute(&mut *tx)
                 .await?;
         }
         for genre_id in pending.genre_ids {
-            sqlx::query(&link_genre_sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*link_genre_sql))
                 .bind(book_id)
                 .bind(genre_id)
                 .execute(&mut *tx)
                 .await?;
         }
         if let Some((series_id, ser_no)) = pending.series_link {
-            sqlx::query(&link_series_sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*link_series_sql))
                 .bind(book_id)
                 .bind(series_id)
                 .bind(ser_no)

@@ -88,13 +88,13 @@ mod tests {
     }
 
     async fn ensure_catalog(pool: &crate::db::DbPool) -> i64 {
-        sqlx::query(&pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, ?)"))
+        sqlx::query(sqlx::AssertSqlSafe(&*pool.sql("INSERT INTO catalogs (path, cat_name) VALUES (?, ?)")))
             .bind("/web-tests")
             .bind("web-tests")
             .execute(pool.inner())
             .await
             .unwrap();
-        let row: (i64,) = sqlx::query_as(&pool.sql("SELECT id FROM catalogs WHERE path = ?"))
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*pool.sql("SELECT id FROM catalogs WHERE path = ?")))
             .bind("/web-tests")
             .fetch_one(pool.inner())
             .await

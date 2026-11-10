@@ -39,7 +39,7 @@ pub async fn save_position(
         }
     };
     let sql = pool.sql(raw);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(book_id)
         .bind(position)
@@ -70,7 +70,7 @@ pub async fn get_position(
         }
     };
     let sql = pool.sql(raw);
-    sqlx::query_as::<_, ReadingPosition>(&sql)
+    sqlx::query_as::<_, ReadingPosition>(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(book_id)
         .fetch_optional(pool.inner())
@@ -114,7 +114,7 @@ pub async fn get_recent(
         }
     };
     let sql = pool.sql(raw);
-    sqlx::query_as::<_, RecentRead>(&sql)
+    sqlx::query_as::<_, RecentRead>(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(limit)
         .fetch_all(pool.inner())
@@ -130,7 +130,7 @@ pub async fn get_last_read_book_id(
         "SELECT book_id FROM reading_positions WHERE user_id = ? \
          ORDER BY updated_at DESC LIMIT 1",
     );
-    let row: Option<(i64,)> = sqlx::query_as(&sql)
+    let row: Option<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_optional(pool.inner())
         .await?;
@@ -160,7 +160,7 @@ pub async fn get_progress_map(
     );
     let sql = pool.sql(&raw);
 
-    let mut query = sqlx::query_as::<_, (i64, f64)>(&sql).bind(user_id);
+    let mut query = sqlx::query_as::<_, (i64, f64)>(sqlx::AssertSqlSafe(&*sql)).bind(user_id);
     for book_id in book_ids {
         query = query.bind(*book_id);
     }
@@ -176,7 +176,7 @@ pub async fn get_progress_map(
 /// Delete a reading position for one user/book pair.
 pub async fn delete_position(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM reading_positions WHERE user_id = ? AND book_id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(book_id)
         .execute(pool.inner())
@@ -190,7 +190,7 @@ pub async fn delete_for_user_bookshelf(pool: &DbPool, user_id: i64) -> Result<()
         "DELETE FROM reading_positions WHERE user_id = ? \
          AND book_id IN (SELECT book_id FROM bookshelf WHERE user_id = ?)",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(user_id)
         .execute(pool.inner())
@@ -202,7 +202,7 @@ pub async fn delete_for_user_bookshelf(pool: &DbPool, user_id: i64) -> Result<()
 async fn prune_oldest(pool: &DbPool, user_id: i64, keep: i64) -> Result<(), sqlx::Error> {
     // Count first to avoid unnecessary delete
     let count_sql = pool.sql("SELECT COUNT(*) FROM reading_positions WHERE user_id = ?");
-    let (count,): (i64,) = sqlx::query_as(&count_sql)
+    let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*count_sql))
         .bind(user_id)
         .fetch_one(pool.inner())
         .await?;
@@ -231,7 +231,7 @@ async fn prune_oldest(pool: &DbPool, user_id: i64, keep: i64) -> Result<(), sqlx
         }
     };
     let sql = pool.sql(&raw);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(user_id)
         .execute(pool.inner())
@@ -248,13 +248,13 @@ mod tests {
     async fn insert_user(pool: &DbPool, username: &str) -> i64 {
         let sql = pool
             .sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, 'h', 0)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(username)
             .execute(pool.inner())
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM users WHERE username = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(username)
             .fetch_one(pool.inner())
             .await
@@ -264,9 +264,15 @@ mod tests {
 
     async fn ensure_catalog(pool: &DbPool) -> i64 {
         let sql = pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/rp_test', 'rp_test')");
-        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/rp_test'");
-        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         row.0
     }
 
@@ -277,7 +283,7 @@ mod tests {
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/rp_test', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
         );
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(format!("{title}.fb2"))
             .bind(title)
@@ -286,7 +292,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(title)
             .fetch_one(pool.inner())
@@ -336,7 +342,7 @@ mod tests {
         assert!((pos.progress - 0.5).abs() < f64::EPSILON);
 
         let sql = pool.sql("SELECT COUNT(*) FROM reading_positions WHERE user_id = ?");
-        let (count,): (i64,) = sqlx::query_as(&sql)
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .fetch_one(pool.inner())
             .await
@@ -366,7 +372,7 @@ mod tests {
                 "INSERT INTO reading_positions (user_id, book_id, position, progress, updated_at) \
                  VALUES (?, ?, ?, 0.0, ?)",
             );
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(&*sql))
                 .bind(user_id)
                 .bind(book_id)
                 .bind(format!("pos{i}"))
@@ -377,7 +383,7 @@ mod tests {
         }
 
         let sql = pool.sql("SELECT COUNT(*) FROM reading_positions WHERE user_id = ?");
-        let (count,): (i64,) = sqlx::query_as(&sql)
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .fetch_one(pool.inner())
             .await
@@ -388,7 +394,7 @@ mod tests {
         let sql = pool.sql(
             "SELECT book_id FROM reading_positions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
         );
-        let (last_book_id,): (i64,) = sqlx::query_as(&sql)
+        let (last_book_id,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .fetch_one(pool.inner())
             .await
@@ -399,7 +405,7 @@ mod tests {
             .unwrap();
 
         let sql = pool.sql("SELECT COUNT(*) FROM reading_positions WHERE user_id = ?");
-        let (count,): (i64,) = sqlx::query_as(&sql)
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .fetch_one(pool.inner())
             .await
@@ -409,7 +415,7 @@ mod tests {
         // Oldest entry (pos0) should be pruned
         let sql = pool
             .sql("SELECT COUNT(*) FROM reading_positions WHERE user_id = ? AND position = 'pos0'");
-        let (count,): (i64,) = sqlx::query_as(&sql)
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .fetch_one(pool.inner())
             .await
@@ -421,7 +427,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT COUNT(*) FROM reading_positions WHERE user_id = ?");
-        let (count,): (i64,) = sqlx::query_as(&sql)
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .fetch_one(pool.inner())
             .await
@@ -554,7 +560,7 @@ mod tests {
         let sql = pool.sql(
             "INSERT INTO bookshelf (user_id, book_id, read_time) VALUES (?, ?, CURRENT_TIMESTAMP)",
         );
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(user_id)
             .bind(on_shelf_book)
             .execute(pool.inner())

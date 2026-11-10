@@ -22,7 +22,7 @@ pub async fn upsert(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sql
         }
     };
     let sql = pool.sql(raw);
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(book_id)
         .execute(pool.inner())
@@ -81,7 +81,7 @@ pub async fn get_by_user(
         }
     };
     let sql = pool.sql(&raw);
-    sqlx::query_as::<_, Book>(&sql)
+    sqlx::query_as::<_, Book>(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(limit)
         .bind(offset)
@@ -95,7 +95,7 @@ pub async fn get_read_times(
     user_id: i64,
 ) -> Result<std::collections::HashMap<i64, String>, sqlx::Error> {
     let sql = pool.sql("SELECT book_id, read_time FROM bookshelf WHERE user_id = ?");
-    let rows: Vec<(i64, String)> = sqlx::query_as(&sql)
+    let rows: Vec<(i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_all(pool.inner())
         .await?;
@@ -105,7 +105,7 @@ pub async fn get_read_times(
 /// Count books on user's bookshelf.
 pub async fn count_by_user(pool: &DbPool, user_id: i64) -> Result<i64, sqlx::Error> {
     let sql = pool.sql("SELECT COUNT(*) FROM bookshelf WHERE user_id = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_one(pool.inner())
         .await?;
@@ -115,7 +115,7 @@ pub async fn count_by_user(pool: &DbPool, user_id: i64) -> Result<i64, sqlx::Err
 /// Check if a specific book is on the user's bookshelf.
 pub async fn is_on_shelf(pool: &DbPool, user_id: i64, book_id: i64) -> Result<bool, sqlx::Error> {
     let sql = pool.sql("SELECT COUNT(*) FROM bookshelf WHERE user_id = ? AND book_id = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(book_id)
         .fetch_one(pool.inner())
@@ -129,7 +129,7 @@ pub async fn get_book_ids_for_user(
     user_id: i64,
 ) -> Result<std::collections::HashSet<i64>, sqlx::Error> {
     let sql = pool.sql("SELECT book_id FROM bookshelf WHERE user_id = ?");
-    let rows: Vec<(i64,)> = sqlx::query_as(&sql)
+    let rows: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_all(pool.inner())
         .await?;
@@ -139,7 +139,7 @@ pub async fn get_book_ids_for_user(
 /// Remove a single book from the user's bookshelf.
 pub async fn delete_one(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM bookshelf WHERE user_id = ? AND book_id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(book_id)
         .execute(pool.inner())
@@ -150,7 +150,7 @@ pub async fn delete_one(pool: &DbPool, user_id: i64, book_id: i64) -> Result<(),
 /// Clear all books from the user's bookshelf.
 pub async fn clear_all(pool: &DbPool, user_id: i64) -> Result<(), sqlx::Error> {
     let sql = pool.sql("DELETE FROM bookshelf WHERE user_id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .execute(pool.inner())
         .await?;
@@ -165,13 +165,13 @@ mod tests {
     async fn insert_user(pool: &DbPool, username: &str) -> i64 {
         let sql = pool
             .sql("INSERT INTO users (username, password_hash, is_superuser) VALUES (?, 'h', 0)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(username)
             .execute(pool.inner())
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM users WHERE username = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(username)
             .fetch_one(pool.inner())
             .await
@@ -182,9 +182,15 @@ mod tests {
     async fn ensure_catalog(pool: &DbPool) -> i64 {
         let sql =
             pool.sql("INSERT INTO catalogs (path, cat_name) VALUES ('/bookshelf', 'bookshelf')");
-        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM catalogs WHERE path = '/bookshelf'");
-        let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         row.0
     }
 
@@ -195,7 +201,7 @@ mod tests {
              lang, lang_code, size, avail, cat_type, cover, cover_type) \
              VALUES (?, ?, '/bookshelf', 'fb2', ?, ?, 'en', 2, 100, 2, 0, 0, '')",
         );
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(format!("{title}.fb2"))
             .bind(title)
@@ -204,7 +210,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("SELECT id FROM books WHERE catalog_id = ? AND title = ?");
-        let row: (i64,) = sqlx::query_as(&sql)
+        let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
             .bind(catalog_id)
             .bind(title)
             .fetch_one(pool.inner())
@@ -259,13 +265,22 @@ mod tests {
             "INSERT INTO authors (full_name, search_full_name, lang_code) VALUES \
              ('Charlie', 'CHARLIE', 2), ('Alice', 'ALICE', 2)",
         );
-        sqlx::query(&sql).execute(pool.inner()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
+            .execute(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM authors WHERE full_name = 'Charlie'");
-        let a_charlie: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let a_charlie: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("SELECT id FROM authors WHERE full_name = 'Alice'");
-        let a_alice: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await.unwrap();
+        let a_alice: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+            .fetch_one(pool.inner())
+            .await
+            .unwrap();
         let sql = pool.sql("INSERT INTO book_authors (book_id, author_id) VALUES (?, ?), (?, ?)");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind(b_alpha)
             .bind(a_charlie.0)
             .bind(b_zulu)
@@ -277,7 +292,7 @@ mod tests {
         upsert(&pool, user_id, b_alpha).await.unwrap();
         upsert(&pool, user_id, b_zulu).await.unwrap();
         let sql = pool.sql("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("2026-01-01 00:00:00")
             .bind(user_id)
             .bind(b_alpha)
@@ -285,7 +300,7 @@ mod tests {
             .await
             .unwrap();
         let sql = pool.sql("UPDATE bookshelf SET read_time = ? WHERE user_id = ? AND book_id = ?");
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(&*sql))
             .bind("2026-01-02 00:00:00")
             .bind(user_id)
             .bind(b_zulu)

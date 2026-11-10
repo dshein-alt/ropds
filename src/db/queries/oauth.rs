@@ -16,7 +16,7 @@ pub async fn create_identity(
          (user_id, provider, provider_uid, email, display_name, status, created_at) \
          VALUES (?, ?, ?, ?, ?, 'pending', ?)",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .bind(provider)
         .bind(provider_uid)
@@ -39,7 +39,7 @@ pub async fn find_by_provider(
                 status, rejected_at, created_at \
          FROM oauth_identities WHERE provider = ? AND provider_uid = ?",
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(provider)
         .bind(provider_uid)
         .fetch_optional(pool.inner())
@@ -56,7 +56,7 @@ pub async fn get_by_id(
                 status, rejected_at, created_at \
          FROM oauth_identities WHERE id = ?",
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(identity_id)
         .fetch_optional(pool.inner())
         .await
@@ -75,7 +75,7 @@ pub async fn update_status(
         "UPDATE oauth_identities SET status = ?, rejected_at = ? \
          WHERE user_id = ? AND provider = ? AND provider_uid = ?",
     );
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(status)
         .bind(rejected_at.filter(|s| !s.is_empty()))
         .bind(user_id)
@@ -94,7 +94,7 @@ pub async fn update_status_by_id(
     rejected_at: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE oauth_identities SET status = ?, rejected_at = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(status)
         .bind(rejected_at.filter(|s| !s.is_empty()))
         .bind(identity_id)
@@ -110,7 +110,7 @@ pub async fn reassign_user_by_id(
     target_user_id: i64,
 ) -> Result<(), sqlx::Error> {
     let sql = pool.sql("UPDATE oauth_identities SET user_id = ? WHERE id = ?");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(&*sql))
         .bind(target_user_id)
         .bind(identity_id)
         .execute(pool.inner())
@@ -128,7 +128,7 @@ pub async fn list_by_status(
                 status, rejected_at, created_at \
          FROM oauth_identities WHERE status = ? ORDER BY created_at DESC",
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(status)
         .fetch_all(pool.inner())
         .await
@@ -137,14 +137,16 @@ pub async fn list_by_status(
 /// Count pending identities (for admin nav badge).
 pub async fn count_pending(pool: &DbPool) -> Result<i64, sqlx::Error> {
     let sql = pool.sql("SELECT COUNT(*) FROM oauth_identities WHERE status = 'pending'");
-    let row: (i64,) = sqlx::query_as(&sql).fetch_one(pool.inner()).await?;
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
+        .fetch_one(pool.inner())
+        .await?;
     Ok(row.0)
 }
 
 /// Count identities linked to a local user.
 pub async fn count_for_user(pool: &DbPool, user_id: i64) -> Result<i64, sqlx::Error> {
     let sql = pool.sql("SELECT COUNT(*) FROM oauth_identities WHERE user_id = ?");
-    let row: (i64,) = sqlx::query_as(&sql)
+    let row: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_one(pool.inner())
         .await?;
@@ -158,7 +160,7 @@ pub async fn list_for_user(pool: &DbPool, user_id: i64) -> Result<Vec<OAuthIdent
                 status, rejected_at, created_at \
          FROM oauth_identities WHERE user_id = ?",
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(&*sql))
         .bind(user_id)
         .fetch_all(pool.inner())
         .await
