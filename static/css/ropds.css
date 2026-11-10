@@ -84,6 +84,13 @@ main {
   display: none;
 }
 
+.search-type-group .btn,
+.book-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .search-type-group .btn {
   min-height: 44px;
 }
