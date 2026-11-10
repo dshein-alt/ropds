@@ -47,7 +47,7 @@
             <div class="fw-semibold">{{ item.title }}</div>
             <div class="small text-body-secondary">
               {{ item.format }}
-              · <time class="utc-time" datetime="{{ item.updated_at }}">{{ item.updated_at }}</time>
+              · <time class="utc-time" datetime="{{ item.updated_at | replace(from=' ', to='T') }}">{{ item.updated_at[0:16] }}</time>
             </div>
           </div>
           <div class="read-progress" style="min-width: 180px;">

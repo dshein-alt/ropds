@@ -239,18 +239,23 @@
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("search-form");
+    const group = document.getElementById("search-type-group");
     const radios = document.querySelectorAll('input[name="search-target"]');
-    if (!form || !radios.length) return;
-    // Keep form action in sync with the currently selected radio on initial load.
-    const selected = document.querySelector('input[name="search-target"]:checked');
-    if (selected && selected.dataset.action) {
-      form.action = selected.dataset.action;
+    if (!form || !group || !radios.length) return;
+
+    function syncAction() {
+      const selected = document.querySelector('input[name="search-target"]:checked');
+      if (selected && selected.dataset.action) {
+        form.action = selected.dataset.action;
+      }
     }
+
+    syncAction();
     radios.forEach(function (radio) {
-      radio.addEventListener("change", function () {
-        form.action = this.dataset.action;
-      });
+      radio.addEventListener("change", syncAction);
     });
+    window.addEventListener("pageshow", syncAction);
+    group.hidden = false;
   });
 })();
 
@@ -407,45 +412,101 @@
   });
 })();
 
-// Cover preview overlay
+function setUiStatus(id, message) {
+  var status = document.getElementById(id);
+  if (!status) return;
+  var text = status.querySelector(".ui-status-text");
+  if (text) text.textContent = message;
+  status.classList.toggle("d-none", !message);
+}
+
+// Cover preview dialog
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
-    var overlay = document.getElementById("cover-overlay");
-    var overlayImg = document.getElementById("cover-overlay-img");
-    if (!overlay || !overlayImg) return;
+    var dialog = document.getElementById("cover-dialog");
+    var dialogImg = document.getElementById("cover-dialog-img");
+    if (!dialog || !dialogImg) return;
+    var origin = null;
+    var lockedScrollY = 0;
 
     document.addEventListener("click", function (e) {
       var thumb = e.target.closest(".cover-preview");
-      if (thumb && thumb.dataset.coverUrl) {
-        e.preventDefault();
-        overlayImg.src = thumb.dataset.coverUrl;
-        overlay.hidden = false;
-      }
+      if (!thumb || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      if (dialog.open) return;
+      origin = thumb;
+      dialogImg.alt = thumb.dataset.coverAlt || "";
+      setUiStatus("cover-status", "");
+      lockedScrollY = window.scrollY;
+      document.body.style.top = -lockedScrollY + "px";
+      document.body.classList.add("cover-dialog-open");
+      dialog.showModal();
+      dialogImg.src = thumb.href;
     });
 
-    overlay.addEventListener("click", function () {
-      overlay.hidden = true;
-      overlayImg.src = "";
+    dialog.querySelector("[data-cover-close]").addEventListener("click", function () {
+      dialog.close();
     });
 
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape" && !overlay.hidden) {
-        overlay.hidden = true;
-        overlayImg.src = "";
-      }
+    dialog.addEventListener("click", function (e) {
+      if (e.target !== dialog) return;
+      var rect = dialog.getBoundingClientRect();
+      var inside = e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) dialog.close();
+    });
+
+    dialog.addEventListener("close", function () {
+      if (origin && origin.isConnected) origin.focus({ preventScroll: true });
+      document.body.classList.remove("cover-dialog-open");
+      document.body.style.top = "";
+      window.scrollTo({ top: lockedScrollY, left: 0, behavior: "instant" });
+      dialogImg.src = "";
+      dialogImg.alt = "";
+      origin = null;
+    });
+
+    dialogImg.addEventListener("error", function () {
+      if (!dialog.open) return;
+      dialog.close();
+      var status = document.getElementById("cover-status");
+      setUiStatus("cover-status", status ? status.dataset.message : "");
     });
   });
 })();
 
-// Convert UTC timestamps to local timezone
+// Convert UTC timestamps to local timezone: medium date + short time, no seconds.
+// Falls back to the concise text rendered by the templates when a date is invalid.
 function convertUtcTimes(root) {
-  (root || document).querySelectorAll("time.utc-time").forEach(function (el) {
-    var dt = new Date(el.getAttribute("datetime").replace(" ", "T"));
-    if (isNaN(dt)) return;
-    var pad = function (n) { return n < 10 ? "0" + n : n; };
-    el.textContent =
-      dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
-      " " + pad(dt.getHours()) + ":" + pad(dt.getMinutes()) + ":" + pad(dt.getSeconds());
+  var els = (root || document).querySelectorAll("time.utc-time:not([data-utc-local])");
+  if (!els.length) return;
+
+  var pad = function (n) { return n < 10 ? "0" + n : n; };
+  var localStamp = function (dt) {
+    return dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
+      " " + pad(dt.getHours()) + ":" + pad(dt.getMinutes());
+  };
+
+  var formatter = null;
+  try {
+    formatter = new Intl.DateTimeFormat(document.documentElement.lang || undefined,
+      { dateStyle: "medium", timeStyle: "short" });
+  } catch (error) {}
+
+  els.forEach(function (el) {
+    el.setAttribute("data-utc-local", "1");
+    var value = (el.getAttribute("datetime") || "").trim();
+    if (!value) return;
+    // Timestamps are stored in UTC: normalize offsets and annotate bare values.
+    var iso = value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+    if (!/(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(iso)) iso += "Z";
+    var dt = new Date(iso);
+    if (isNaN(dt.getTime())) return;
+    var text = "";
+    try {
+      text = formatter ? formatter.format(dt) : localStamp(dt);
+    } catch (error) {}
+    if (text) el.textContent = text;
   });
 }
 (function () {
@@ -457,6 +518,11 @@ function convertUtcTimes(root) {
 // Bookshelf star toggle via AJAX (no page reload)
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
+    function reportError() {
+      var status = document.getElementById("bookshelf-status");
+      setUiStatus("bookshelf-status", status ? status.dataset.message : "");
+    }
+
     document.addEventListener("click", function (e) {
       var btn = e.target.closest(".bookshelf-toggle-btn");
       if (!btn) return;
@@ -465,6 +531,7 @@ function convertUtcTimes(root) {
       var form = btn.closest("form");
       if (!form) return;
 
+      setUiStatus("bookshelf-status", "");
       var body = new URLSearchParams(new FormData(form)).toString();
       btn.disabled = true;
 
@@ -477,24 +544,37 @@ function convertUtcTimes(root) {
         body: body,
         credentials: "same-origin"
       })
-        .then(function (res) { return res.json(); })
+        .then(function (res) {
+          if (!res.ok) throw new Error("Bookshelf update failed");
+          return res.json();
+        })
         .then(function (data) {
-          if (!data.ok) return;
+          if (!data.ok) {
+            reportError();
+            return;
+          }
 
           // On the bookshelf page, remove the card
           var isBookshelfPage = !!document.getElementById("bookshelf-grid");
           if (isBookshelfPage && !data.on_shelf) {
             var card = btn.closest(".col");
             if (card) {
-              card.style.transition = "opacity 0.3s";
-              card.style.opacity = "0";
-              setTimeout(function () { card.remove(); }, 300);
+              var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              if (reduceMotion) {
+                card.remove();
+              } else {
+                card.style.transition = "opacity 0.3s";
+                card.style.opacity = "0";
+                setTimeout(function () { card.remove(); }, 300);
+              }
             }
             return;
           }
 
-          // On other pages, toggle the star appearance
+          // On other pages, synchronize visual and accessibility state
           var icon = btn.querySelector("i");
+          btn.setAttribute("aria-pressed", data.on_shelf ? "true" : "false");
+          btn.title = data.on_shelf ? btn.dataset.removeTitle : btn.dataset.addTitle;
           if (data.on_shelf) {
             btn.classList.remove("btn-outline-secondary");
             btn.classList.add("btn-warning");
@@ -505,6 +585,7 @@ function convertUtcTimes(root) {
             if (icon) { icon.classList.remove("bi-star-fill"); icon.classList.add("bi-star"); }
           }
         })
+        .catch(reportError)
         .finally(function () {
           btn.disabled = false;
         });

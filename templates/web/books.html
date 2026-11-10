@@ -13,7 +13,7 @@
   {% if back_url is defined %}
   <nav class="mb-3">
     <a href="{{ back_url }}" class="text-decoration-none">
-      <i class="bi bi-arrow-left me-1"></i>{{ back_label }}
+      <i aria-hidden="true" class="bi bi-arrow-left me-1"></i>{{ back_label }}
     </a>
   </nav>
   {% endif %}
@@ -26,15 +26,20 @@
       <div class="col-12">
         <div class="card book-card">
           <div class="card-body">
-            <div class="d-flex gap-3">
+            <div class="d-flex gap-2 gap-sm-3">
 
               {# Cover #}
               {% if show_covers %}
               <div class="flex-shrink-0">
                 {% if item.cover %}
-                <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded cover-preview" data-cover-url="/opds/cover/{{ item.id }}/">
+                <a href="/opds/cover/{{ item.id }}/" class="cover-preview rounded" aria-label="{{ t.book.view_cover }}: {{ item.title }}"
+                   data-cover-alt="{{ t.book.cover }}: {{ item.title }}">
+                  <img src="/opds/thumb/{{ item.id }}/" alt="" class="book-cover rounded"
+                       width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
+                </a>
                 {% else %}
-                <img src="/static/images/nocover.svg" alt="" class="book-cover rounded">
+                <img src="/static/images/nocover.svg" alt="" class="book-cover rounded"
+                     width="100" height="150" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
                 {% endif %}
               </div>
               {% endif %}
@@ -46,7 +51,7 @@
                 {# Authors #}
                 {% if item.authors | length > 0 %}
                 <div class="mb-1">
-                  <i class="bi bi-person text-body-secondary me-1"></i>
+                  <i aria-hidden="true" class="bi bi-person text-body-secondary me-1"></i>
                   {% for author in item.authors %}
                     <a href="/web/search/books?type=a&q={{ author.id }}" class="text-decoration-none">{{ author.full_name }}</a>{% if not loop.last %}, {% endif %}
                   {% endfor %}
@@ -56,7 +61,7 @@
                 {# Genres #}
                 <div class="mb-1 book-genres-container" data-book-id="{{ item.id }}">
                   {% if item.genres | length > 0 %}
-                  <i class="bi bi-tags text-body-secondary me-1"></i>
+                  <i aria-hidden="true" class="bi bi-tags text-body-secondary me-1"></i>
                   <span class="book-genres-badges">
                   {% for genre in item.genres %}
                     <a href="/web/search/books?type=g&q={{ genre.id }}" class="badge text-bg-light text-decoration-none">{{ genre.subsection }}</a>
@@ -64,12 +69,13 @@
                   </span>
                   {% endif %}
                   {% if is_superuser %}
-                  <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1 btn-edit-book"
+                  <button type="button" class="btn btn-sm btn-icon btn-outline-secondary ms-1 btn-edit-book"
                           data-book-id="{{ item.id }}"
                           data-series-name="{% if item.series_list | length > 0 %}{{ item.series_list[0].ser_name }}{% endif %}"
                           data-series-no="{% if item.series_list | length > 0 %}{{ item.series_list[0].ser_no }}{% endif %}"
-                          title="{{ t.book.edit_genres }}">
-                    <i class="bi bi-pencil"></i>
+                          title="{{ t.book.edit_genres }}" aria-label="{{ t.book.edit_genres }}: {{ item.title }}"
+                          data-label-prefix="{{ t.book.edit_genres }}">
+                    <i aria-hidden="true" class="bi bi-pencil"></i>
                   </button>
                   {% endif %}
                 </div>
@@ -77,7 +83,7 @@
                 {# Series #}
                 {% if item.series_list | length > 0 %}
                 <div class="mb-1">
-                  <i class="bi bi-collection text-body-secondary me-1"></i>
+                  <i aria-hidden="true" class="bi bi-collection text-body-secondary me-1"></i>
                   {% for s in item.series_list %}
                     <a href="/web/search/books?type=s&q={{ s.id }}" class="text-decoration-none">{{ s.ser_name }}</a>{% if s.ser_no > 0 %} <span class="text-body-secondary">#{{ s.ser_no }}</span>{% endif %}{% if not loop.last %}, {% endif %}
                   {% endfor %}
@@ -107,17 +113,20 @@
                 {% endif %}
 
                 <div class="book-actions mt-1">
-                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm">
-                    <i class="bi bi-download me-1"></i>{{ item.format }}
+                  <a href="/web/download/{{ item.id }}/0" class="btn btn-primary btn-sm" aria-label="{{ t.book.download }} {{ item.format }}: {{ item.title }}"
+                     data-label-prefix="{{ t.book.download }} {{ item.format }}">
+                    <i aria-hidden="true" class="bi bi-download me-1"></i>{{ item.format }}
                   </a>
                   {% if item.show_zip %}
-                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm">zip</a>
+                  <a href="/web/download/{{ item.id }}/1" class="btn btn-outline-primary btn-sm" aria-label="{{ t.book.download }} ZIP: {{ item.title }}"
+                     data-label-prefix="{{ t.book.download }} ZIP">zip</a>
                   {% endif %}
 
                   {# Read button (for supported formats) #}
                   {% if reader_enabled and (item.format == "epub" or item.format == "fb2" or item.format == "mobi" or item.format == "djvu" or item.format == "pdf") %}
-                  <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-outline-success" title="{{ t.book.read }}">
-                    <i class="bi bi-book-half"></i>
+                  <a href="/web/reader/{{ item.id }}" target="_blank" class="btn btn-sm btn-icon btn-outline-success" title="{{ t.book.read }}" aria-label="{{ t.book.read }}: {{ item.title }}"
+                     data-label-prefix="{{ t.book.read }}">
+                    <i aria-hidden="true" class="bi bi-book-half"></i>
                   </a>
                   {% endif %}
 
@@ -127,8 +136,12 @@
                     <input type="hidden" name="book_id" value="{{ item.id }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="redirect" value="{{ current_path | default(value='/web') }}">
-                    <button type="submit" class="btn btn-sm bookshelf-toggle-btn {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}" title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}">
-                      <i class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                    <button type="submit" class="btn btn-sm btn-icon bookshelf-toggle-btn {% if item.on_bookshelf %}btn-warning{% else %}btn-outline-secondary{% endif %}"
+                            title="{% if item.on_bookshelf %}{{ t.bookshelf.remove }}{% else %}{{ t.bookshelf.add }}{% endif %}"
+                            aria-label="{{ t.nav.bookshelf }}: {{ item.title }}" aria-pressed="{% if item.on_bookshelf %}true{% else %}false{% endif %}"
+                            data-label-prefix="{{ t.nav.bookshelf }}"
+                            data-add-title="{{ t.bookshelf.add }}" data-remove-title="{{ t.bookshelf.remove }}">
+                      <i aria-hidden="true" class="bi {% if item.on_bookshelf %}bi-star-fill{% else %}bi-star{% endif %}"></i>
                     </button>
                   </form>
                   {% endif %}
@@ -160,13 +173,13 @@
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title"><i class="bi bi-pencil me-2"></i><span id="edit-modal-title"></span></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <h5 class="modal-title"><i aria-hidden="true" class="bi bi-pencil me-2"></i><span id="edit-modal-title"></span></h5>
+          <button type="button" class="btn-close btn-icon" data-bs-dismiss="modal" aria-label="{{ t.common.close }}"></button>
         </div>
         <div class="modal-body">
 
           {# ── Title Editor ─── #}
-          <h6><i class="bi bi-type me-1"></i>{{ t.book.edit_title }}</h6>
+          <h6><i aria-hidden="true" class="bi bi-type me-1"></i>{{ t.book.edit_title }}</h6>
           <div class="mb-3">
             <input type="text" id="edit-book-title" class="form-control"
                    maxlength="256" placeholder="{{ t.book.title_placeholder }}">
@@ -174,24 +187,24 @@
           </div>
 
           {# ── Genre Editor ─── #}
-          <h6><i class="bi bi-tags me-1"></i>{{ t.book.edit_genres }}</h6>
+          <h6><i aria-hidden="true" class="bi bi-tags me-1"></i>{{ t.book.edit_genres }}</h6>
           <div id="edit-genre-sections" class="accordion accordion-flush border rounded mb-2" style="max-height: 300px; overflow-y: auto;"></div>
           <div class="mb-3 small text-body-secondary">
             <span id="edit-genre-count">0</span> {{ t.book.genres_selected }}
           </div>
 
           {# ── Author Editor ─── #}
-          <h6><i class="bi bi-person me-1"></i>{{ t.book.edit_authors }}</h6>
+          <h6><i aria-hidden="true" class="bi bi-person me-1"></i>{{ t.book.edit_authors }}</h6>
           <div id="edit-authors-list" class="mb-2"></div>
           <div class="input-group input-group-sm mb-2">
             <input type="text" id="edit-new-author" class="form-control" placeholder="{{ t.book.author_name }}">
             <button type="button" id="edit-add-author" class="btn btn-outline-primary">
-              <i class="bi bi-plus-lg me-1"></i>{{ t.book.add_author }}
+              <i aria-hidden="true" class="bi bi-plus-lg me-1"></i>{{ t.book.add_author }}
             </button>
           </div>
 
           {# ── Series Editor ─── #}
-          <h6><i class="bi bi-collection me-1"></i>{{ t.book.edit_series }}</h6>
+          <h6><i aria-hidden="true" class="bi bi-collection me-1"></i>{{ t.book.edit_series }}</h6>
           <div class="row mb-3">
             <div class="col-8">
               <input type="text" id="edit-book-series" class="form-control form-control-sm"
@@ -412,12 +425,15 @@
             showTitleError(titleData.error || "title_invalid");
             throw new Error("title save failed");
           }
-          // Update DOM — card title
+          // Update DOM — card title and accessible action names
           var cardEl = document.querySelector('.btn-edit-book[data-book-id="' + editBookId + '"]');
           if (cardEl) {
             var bookCard = cardEl.closest(".col-12");
             var cardTitle = bookCard.querySelector(".card-title");
             if (cardTitle) cardTitle.textContent = titleData.title;
+            bookCard.querySelectorAll("[data-label-prefix]").forEach(function (el) {
+              el.setAttribute("aria-label", el.dataset.labelPrefix + ": " + titleData.title);
+            });
           }
           // Update modal header
           document.getElementById("edit-modal-title").textContent = titleData.title;
@@ -463,6 +479,7 @@
               // No genres previously — add icon and badges span
               var icon = document.createElement("i");
               icon.className = "bi bi-tags text-body-secondary me-1";
+              icon.setAttribute("aria-hidden", "true");
               card.insertBefore(icon, card.querySelector(".btn-edit-book"));
               badgesSpan = document.createElement("span");
               badgesSpan.className = "book-genres-badges";
@@ -487,7 +504,7 @@
               var titleEl = bookCard.querySelector(".card-title");
               if (titleEl) titleEl.after(authorDiv);
             }
-            authorDiv.innerHTML = '<i class="bi bi-person text-body-secondary me-1"></i>' +
+            authorDiv.innerHTML = '<i aria-hidden="true" class="bi bi-person text-body-secondary me-1"></i>' +
               authorData.authors.map(function(a) {
                 return '<a href="/web/search/books?type=a&q=' + a.id + '" class="text-decoration-none">' + a.full_name + '</a>';
               }).join(", ");
@@ -502,7 +519,7 @@
             var seriesDiv = bookCard.querySelector(".mb-1:has(.bi-collection)");
             if (seriesData.series && seriesData.series.length > 0) {
               var s = seriesData.series[0];
-              var html = '<i class="bi bi-collection text-body-secondary me-1"></i>' +
+              var html = '<i aria-hidden="true" class="bi bi-collection text-body-secondary me-1"></i>' +
                 '<a href="/web/search/books?type=s&q=' + s.id + '" class="text-decoration-none">' + s.ser_name + '</a>';
               if (s.ser_no > 0) html += ' <span class="text-body-secondary">#' + s.ser_no + '</span>';
               if (!seriesDiv) {
