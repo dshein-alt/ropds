@@ -2,11 +2,10 @@ use std::io::BufRead;
 
 use base64::Engine;
 use quick_xml::XmlVersion;
-use quick_xml::encoding::DecodingReader;
 use quick_xml::events::Event;
-use quick_xml::reader::Reader;
 
 use super::{BookMeta, strip_meta};
+use crate::xml;
 
 /// Parse FB2 XML from any `BufRead` source and return extracted metadata.
 /// Tolerant of malformed XML: returns partial metadata on parse errors.
@@ -20,7 +19,11 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
     }
 
     let mut meta = BookMeta::default();
-    let mut xml = Reader::from_reader(DecodingReader::new(std::io::Cursor::new(&raw_data)));
+    // Legacy FB2 files are often windows-1251 or UTF-16; transcoding up front
+    // keeps quick-xml out of the encoding-detection state machine that panics on
+    // declarations longer than its 64-byte detection prefix (issue #25).
+    let text = xml::decode(&raw_data);
+    let mut xml = xml::reader(&text);
     xml.config_mut().trim_text(true);
     xml.config_mut().check_end_names = false;
     xml.config_mut().check_comments = false;
@@ -42,13 +45,6 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) => break,
             Err(_) => break, // Tolerate malformed XML, return partial metadata
-
-            // Non-UTF-8 documents (fb2 is often windows-1251) are transcoded on the fly
-            Ok(Event::Decl(ref e)) => {
-                if let Some(enc) = e.encoder() {
-                    xml.get_mut().set_encoding(enc);
-                }
-            }
 
             Ok(Event::Start(ref e)) => {
                 let local = local_name(e.name().as_ref());
@@ -179,7 +175,7 @@ pub fn parse(mut reader: impl BufRead) -> Result<BookMeta, quick_xml::Error> {
 /// Extract cover image from raw FB2 bytes by searching for the matching <binary> element.
 /// Used as fallback when the XML parser fails before reaching binary elements.
 pub fn extract_cover_from_bytes(data: &[u8], cover_id: &str) -> Option<(Vec<u8>, String)> {
-    let text = String::from_utf8_lossy(data);
+    let text = crate::xml::decode(data);
 
     // Search for <binary id="cover_id" ...> (case-insensitive on id value)
     let cover_id_lower = cover_id.to_lowercase();
@@ -398,6 +394,98 @@ mod tests {
         assert_eq!(meta.title, "Война");
         assert_eq!(meta.authors, vec!["Лев Толстой".to_string()]);
         assert_eq!(meta.lang, "ru");
+    }
+
+    /// Issue #25: quick-xml's encoding reader panics when the XML declaration
+    /// does not fit its 64-byte detection prefix, which is always the case for
+    /// UTF-16 (2 bytes per character). A UTF-16BE document declaring the label
+    /// "UTF-16" is the worst case: the label means little-endian, so the
+    /// declared encoding differs from the detected one and has to be applied.
+    #[test]
+    fn test_parse_fb2_utf16_bom() {
+        let cover_bytes = b"\x89PNGutf16-cover";
+        let cover_b64 = base64::engine::general_purpose::STANDARD.encode(cover_bytes);
+        let fb2 = format!(
+            r##"<?xml version="1.0" encoding="UTF-16"?>
+<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info>
+  <book-title>Основание</book-title><lang>ru</lang>
+  <coverpage><image l:href="#coverid"/></coverpage>
+</title-info></description><binary id="coverid" content-type="image/png">{cover_b64}</binary></FictionBook>"##
+        );
+
+        for bom in [0xFEu8, 0xFF] {
+            let mut data = if bom == 0xFE {
+                vec![0xFE, 0xFF] // UTF-16 BE BOM
+            } else {
+                vec![0xFF, 0xFE] // UTF-16 LE BOM
+            };
+            for unit in fb2.encode_utf16() {
+                if bom == 0xFE {
+                    data.extend_from_slice(&unit.to_be_bytes());
+                } else {
+                    data.extend_from_slice(&unit.to_le_bytes());
+                }
+            }
+
+            let meta = parse(Cursor::new(data)).unwrap();
+            assert_eq!(meta.title, "Основание", "BOM {bom:#X}");
+            assert_eq!(meta.lang, "ru", "BOM {bom:#X}");
+            assert_eq!(meta.cover_type, "image/png", "BOM {bom:#X}");
+            assert_eq!(
+                meta.cover_data.as_deref(),
+                Some(cover_bytes.as_slice()),
+                "BOM {bom:#X}"
+            );
+        }
+    }
+
+    /// UTF-16 without a BOM is recognised from the NUL-interleaved "<?x" pattern.
+    #[test]
+    fn test_parse_fb2_utf16_without_bom() {
+        let fb2 = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n\
+                   <FictionBook><description><title-info>\n\
+                   <book-title>Основание</book-title>\n\
+                   </title-info></description></FictionBook>";
+        let data: Vec<u8> = fb2.encode_utf16().flat_map(u16::to_le_bytes).collect();
+
+        let meta = parse(Cursor::new(data)).unwrap();
+        assert_eq!(meta.title, "Основание");
+    }
+
+    /// Legacy FB2 dumps often carry a UTF-8 BOM in front of a windows-1251
+    /// declaration. The declaration is 62 bytes, so with the BOM it overflows
+    /// the detection prefix: the scanner used to panic here, and with a
+    /// Cyrillic body it silently lost every field of metadata.
+    #[test]
+    fn test_parse_fb2_utf8_bom_with_windows1251_declaration() {
+        let mut fb2: Vec<u8> = Vec::new();
+        fb2.extend_from_slice(&[0xEF, 0xBB, 0xBF]); // UTF-8 BOM
+        fb2.extend_from_slice(
+            b"<?xml version=\"1.0\" encoding=\"windows-1251\" standalone=\"yes\"?>\n",
+        );
+        fb2.extend_from_slice(b"<FictionBook><description><title-info><book-title>");
+        fb2.extend_from_slice(&[0xD2, 0xE5, 0xF1, 0xF2]); // "Тест"
+        fb2.extend_from_slice(b"</book-title></title-info></description></FictionBook>");
+
+        let meta = parse(Cursor::new(fb2)).unwrap();
+        assert_eq!(meta.title, "Тест");
+    }
+
+    /// A few undecodable bytes must not cost the whole book: they become
+    /// replacement characters, the rest of the metadata survives. The old
+    /// streaming decoder aborted the parse on them and lost every field.
+    #[test]
+    fn test_parse_fb2_replaces_undecodable_bytes() {
+        let mut fb2: Vec<u8> = Vec::new();
+        fb2.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+        fb2.extend_from_slice(b"<FictionBook><description><title-info><book-title>");
+        fb2.extend_from_slice(&[0xD0, 0x94]); // "Д"
+        fb2.extend_from_slice(&[0xFF]); // not valid UTF-8 in any position
+        fb2.extend_from_slice(b"</book-title></title-info></description></FictionBook>");
+
+        let meta = parse(Cursor::new(fb2)).unwrap();
+        assert_eq!(meta.title.chars().next(), Some('Д'));
+        assert!(meta.title.contains('\u{FFFD}'));
     }
 
     #[test]

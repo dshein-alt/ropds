@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 - The "random book" widget no longer stalls page loading in large libraries. Picking a book now takes the same short moment whether the library holds a few hundred or a few hundred thousand books, instead of several seconds. On MySQL setups this widget never showed a book at all, and now works as intended.
+- Scanning a library no longer stops halfway when a book uses a legacy text encoding such as UTF-16 or Windows-1251/1252. Those books are now catalogued correctly, with their titles, authors, annotations and covers preserved, and covers of such books are shown in the catalog.
 
 ## [0.13.2] - 2026-11-02
 

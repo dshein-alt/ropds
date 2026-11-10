@@ -1,11 +1,10 @@
 use std::io::{Read, Seek};
 
 use quick_xml::XmlVersion;
-use quick_xml::encoding::DecodingReader;
 use quick_xml::events::Event;
-use quick_xml::reader::Reader;
 
 use super::{BookMeta, strip_meta};
+use crate::xml;
 
 /// Parse EPUB metadata from a ZIP archive.
 /// The reader must implement Read + Seek (for the zip crate).
@@ -57,7 +56,9 @@ fn find_opf_path<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Str
 /// If there is only one rootfile, return it regardless of media-type.
 /// If there are several, return the first one with media-type="application/oebps-package+xml".
 fn parse_container_xml(data: &[u8]) -> Option<String> {
-    let mut xml = Reader::from_reader(DecodingReader::new(data));
+    // OPF/container.xml files are transcoded to UTF-8 up front (see crate::xml).
+    let text = xml::decode(data);
+    let mut xml = xml::reader(&text);
     xml.config_mut().trim_text(true);
     let mut buf = Vec::new();
     let mut rootfiles: Vec<(String, bool)> = Vec::new();
@@ -65,12 +66,6 @@ fn parse_container_xml(data: &[u8]) -> Option<String> {
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) | Err(_) => break,
-            // Non-UTF-8 documents (fb2 is often windows-1251) are transcoded on the fly
-            Ok(Event::Decl(ref e)) => {
-                if let Some(enc) = e.encoder() {
-                    xml.get_mut().set_encoding(enc);
-                }
-            }
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 let local = local_name(e.name().as_ref());
                 if local == "rootfile" {
@@ -111,7 +106,8 @@ fn parse_container_xml(data: &[u8]) -> Option<String> {
 /// Parse OPF XML and extract book metadata.
 fn parse_opf(data: &[u8]) -> Result<BookMeta, EpubError> {
     let mut meta = BookMeta::default();
-    let mut xml = Reader::from_reader(DecodingReader::new(data));
+    let text = xml::decode(data);
+    let mut xml = xml::reader(&text);
     xml.config_mut().trim_text(true);
     let mut buf = Vec::new();
     let mut path: Vec<String> = Vec::new();
@@ -125,12 +121,6 @@ fn parse_opf(data: &[u8]) -> Result<BookMeta, EpubError> {
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) | Err(_) => break,
-            // Non-UTF-8 documents (fb2 is often windows-1251) are transcoded on the fly
-            Ok(Event::Decl(ref e)) => {
-                if let Some(enc) = e.encoder() {
-                    xml.get_mut().set_encoding(enc);
-                }
-            }
 
             Ok(Event::Start(ref e)) => {
                 let local = local_name(e.name().as_ref());
@@ -266,19 +256,14 @@ fn parse_opf_manifest(data: &[u8]) -> (Vec<ManifestItem>, Option<String>) {
     let mut items = Vec::new();
     let mut cover_id = None;
 
-    let mut xml = Reader::from_reader(DecodingReader::new(data));
+    let text = xml::decode(data);
+    let mut xml = xml::reader(&text);
     xml.config_mut().trim_text(true);
     let mut buf = Vec::new();
 
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Eof) | Err(_) => break,
-            // Non-UTF-8 documents (fb2 is often windows-1251) are transcoded on the fly
-            Ok(Event::Decl(ref e)) => {
-                if let Some(enc) = e.encoder() {
-                    xml.get_mut().set_encoding(enc);
-                }
-            }
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 let local = local_name(e.name().as_ref());
                 if local == "item" {
@@ -513,6 +498,39 @@ mod tests {
         assert_eq!(meta.series_title, Some("Saga".to_string()));
         assert_eq!(meta.series_index, 2);
         assert_eq!(meta.cover_type, "image/jpeg");
+        assert_eq!(meta.cover_data.unwrap(), cover);
+    }
+
+    /// Issue #25: legacy encodings in EPUB metadata aborted the scan.
+    /// container.xml in UTF-16 (with BOM), content.opf in windows-1251.
+    #[test]
+    fn test_parse_epub_legacy_encodings() {
+        let container = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n\
+            <container><rootfiles><rootfile full-path=\"OPS/content.opf\" \
+            media-type=\"application/oebps-package+xml\"/></rootfiles></container>";
+        let container_utf16: Vec<u8> = vec![0xFF, 0xFE]
+            .into_iter()
+            .chain(container.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+
+        let mut opf: Vec<u8> = Vec::new();
+        opf.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n");
+        opf.extend_from_slice(
+            b"<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>",
+        );
+        opf.extend_from_slice(&[0xD2, 0xE5, 0xF1, 0xF2]); // "Тест"
+        opf.extend_from_slice(b"</dc:title><dc:language>ru</dc:language><meta name=\"cover\" content=\"cover-id\"/></metadata><manifest><item id=\"cover-id\" href=\"images/cover.jpg\" media-type=\"image/jpeg\"/></manifest></package>");
+
+        let cover = b"\xFF\xD8\xFFcover";
+        let epub = make_epub(&[
+            ("META-INF/container.xml", container_utf16.as_slice()),
+            ("OPS/content.opf", opf.as_slice()),
+            ("OPS/images/cover.jpg", cover),
+        ]);
+
+        let meta = parse(Cursor::new(epub)).unwrap();
+        assert_eq!(meta.title, "Тест");
+        assert_eq!(meta.lang, "ru");
         assert_eq!(meta.cover_data.unwrap(), cover);
     }
 

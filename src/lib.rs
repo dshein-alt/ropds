@@ -12,6 +12,7 @@ pub mod scheduler;
 pub mod state;
 pub mod util;
 pub mod web;
+pub mod xml;
 mod zipname;
 
 use axum::Router;
